@@ -18,7 +18,7 @@ Cookie signing and encrypted secrets (GitHub App client secret/PEM, PATs, Slack 
 
 ## Secrets and tokens
 
-- **Do not put sensitive secrets into `.baguette.yaml` `session.env`**. Those values end up in the Claude agent's environment, where any shell tool call can potentially read them (e.g. `env`, `printenv`, shell scripts in the repo). Use them only for secrets that are genuinely required to run the application under test.
+- **Do not put sensitive secrets into `.baguette.yaml` top-level `env`**. Those values end up in the agent's environment, where any shell tool call can potentially read them (e.g. `env`, `printenv`, shell scripts in the repo). Use them only for secrets that are genuinely required to run the application under test.
 - Use **access tokens with the minimum required privileges**: the Anthropic API key should belong to a dedicated workspace or project with spending limits set.
 - **Grant the GitHub App only the repositories it needs.** GitHub access is always App-based, and an App is limited to the repositories selected when it is installed — so a compromised Baguette instance cannot touch anything you did not grant it. Pick repositories individually rather than "All repositories". See [Setting up the GitHub App](../README.md#setting-up-the-github-app).
 - **The Anthropic API key is not exposed to Claude's shell environment.** It is held exclusively by the Baguette server and never injected into the session's shell.
@@ -29,4 +29,4 @@ Cookie signing and encrypted secrets (GitHub App client secret/PEM, PATs, Slack 
 ## Development and test dependencies
 
 - Ideally, your application's dependencies (databases, caches, queues) run as **Docker tasks** in `.baguette.yaml` (per-session containers on `127.0.0.1`). Use static or session-scoped credentials with no real-world impact; avoid production secrets in repo config.
-- See the `session.init` / `session.cleanup` pattern in [session-management.md](session-management.md) for per-session database isolation.
+- See the `init` / `cleanup` pattern in [session-management.md](session-management.md) for per-session database isolation.

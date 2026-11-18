@@ -1,6 +1,6 @@
 # Baguette project files
 
-- **`./.baguette.yaml`** at the repo root — session env, init/cleanup, tasks, services (preview), and related settings.
+- **`./.baguette.yaml`** at the repo root — `env`, init/cleanup, `tasks`, services (preview), optional chat `recipes`, and related settings.
 - **`./.baguette/scripts/`** — place Baguette-specific helper scripts here (for example scripts invoked from `.baguette.yaml` task `run` blocks).
 - **`./.baguette/agents/`** — optional per-repo prompt extensions: `builder.md`, `reviewer.md`, and `subagent.md` (appended to the built-in role prompts for that agent type).
 

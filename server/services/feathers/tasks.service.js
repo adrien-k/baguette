@@ -7,6 +7,7 @@ import {
   loadBaguetteConfig,
   getAvailableTasks,
   appendTaskArgs,
+  resolveConfigSessionBlock,
   BaguetteConfigError,
   TaskEnvInterpolationError,
   assertTaskEnvReferencesValid,
@@ -432,7 +433,7 @@ export class TasksService {
             `Circular dependency detected: ${depKey} is already in the dependency chain`
           );
         if (!taskDefs[depKey])
-          throw new BadRequest(`Dependency task "${depKey}" not found in session.tasks`);
+          throw new BadRequest(`Dependency task "${depKey}" not found in tasks`);
         let depTask = this._findRunningTask(session_id, depKey);
         if (!depTask) {
           const depPub = await this.create(
@@ -474,11 +475,10 @@ export class TasksService {
 
     await attachYamlDependsOn();
 
+    const configEnv = resolveConfigSessionBlock(baguetteConfig).env;
     const sessionEnvKeys =
-      baguetteConfig?.session?.env &&
-      typeof baguetteConfig.session.env === 'object' &&
-      !Array.isArray(baguetteConfig.session.env)
-        ? Object.keys(baguetteConfig.session.env)
+      configEnv && typeof configEnv === 'object' && !Array.isArray(configEnv)
+        ? Object.keys(configEnv)
         : [];
     const dockerEnvKeys = [
       ...new Set([...sessionEnvKeys, ...(taskEnvRaw ? Object.keys(taskEnvRaw) : [])]),

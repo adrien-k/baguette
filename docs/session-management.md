@@ -20,7 +20,7 @@ Each linked repository is cloned once as a normal (non-bare) checkout under `<DA
 
 ## Session config (`.baguette.yaml`)
 
-Each repository can include a `.baguette.yaml` file at its root to configure per-session environment variables, initialization commands, cleanup, tasks, and a dev-server proxy. See **[Project Configuration](project-configuration.md)** for the full schema, examples, and Docker setup.
+Each repository can include a `.baguette.yaml` file at its root to configure per-session environment variables, initialization commands, cleanup, tasks, a dev-server proxy, and optional chat recipes. See **[Project Configuration](project-configuration.md)** for the full schema, examples, and Docker setup.
 
 ## Web Server Preview
 

@@ -741,6 +741,87 @@ describe('Sessions service - custom methods', () => {
     });
   });
 
+  describe('recipes', () => {
+    it('returns built-in recipes when host config is null', async () => {
+      const result = await app.service('sessions').recipes(sessId, params({ id: userId }));
+
+      expect(result.recipes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: 'git_sync', label: 'Git sync', builtin: true }),
+          expect.objectContaining({ id: 'check_ci', label: 'Check CI', builtin: true }),
+          expect.objectContaining({ id: 'check_comments', label: 'Check comments', builtin: true }),
+        ])
+      );
+      expect(result.recipes.filter((r) => !r.builtin)).toEqual([]);
+    });
+
+    it('appends custom recipes from host config', async () => {
+      loadBaguetteConfig.mockResolvedValue({
+        recipes: [
+          {
+            label: 'Dependency audit',
+            description: 'Scan packages',
+            prompt: 'Run npm audit and fix issues.',
+          },
+        ],
+      });
+
+      const result = await app.service('sessions').recipes(sessId, params({ id: userId }));
+
+      const custom = result.recipes.filter((r) => !r.builtin);
+      expect(custom).toEqual([
+        {
+          id: 'custom:dependency-audit',
+          label: 'Dependency audit',
+          description: 'Scan packages',
+          prompt: 'Run npm audit and fix issues.',
+          builtin: false,
+        },
+      ]);
+    });
+
+    it('returns built-in recipes when custom recipes config is invalid', async () => {
+      loadBaguetteConfig.mockResolvedValue({ recipes: { bad: true } });
+
+      const result = await app.service('sessions').recipes(sessId, params({ id: userId }));
+
+      expect(result.config_error).toMatch(/recipes must be an array/);
+      expect(result.recipes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: 'git_sync', builtin: true }),
+          expect.objectContaining({ id: 'check_ci', builtin: true }),
+          expect.objectContaining({ id: 'check_comments', builtin: true }),
+        ])
+      );
+      expect(result.recipes.some((r) => !r.builtin)).toBe(false);
+    });
+
+    it('returns built-in recipes when host config failed to load', async () => {
+      loadBaguetteConfig.mockResolvedValue({ error: 'Invalid .baguette.yaml' });
+
+      const result = await app.service('sessions').recipes(sessId, params({ id: userId }));
+
+      expect(result.config_error).toBe('Invalid .baguette.yaml');
+      expect(result.recipes.map((r) => r.id)).toEqual(
+        expect.arrayContaining(['git_sync', 'check_ci', 'check_comments'])
+      );
+    });
+
+    it('uses reviewer Check comments prompt when agent_type is reviewer', async () => {
+      const { getBuiltinChatRecipes } = await import('../../../shared/session-chat-recipes.js');
+
+      const result = await app
+        .service('sessions')
+        .recipes({ id: sessId, agent_type: 'reviewer' }, params({ id: userId }));
+
+      const checkComments = result.recipes.find((r) => r.id === 'check_comments');
+      const expected = getBuiltinChatRecipes({ agent_type: 'reviewer' }).find(
+        (r) => r.id === 'check_comments'
+      );
+      expect(checkComments?.prompt).toBe(expected?.prompt);
+    });
+  });
+
   describe('baguetteYaml', () => {
     it('returns missing when config file is absent', async () => {
       readBaguetteConfigRaw.mockResolvedValue({ missing: true });

@@ -9,7 +9,9 @@ import {
   loadBaguetteConfig,
   readBaguetteConfigRaw,
   getAvailableCommands,
+  resolveSessionChatRecipes,
   getScriptBlock,
+  resolveConfigSessionBlock,
   BaguetteConfigError,
   resolveServicesConfig,
 } from '../baguette-config.js';
@@ -706,7 +708,7 @@ export class SessionsService extends KnexService {
   async _runCleanupAndFinalize(session) {
     if (session.session_path) {
       const baguetteConfig = await loadBaguetteConfig(session.session_path);
-      const cleanupCommand = getScriptBlock(baguetteConfig?.session?.cleanup);
+      const cleanupCommand = getScriptBlock(resolveConfigSessionBlock(baguetteConfig).cleanup);
       if (cleanupCommand) {
         try {
           await this.app.service('tasks').create(
@@ -873,6 +875,16 @@ export class SessionsService extends KnexService {
       if (err instanceof BaguetteConfigError) throw new BadRequest(err.message);
       throw err;
     }
+  }
+
+  async recipes(data, params) {
+    const session = params.resolvedSession;
+    const agentType = data?.agent_type;
+    if (!session?.session_path || isGlobalSession(session)) {
+      return resolveSessionChatRecipes(null, { agent_type: agentType });
+    }
+    const baguetteConfig = await loadBaguetteConfig(session.session_path);
+    return resolveSessionChatRecipes(baguetteConfig, { agent_type: agentType });
   }
 
   async baguetteYaml(_data, params) {
@@ -2806,6 +2818,7 @@ export function registerSessionsService(app, path = 'sessions') {
       'remove',
       'stop',
       'commands',
+      'recipes',
       'baguetteYaml',
       'diff',
       'changedFiles',
@@ -2916,6 +2929,7 @@ const sessionsHooks = {
     ],
     stop: [resolveSessionFromData],
     commands: [resolveSessionFromData],
+    recipes: [resolveSessionFromData],
     baguetteYaml: [resolveSessionFromData],
     diff: [resolveSessionFromData],
     changedFiles: [resolveSessionFromData],

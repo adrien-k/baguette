@@ -111,6 +111,39 @@ export async function gitSha(cwd, ref) {
   return runGit(cwd, ['rev-parse', ref]);
 }
 
+/** Main clone directory for a local repo (where `.baguette.yaml` is stored). */
+export async function e2eRepoMainClonePath(repoId) {
+  const dataDir = dirname(E2E_DB_PATH);
+  const { default: Database } = await import('better-sqlite3');
+  const db = new Database(E2E_DB_PATH, { timeout: 10_000, fileMustExist: true });
+  let repoRow;
+  try {
+    repoRow = db.prepare('SELECT repo_path FROM repos WHERE id = ?').get(repoId);
+  } finally {
+    db.close();
+  }
+  expect(repoRow?.repo_path).toBeTruthy();
+  return join(dataDir, repoRow.repo_path);
+}
+
+/** Write `.baguette.yaml` on the repo main clone and commit so session worktrees see it. */
+export async function writeE2eRepoBaguetteYaml(repoId, config) {
+  const yaml = await import('js-yaml');
+  const mainCloneDir = await e2eRepoMainClonePath(repoId);
+  const text = yaml.dump({ config }, { lineWidth: -1 });
+  await writeFile(join(mainCloneDir, '.baguette.yaml'), text, 'utf8');
+  await runGit(mainCloneDir, ['add', '.baguette.yaml']);
+  await runGit(mainCloneDir, [
+    '-c',
+    'user.email=e2e@baguette.dev',
+    '-c',
+    'user.name=E2E',
+    'commit',
+    '-m',
+    'e2e: baguette config',
+  ]);
+}
+
 /** Read a session's worktree path from the webServer sqlite. */
 export async function e2eSessionWorktreePath(sessionId) {
   const { default: Database } = await import('better-sqlite3');
@@ -437,6 +470,16 @@ export async function saveE2eScreenshot(page, fileName, options = {}) {
     : saveE2eScreenshotPath(fileName);
   await mkdir(dirname(path), { recursive: true });
   await page.screenshot({ path, ...options });
+  return path;
+}
+
+/** Screenshot a single locator (e.g. a panel or list) under `e2e/screenshots/`. */
+export async function saveE2eLocatorScreenshot(locator, fileName, options = {}) {
+  const path = process.env.E2E_SCREENSHOT_PATH
+    ? withE2eThemeSuffix(process.env.E2E_SCREENSHOT_PATH)
+    : saveE2eScreenshotPath(fileName);
+  await mkdir(dirname(path), { recursive: true });
+  await locator.screenshot({ path, ...options });
   return path;
 }
 

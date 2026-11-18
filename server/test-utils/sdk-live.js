@@ -32,10 +32,9 @@ const execFileAsync = promisify(execFile);
 const LIVE_TODO_TITLE = 'sdk-live-todo';
 const LIVE_TASK_LABEL = 'echo-ok';
 
-const LIVE_BAGUETTE_YAML = `session:
-  tasks:
-    ${LIVE_TASK_LABEL}:
-      run: echo ok
+const LIVE_BAGUETTE_YAML = `tasks:
+  ${LIVE_TASK_LABEL}:
+    run: echo ok
 `;
 
 const LIVE_SDK_TURN_PROMPT = [

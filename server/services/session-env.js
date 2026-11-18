@@ -7,6 +7,7 @@ import {
   resolveServicesConfig,
   buildDockerTaskHostnames,
   buildDockerTaskImages,
+  resolveConfigSessionBlock,
 } from './baguette-config.js';
 import { getPreviewHost, getServicePreviewHost } from './preview.js';
 
@@ -84,14 +85,11 @@ export async function getInterpolateOptsForSession(db, sessionId) {
 export async function buildTaskEnv(db, sessionId) {
   const { baguetteConfig, interpolateOpts } = await buildInterpolateContext(db, sessionId);
 
+  const configEnv = resolveConfigSessionBlock(baguetteConfig).env;
   let sessionEnv = {};
-  if (
-    interpolateOpts &&
-    baguetteConfig.session?.env &&
-    typeof baguetteConfig.session.env === 'object'
-  ) {
-    assertNoTaskPlaceholders(baguetteConfig.session.env, 'session.env');
-    sessionEnv = interpolateEnv(baguetteConfig.session.env, {
+  if (interpolateOpts && configEnv && typeof configEnv === 'object') {
+    assertNoTaskPlaceholders(configEnv, 'env');
+    sessionEnv = interpolateEnv(configEnv, {
       ...interpolateOpts,
       taskHostnames: {},
       taskImages: {},

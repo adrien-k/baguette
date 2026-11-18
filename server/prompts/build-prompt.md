@@ -55,7 +55,7 @@ Inline waits also cap out: **`RunTask`** with **`detach: false`** and **`StartSu
 - Run a test at a specific line: `args: ["src/foo.test.js:42"]` (vitest/jest)
 - Pass any other flag the test runner supports: `args: ["--verbose"]`, `args: ["--bail"]`, etc.
 
-Only if `.baguette.yaml` does not exist or has no test command defined should you fall back to the Bash tool (e.g. `pnpm test`, `pytest`). If the project defines `session.init`, run that task via `RunTask` first when a label exists.
+Only if `.baguette.yaml` does not exist or has no test command defined should you fall back to the Bash tool (e.g. `pnpm test`, `pytest`). If the project defines `init` under `config`, run the `baguette:init` task via `RunTask` first when that label exists.
 
 ---
 
