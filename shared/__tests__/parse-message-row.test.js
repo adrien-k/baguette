@@ -30,6 +30,24 @@ describe('parseMessageRow', () => {
     expect(view.source).toBe('mcp');
   });
 
+  it('passes mcp_sender through on MCP user rows', () => {
+    const sender = { kind: 'external', label: 'Baguette MCP', settings_tab: 'integrations' };
+    const view = parseMessageRow({
+      id: 1,
+      session_id: 2,
+      type: 'user',
+      subtype: 'mcp',
+      message_json: JSON.stringify({
+        type: 'user',
+        source: 'mcp',
+        content: 'ping',
+        mcp_sender: sender,
+      }),
+      ...baseRow,
+    });
+    expect(view.mcp_sender).toEqual(sender);
+  });
+
   it('normalizes legacy MCP SDK envelope to typed user view', () => {
     const view = parseMessageRow({
       id: 1,

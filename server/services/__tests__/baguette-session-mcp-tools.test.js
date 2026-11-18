@@ -41,6 +41,7 @@ describe('baguette session MCP tools', () => {
   let app;
   let userId;
   let sessionId;
+  let primaryAgentId;
   let tools;
 
   beforeEach(async () => {
@@ -105,8 +106,11 @@ describe('baguette session MCP tools', () => {
     tasksService.setup(app);
     app.use('tasks', tasksService);
     await app.setup();
+    const primaryAgent = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
+    primaryAgentId = primaryAgent.id;
     tools = buildBaguetteSessionMcpTools({ id: userId }, app, {
-      callerSession: { id: sessionId, is_global: false },
+      callerSession: { id: sessionId, is_global: false, label: 'Fix auth bug' },
+      callerAgent: primaryAgent,
     });
   });
 
@@ -255,6 +259,12 @@ describe('baguette session MCP tools', () => {
     const parsed = JSON.parse(row.message_json);
     expect(parsed.content).toBe('ping');
     expect(parsed.source).toBe('mcp');
+    expect(parsed.mcp_sender).toMatchObject({
+      kind: 'session',
+      session_id: sessionId,
+      session_label: 'Fix auth bug',
+      agent_id: primaryAgentId,
+    });
     expect(row.subtype).toBe('mcp');
     const primary = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
     expect(row.model).toBe(primary.model);
@@ -361,6 +371,13 @@ describe('baguette session MCP tools', () => {
     const create = externalTools.find((t) => t.name === 'CreateSessionMessage');
     const out = parseOk(await create.handler({ session_id: sessionId, text: 'from external mcp' }));
     expect(out.message_id).toBeTruthy();
+    const row = await db('session_messages').where({ id: out.message_id }).first();
+    const parsed = JSON.parse(row.message_json);
+    expect(parsed.mcp_sender).toEqual({
+      kind: 'external',
+      label: 'Baguette MCP',
+      settings_tab: 'integrations',
+    });
   });
 
   it('ListRunningTasks returns only running tasks for a session', async () => {

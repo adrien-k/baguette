@@ -23,6 +23,7 @@ import {
   buildMcpUserMessageJson,
   summarizeAssistantMessage,
 } from '../mcp/lib/session-resolution.js';
+import { resolveMcpMessageSenderForParentAgent } from '../mcp/lib/mcp-message-sender.js';
 import { agentFailureError, hydrateAgentFailureErrors } from '../agent-error-message.js';
 import { nextSessionItemRef } from '../session-item-ref.js';
 import { titleFromPrompt } from '../../../shared/agent-naming.js';
@@ -219,7 +220,8 @@ class AgentsService extends KnexService {
       }
     }
 
-    const message_json = buildMcpUserMessageJson(initialPrompt);
+    const mcpSender = await resolveMcpMessageSenderForParentAgent(db, sessionId, parentAgentId);
+    const message_json = buildMcpUserMessageJson(initialPrompt, mcpSender);
 
     try {
       await this.app.service('messages').create(

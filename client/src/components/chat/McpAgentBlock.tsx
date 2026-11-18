@@ -1,8 +1,10 @@
 import { Bot } from 'lucide-react';
+import type { McpMessageSender } from '@baguette/shared/message-types.ts';
 import MarkdownContent from '../MarkdownContent.jsx';
 import CopyButton from './CopyButton.tsx';
 import MessageTimestamp from './MessageTimestamp.tsx';
 import MessageTurnModelBadge from './MessageTurnModelBadge.jsx';
+import McpAgentSourceSubtitle from './McpAgentSourceSubtitle.tsx';
 
 type McpUserMessage = {
   content?: string;
@@ -10,6 +12,7 @@ type McpUserMessage = {
   model?: string | null;
   model_params?: unknown;
   agent_config_id?: number | null;
+  mcp_sender?: McpMessageSender;
 };
 
 /** User message injected via Baguette MCP (`source` / `subtype` `mcp`). */
@@ -18,10 +21,9 @@ export default function McpAgentBlock({ message }: { message: McpUserMessage }) 
 
   return (
     <div className="group bg-merged/10 dark:bg-merged/25 rounded-lg p-3 sm:p-4 border border-merged/45 ml-4 sm:ml-8">
-      <div className="text-xs text-merged mb-1 font-medium flex items-center gap-2 flex-wrap">
+      <div className="text-xs text-merged mb-0.5 font-medium flex items-center gap-2 flex-wrap">
         <Bot className="w-3.5 h-3.5 shrink-0 text-merged" aria-hidden />
-        <span>Agent</span>
-        <span className="font-normal text-merged/95 dark:text-merged/80">via MCP</span>
+        <span>MCP Agent</span>
         {message.created_at && (
           <MessageTimestamp createdAt={message.created_at} className="text-faint font-normal" />
         )}
@@ -35,6 +37,7 @@ export default function McpAgentBlock({ message }: { message: McpUserMessage }) 
           {userText ? <CopyButton text={userText} /> : null}
         </span>
       </div>
+      <McpAgentSourceSubtitle sender={message.mcp_sender} />
       <MarkdownContent hardBreaks>{userText}</MarkdownContent>
     </div>
   );
