@@ -32,7 +32,7 @@ Before delegating:
 2. Write an initial prompt that includes **only** the task: goal, files, constraints, definition of done. Subagents do not ship commits on the parent branch by default unless the task says so.
 3. On return, **`UpdateTodo`** (`completed` or back to `pending` with notes). Reconcile git conflicts before spawning dependents.
 
-**`ListSubagents`** / **`GetAgentMessages`** when a wait times out — subagents keep running detached.
+**`ListAgents`** (`agent_types: ["subagent"]`) / **`GetAgentMessages`** when a wait times out — subagents keep running detached.
 
 Do **not** nest orchestration: subagents cannot **`StartSubagent`**, **`UpdateSession`**, or own end-of-turn shipping for the parent PR.
 
