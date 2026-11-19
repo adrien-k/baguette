@@ -399,7 +399,8 @@ export default function BuilderForm({
 
   const isLoop = mode === 'loop';
   const hasMcpOrPlugins = mcpCatalog.length > 0 || availablePlugins.length > 0;
-  const hasFormOptions = skillCatalog.length > 0 || (!isLoop && !isGlobal);
+  const showBranchNameField = !isLoop && !isGlobal && sessionStartMode !== 'same-branch';
+  const hasFormOptions = skillCatalog.length > 0 || showBranchNameField;
   const skillPreloadBlock =
     skillCatalog.length > 0 ? (
       <div>
@@ -467,7 +468,7 @@ export default function BuilderForm({
       model: model || undefined,
       modelParams: usesModelParams ? stringifyModelParams(finalParams) : undefined,
       createNewBranch,
-      branchName: branchName || undefined,
+      branchName: createNewBranch ? branchName || undefined : undefined,
       autoPush: autoPushEnabledForRepo(repoFullName, autoPush, linkedRepo),
       isShared,
       plugins: selectedPlugins.length > 0 ? selectedPlugins : undefined,
@@ -873,13 +874,11 @@ export default function BuilderForm({
         <div className="space-y-4">
           <div className="text-sm font-medium text-heading">Options</div>
           {skillPreloadBlock}
-          {!isLoop && !isGlobal && (
+          {showBranchNameField && (
             <div>
               <label className="block text-sm font-medium text-secondary mb-1">
                 Branch name{' '}
-                <span className="text-faint font-normal">
-                  (optional, for Start — auto-generated if empty)
-                </span>
+                <span className="text-faint font-normal">(optional, auto-generated if empty)</span>
               </label>
               <input
                 type="text"
