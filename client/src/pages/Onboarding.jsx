@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { usersService } from '../feathers.js';
 import { useAuth } from '../hooks/useAuth.jsx';
+import { useAgentConfigs } from '../hooks/useAgentConfigs.js';
 import { toastError } from '../utils/toastError.jsx';
 import BaguetteIcon from '../components/svg/BaguetteIcon.jsx';
 import {
@@ -95,6 +96,7 @@ function renderOnboardingStep(stepId, handlers) {
 
 export default function Onboarding() {
   const { user, github, setUser, refreshAuth } = useAuth();
+  const { reload: reloadAgentConfigs } = useAgentConfigs();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [hasGithubPat, setHasGithubPat] = useState(false);
@@ -143,6 +145,7 @@ export default function Onboarding() {
     }
     setCompleting(true);
     try {
+      await reloadAgentConfigs({ silent: true });
       await usersService.patch(user.id, { onboarding_completed: true });
       setUser((prev) => ({ ...prev, onboarding_completed: true }));
       navigate('/');

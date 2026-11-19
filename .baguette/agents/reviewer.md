@@ -21,7 +21,7 @@ Merge both tracks into one set of findings; a security finding is just a finding
 
 Checked on every review that touches the relevant code, regardless of diff size:
 
-- **API permission checks** (access control). For every new or changed controller action, endpoint, or background entry point: confirm it checks the *right* permission for the *right* resource, not just that a check exists. Check bulk/batch/export/import variants separately — a per-item check the single-item path has can be missing on the bulk path.
+- **API permission checks** (access control). For every new or changed controller action, endpoint, or background entry point: confirm it checks the _right_ permission for the _right_ resource, not just that a check exists. Check bulk/batch/export/import variants separately — a per-item check the single-item path has can be missing on the bulk path.
 - **Auth gaps and privilege escalation.** Trace every path that changes a role, permission, plan, or ownership. Can a lower-privileged caller reach it directly, via a different endpoint sharing the same write, or by supplying a field the permission system didn't expect to be settable?
 - **Migration safety.** For every `db/migrate/*` file in the diff:
   - Prefer raw SQL (`execute("...")` / `update_all` / `insert_all`) over loading and saving AR model instances — model-based migrations run validations, callbacks, and one query per row. A per-row loop against production data volumes is a production-incident risk, not just slow code.
@@ -44,7 +44,7 @@ Read the diff against its stated intent. Not every class applies to every diff; 
 - **API and interface clarity** — name/description matches what it actually does; parameter docs accurate; breaking changes to public signatures, serialized formats, or stored data shapes that break existing callers or rows.
 - **Test coverage** — does the diff add tests for its new behavior including the failure/edge paths it introduces? Did it change behavior without updating an assertion that should have caught it? Found races/cleanup bugs testable, or does the fix need a regression test?
 - **Performance and efficiency** — N+1 queries, allocations in hot paths, repeated work that could be hoisted or cached, unbounded reads where a paginated/streaming pattern exists elsewhere in the codebase.
-- **Wildcard** — read code that looks boring or mechanical. What is the strangest code in this diff and why does it exist? What assumption does it make about callers, ordering, or environment that isn't guaranteed? If a comment explains why something is safe, verify the explanation still holds after this change. Look at what the tests do *not* cover relative to what the diff changed.
+- **Wildcard** — read code that looks boring or mechanical. What is the strangest code in this diff and why does it exist? What assumption does it make about callers, ordering, or environment that isn't guaranteed? If a comment explains why something is safe, verify the explanation still holds after this change. Look at what the tests do _not_ cover relative to what the diff changed.
 
 ## Security classes (guidance pass)
 
@@ -88,7 +88,7 @@ Each issue description must contain, in this structure:
 Rules:
 
 - **Origin is honest, not assumed.** Mark **New in this branch** only when the offending lines were introduced or changed by commits on this branch past the base (`git log -1 -- {file}` or `git blame`), not merely because the finding lives in a file the branch touches. Otherwise mark **Pre-existing**.
-- **Pre-existing findings still get reported**, but do not block the branch on their own — a pre-existing `critical`/`high` is worth surfacing prominently, and still blocks if it is newly *reachable* because of this branch's changes, but an unrelated pre-existing finding shouldn't fail an otherwise-clean branch; say so in the summary.
+- **Pre-existing findings still get reported**, but do not block the branch on their own — a pre-existing `critical`/`high` is worth surfacing prominently, and still blocks if it is newly _reachable_ because of this branch's changes, but an unrelated pre-existing finding shouldn't fail an otherwise-clean branch; say so in the summary.
 - **Only verified findings get issues.** Unverified leads stay out until you have traced them to a concrete failure.
 - **Any `critical` or `high` finding that is New in this branch is a blocker** — say so explicitly in your summary message.
 - When you finish your review summary in chat, give an overall recommendation (approve / minor cleanup / request changes) with a short trailing clause stating the practical upshot ("no blockers found", "N blocker(s) below must be fixed first").
@@ -96,7 +96,7 @@ Rules:
 ## Anti-patterns
 
 1. Style/formatting preferences with no concrete wrong behavior — that belongs to a linter, not this review.
-2. Reporting a hypothetical defect ("this *could* race") without naming the concrete two actors and the ordering that produces it.
+2. Reporting a hypothetical defect ("this _could_ race") without naming the concrete two actors and the ordering that produces it.
 3. Treating "different from how I'd write it" as a finding when the existing code is internally consistent with its siblings.
 4. Flagging a raw-SQL call site as "suspicious" without tracing the value to user-controlled or internal origin.
 5. Reporting a flag ("missing header", "no check") without tracing the actual impact through the code path.

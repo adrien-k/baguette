@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { agentConfigsService } from '../../feathers.js';
+import { useAgentConfigs } from '../../hooks/useAgentConfigs.js';
 import { toastError } from '../../utils/toastError.jsx';
 import { parseAgentDefaultModelJson } from '@baguette/shared/agent-default-model.js';
 import AgentConfigLogo from '../../components/AgentConfigLogo.jsx';
@@ -20,25 +21,11 @@ function defaultModelLabel(config) {
 }
 
 export default function AgentConfigsList() {
-  const [configs, setConfigs] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { configs, loading, reload } = useAgentConfigs();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
-
-  const reload = useCallback(() => {
-    setLoading(true);
-    return agentConfigsService
-      .find()
-      .then((res) => setConfigs(res.data ?? []))
-      .catch((err) => toastError('Failed to load agent configurations', err))
-      .finally(() => setLoading(false));
-  }, []);
-
-  useEffect(() => {
-    reload();
-  }, [reload]);
 
   const openCreate = () => {
     setEditing(null);
@@ -78,8 +65,8 @@ export default function AgentConfigsList() {
       config={editing}
       onSaved={() => reload()}
       onConfigUpdated={(updated) => {
-        setConfigs((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
         setEditing(updated);
+        reload();
       }}
       onDelete={editing?.id ? () => setConfirmDelete(editing) : undefined}
     />
