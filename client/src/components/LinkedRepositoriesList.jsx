@@ -1,16 +1,15 @@
 import { repoDisplayName, repoAccessModeLabel } from '../utils/repoDisplayName.js';
+import GroupedRepositoriesList from './GroupedRepositoriesList.jsx';
 
 /**
  * Read-only list of repositories linked to the current user (Settings / onboarding).
  */
 export default function LinkedRepositoriesList({ repos, emptyMessage = 'No repositories added' }) {
-  if (repos.length === 0) {
-    return <p className="text-faint text-sm text-center py-4">{emptyMessage}</p>;
-  }
-
   return (
-    <div className="divide-y divide-line">
-      {repos.map((r) => (
+    <GroupedRepositoriesList
+      repos={repos}
+      emptyMessage={repos.length === 0 ? emptyMessage : undefined}
+      renderRepo={(r) => (
         <div key={r.id} className="flex items-center justify-between gap-3 py-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -27,7 +26,7 @@ export default function LinkedRepositoriesList({ repos, emptyMessage = 'No repos
             </div>
           </div>
         </div>
-      ))}
-    </div>
+      )}
+    />
   );
 }

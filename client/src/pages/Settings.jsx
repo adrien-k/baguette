@@ -23,6 +23,7 @@ import McpAccessSection from '../components/McpAccessSection.jsx';
 import McpServersSection from '../components/McpServersSection.jsx';
 import RepoSearchInput from '../components/RepoSearchInput.jsx';
 import PublicRepoSearchInput from '../components/PublicRepoSearchInput.jsx';
+import GroupedRepositoriesList from '../components/GroupedRepositoriesList.jsx';
 import { SecretsTab, SkillsTab, PluginsTab } from './settings/GlobalSettingsSections.jsx';
 import AgentSettingsTab from './settings/AgentSettingsTab.jsx';
 import AccountSettingsTab from './settings/AccountSettingsTab.jsx';
@@ -336,11 +337,10 @@ function RepositoriesTab({ settings, onSave }) {
             </div>
           )}
 
-          <div className="divide-y divide-line">
-            {repos.length === 0 && (
-              <p className="text-faint text-sm text-center py-8">No repositories added</p>
-            )}
-            {repos.map((r) => (
+          <GroupedRepositoriesList
+            repos={repos}
+            emptyMessage="No repositories added"
+            renderRepo={(r) => (
               <div key={r.id} className="flex items-center justify-between gap-3 py-3">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
@@ -378,8 +378,8 @@ function RepositoriesTab({ settings, onSave }) {
                   Remove
                 </button>
               </div>
-            ))}
-          </div>
+            )}
+          />
         </SettingsSection>
       </div>
 

@@ -20,7 +20,8 @@ import { BANNER_WARN, INPUT_CLASS, TEXT_MUTED, TEXT_PRIMARY } from '../../utils/
 import UserAvatar from '../../components/UserAvatar.jsx';
 import { formatRelativeTime } from '../../utils/dates.js';
 import { countryCodeToFlagEmoji } from '../../utils/countryFlag.js';
-import { repoAccessModeLabel } from '../../utils/repoDisplayName.js';
+import { repoAccessModeLabel, repoDisplayName } from '../../utils/repoDisplayName.js';
+import GroupedRepositoriesList from '../../components/GroupedRepositoriesList.jsx';
 import { useAuth } from '../../hooks/useAuth.jsx';
 import { USER_STATUS_APPROVED, USER_STATUS_REVOKED } from '@baguette/shared/user-status.js';
 
@@ -224,19 +225,23 @@ export function AllRepositoriesSection() {
         headerAside={<SystemWideBadge />}
         description="Who linked each repository, how many sessions it has, and whether the clone is on disk."
       >
-        <div className="divide-y divide-line">
-          {repos.length === 0 && (
-            <p className="text-faint text-sm text-center py-8">No repositories registered</p>
-          )}
-          {repos.map((r) => (
+        <GroupedRepositoriesList
+          repos={repos}
+          emptyMessage="No repositories registered"
+          renderRepo={(r) => (
             <div key={r.id} className="flex items-center justify-between py-3 gap-3">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <code className="text-sm text-fg font-medium">{r.full_name}</code>
+                  <code className="text-sm text-fg font-medium">
+                    {repoDisplayName(r.full_name)}
+                  </code>
                   <span className="text-xs bg-control-hover text-secondary px-1.5 py-0.5 rounded font-mono">
                     {repoAccessModeLabel(r)}
                   </span>
                 </div>
+                {r.full_name.startsWith('/') ? (
+                  <div className="text-xs text-faint mt-0.5 font-mono truncate">{r.full_name}</div>
+                ) : null}
                 <div className="text-xs text-faint mt-0.5">
                   {r.session_count} session(s) · {r.exists_on_fs ? 'On disk' : 'Not on disk'}
                 </div>
@@ -270,8 +275,8 @@ export function AllRepositoriesSection() {
                 Delete
               </button>
             </div>
-          ))}
-        </div>
+          )}
+        />
 
         {confirmDelete && (
           <Modal maxWidth="max-w-md" padding="p-5">
