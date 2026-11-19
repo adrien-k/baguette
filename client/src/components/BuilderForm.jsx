@@ -783,24 +783,6 @@ export default function BuilderForm({
         </div>
       )}
 
-      {!isLoop && !isGlobal && (
-        <div>
-          <label className="block text-sm font-medium text-secondary mb-1">
-            Branch name{' '}
-            <span className="text-faint font-normal">
-              (optional, for Start — auto-generated if empty)
-            </span>
-          </label>
-          <input
-            type="text"
-            value={branchName}
-            onChange={(e) => setBranchName(e.target.value)}
-            placeholder="my-feature-branch"
-            className={`${INPUT_CLASS} focus:border-transparent`}
-          />
-        </div>
-      )}
-
       <div>
         {!isLoop && (
           <div className="flex flex-wrap items-baseline justify-end gap-2 mb-1">
@@ -962,6 +944,24 @@ export default function BuilderForm({
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {!isLoop && !isGlobal && (
+        <div>
+          <label className="block text-sm font-medium text-secondary mb-1">
+            Branch name{' '}
+            <span className="text-faint font-normal">
+              (optional, for Start — auto-generated if empty)
+            </span>
+          </label>
+          <input
+            type="text"
+            value={branchName}
+            onChange={(e) => setBranchName(e.target.value)}
+            placeholder="my-feature-branch"
+            className={`${INPUT_CLASS} focus:border-transparent`}
+          />
         </div>
       )}
     </div>
