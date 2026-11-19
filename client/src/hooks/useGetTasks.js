@@ -14,7 +14,8 @@ function tasksQueryFilter(sessionId, status) {
 /**
  * Returns tasks, optionally filtered by sessionId/status. Realtime updates
  * (created/patched/removed, incl. tasks leaving a status filter) are applied
- * to the query cache by the central `sseCacheBridge`.
+ * to the query cache by the central `sseCacheBridge`. A reconnect reloads the
+ * list from the server, then applies events that arrived during the reload.
  */
 export function useGetTasks({ sessionId = null, status = null, skip = false } = {}) {
   const enabled = !skip;

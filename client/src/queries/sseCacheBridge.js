@@ -23,6 +23,7 @@ import {
   sessionPlanKeys,
   sessionTodoKeys,
 } from './keys.js';
+import { runAfterReconnectResync } from './reconnectResync.js';
 import { getRealtimeScope } from './realtimeScope.js';
 import {
   applyAgentEventToDetail,
@@ -205,26 +206,33 @@ function sameSessionId(a, b) {
  * every listener (useful for tests).
  */
 export function startSseCacheBridge(queryClient) {
-  const onSessionUpsert = (session) => upsertSessionEvent(queryClient, session);
-  const onSessionRemove = (session) => removeSessionEvent(queryClient, session);
-  const onAgentPatch = (agent) => applyAgentPatchEvent(queryClient, agent);
-  const onAgentRemove = (agent) => applyAgentRemoveEvent(queryClient, agent);
-  const onMessageUpsert = (message) => upsertMessageEvent(queryClient, message);
-  const onRepoChange = () => {
+  // While a reconnect reload is in flight, hold events and apply them onto the
+  // server snapshot. Applying them immediately loses to that snapshot.
+  const live =
+    (fn) =>
+    (...args) =>
+      runAfterReconnectResync(() => fn(...args));
+
+  const onSessionUpsert = live((session) => upsertSessionEvent(queryClient, session));
+  const onSessionRemove = live((session) => removeSessionEvent(queryClient, session));
+  const onAgentPatch = live((agent) => applyAgentPatchEvent(queryClient, agent));
+  const onAgentRemove = live((agent) => applyAgentRemoveEvent(queryClient, agent));
+  const onMessageUpsert = live((message) => upsertMessageEvent(queryClient, message));
+  const onRepoChange = live(() => {
     void queryClient.invalidateQueries({ queryKey: repoKeys.all, refetchType: 'active' });
-  };
-  const onTaskCreated = (task) => taskEvent(queryClient, task, 'created');
-  const onTaskPatched = (task) => taskEvent(queryClient, task, 'patched');
-  const onTaskRemoved = (task) => taskEvent(queryClient, task, 'removed');
-  const onUserPatched = (user) => applyUserPatchEvent(queryClient, user);
-  const onIssueCreated = (issue) => issueEvent(queryClient, issue, 'created');
-  const onIssuePatched = (issue) => issueEvent(queryClient, issue, 'patched');
-  const onIssueRemoved = (issue) => issueEvent(queryClient, issue, 'removed');
-  const onPlanChange = (plan) => planEvent(queryClient, plan);
-  const onTodoChange = (todo) => todoEvent(queryClient, todo);
-  const onLoopChange = () => loopEvent(queryClient);
-  const onPresetChange = (preset) => upsertPresetEvent(queryClient, preset);
-  const onPresetRemove = (preset) => removePresetEvent(queryClient, preset);
+  });
+  const onTaskCreated = live((task) => taskEvent(queryClient, task, 'created'));
+  const onTaskPatched = live((task) => taskEvent(queryClient, task, 'patched'));
+  const onTaskRemoved = live((task) => taskEvent(queryClient, task, 'removed'));
+  const onUserPatched = live((user) => applyUserPatchEvent(queryClient, user));
+  const onIssueCreated = live((issue) => issueEvent(queryClient, issue, 'created'));
+  const onIssuePatched = live((issue) => issueEvent(queryClient, issue, 'patched'));
+  const onIssueRemoved = live((issue) => issueEvent(queryClient, issue, 'removed'));
+  const onPlanChange = live((plan) => planEvent(queryClient, plan));
+  const onTodoChange = live((todo) => todoEvent(queryClient, todo));
+  const onLoopChange = live(() => loopEvent(queryClient));
+  const onPresetChange = live((preset) => upsertPresetEvent(queryClient, preset));
+  const onPresetRemove = live((preset) => removePresetEvent(queryClient, preset));
 
   sessionsService.on('created', onSessionUpsert);
   sessionsService.on('updated', onSessionUpsert);

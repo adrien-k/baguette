@@ -1,6 +1,6 @@
 import { feathers } from 'feathers';
 import { fetchClient } from 'feathers/client';
-import { consumeSkipSseReconnectRefetch, notifySseReconnect } from './utils/sseReconnect.js';
+import { notifySseReconnect } from './utils/sseReconnect.js';
 import { configureSsePauseAndReconnect } from './utils/sseClientLifecycle.js';
 
 const fetchWithCreds = (url, init) => window.fetch(url, { credentials: 'include', ...init });
@@ -42,9 +42,7 @@ sseService.on('connected', (controller) => {
   sseAbortController = controller;
   if (hadSseOpen) {
     if (document.visibilityState !== 'hidden' && navigator.onLine) {
-      if (!consumeSkipSseReconnectRefetch()) {
-        notifySseReconnect();
-      }
+      notifySseReconnect();
     }
   } else {
     hadSseOpen = true;

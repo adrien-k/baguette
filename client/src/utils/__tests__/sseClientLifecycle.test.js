@@ -1,11 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { configureSsePauseAndReconnect } from '../sseClientLifecycle.js';
-import {
-  consumeSkipSseReconnectRefetch,
-  resetSseReconnectStateForTests,
-  subscribeSseResumeCatchUp,
-  subscribeSseStreamPaused,
-} from '../sseReconnect.js';
+import { subscribeSseStreamPaused } from '../sseReconnect.js';
 
 function createHarness({ visibility = 'visible', online = true, reconnectDelayMs = 0 } = {}) {
   const listeners = {
@@ -80,7 +75,6 @@ describe('configureSsePauseAndReconnect', () => {
   });
 
   afterEach(() => {
-    resetSseReconnectStateForTests();
     vi.unstubAllGlobals();
     vi.useRealTimers();
   });
@@ -178,11 +172,8 @@ describe('configureSsePauseAndReconnect', () => {
     unsubscribe();
   });
 
-  it('runs resume catch-up before app.setup when the tab becomes visible', async () => {
+  it('tears down and opens the stream when the tab becomes visible', async () => {
     const order = [];
-    const unsubscribe = subscribeSseResumeCatchUp(async () => {
-      order.push('catch-up');
-    });
     const harness = createHarness({ visibility: 'hidden' });
     harness.app.teardown = vi.fn().mockImplementation(async () => {
       order.push('teardown');
@@ -200,15 +191,11 @@ describe('configureSsePauseAndReconnect', () => {
     for (const handler of harness.listeners.visibilitychange) {
       handler();
     }
-    await vi.waitFor(() => expect(order).toEqual(['catch-up', 'teardown', 'setup']));
-    unsubscribe();
+    await vi.waitFor(() => expect(order).toEqual(['teardown', 'setup']));
   });
 
-  it('waits out the resume delay before catch-up, then opens the stream immediately', async () => {
+  it('waits out the resume delay before opening the stream', async () => {
     const order = [];
-    const unsubscribe = subscribeSseResumeCatchUp(async () => {
-      order.push('catch-up');
-    });
     const harness = createHarness({ visibility: 'hidden', reconnectDelayMs: 500 });
     harness.app.teardown = vi.fn().mockImplementation(async () => {
       order.push('teardown');
@@ -229,8 +216,7 @@ describe('configureSsePauseAndReconnect', () => {
     await vi.advanceTimersByTimeAsync(499);
     expect(order).toEqual([]);
     await vi.advanceTimersByTimeAsync(1);
-    await vi.waitFor(() => expect(order).toEqual(['catch-up', 'teardown', 'setup']));
-    unsubscribe();
+    await vi.waitFor(() => expect(order).toEqual(['teardown', 'setup']));
   });
 
   it('can reconnect after the tab hides during the resume delay', async () => {
@@ -249,7 +235,6 @@ describe('configureSsePauseAndReconnect', () => {
     for (const handler of harness.listeners.visibilitychange) {
       handler();
     }
-    expect(consumeSkipSseReconnectRefetch()).toBe(false);
     harness.state.visibility = 'visible';
     for (const handler of harness.listeners.visibilitychange) {
       handler();

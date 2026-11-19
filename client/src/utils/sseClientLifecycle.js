@@ -1,9 +1,4 @@
-import {
-  clearSkipSseReconnectRefetch,
-  clearSseFocusRefetchSuppression,
-  notifySseStreamPaused,
-  runSseResumeCatchUp,
-} from './sseReconnect.js';
+import { notifySseStreamPaused } from './sseReconnect.js';
 
 /** Wait before reopening SSE so the network can settle (hidden/offline or after a drop). */
 const SSE_RECONNECT_DELAY_MS = 500;
@@ -110,34 +105,17 @@ export function configureSsePauseAndReconnect({
     enterPausedState();
   };
 
-  const abandonResume = () => {
-    clearSkipSseReconnectRefetch();
-  };
-
-  const openStreamAfterCatchUp = async (markSetupStarted) => {
+  const openStream = async (markSetupStarted) => {
     const waited = await waitBeforeCatchUp();
     if (waited !== 'ready') return;
+    if (!started || !shouldStayConnected() || isStreamOpen()) return;
+    await app.teardown();
     if (!started || !shouldStayConnected()) return;
-    try {
-      await runSseResumeCatchUp();
-      if (!started || !shouldStayConnected() || isStreamOpen()) {
-        abandonResume();
-        return;
-      }
-      await app.teardown();
-      if (!started || !shouldStayConnected()) {
-        abandonResume();
-        return;
-      }
-      markSetupStarted();
-      await app.setup();
-      // The controller arrives on `connected`, which clears `paused` when the
-      // tab is still visible. Do not treat a resolved setup as a live stream.
-      if (started && shouldStayConnected() && isStreamOpen()) paused = false;
-    } catch (error) {
-      abandonResume();
-      throw error;
-    }
+    markSetupStarted();
+    await app.setup();
+    // The controller arrives on `connected`, which clears `paused` when the
+    // tab is still visible. Do not treat a resolved setup as a live stream.
+    if (started && shouldStayConnected() && isStreamOpen()) paused = false;
   };
 
   const reconnect = () => {
@@ -147,10 +125,10 @@ export function configureSsePauseAndReconnect({
     if (reconnectWork != null) return;
     // `app.setup()` resolves before the SSE `connected` event stores the
     // AbortController. Retry only when that call never started (delay aborted
-    // or catch-up bailed). A handshake that is still opening is left alone
+    // or teardown bailed). A handshake that is still opening is left alone
     // until `connected` or `disconnected`.
     let setupStarted = false;
-    const work = openStreamAfterCatchUp(() => {
+    const work = openStream(() => {
       setupStarted = true;
     });
     reconnectWork = work.finally(() => {
@@ -215,7 +193,6 @@ export function configureSsePauseAndReconnect({
     paused = false;
     clearReconnectTimer();
     pauseStream();
-    clearSseFocusRefetchSuppression();
   };
 
   return { start, stop };

@@ -1,8 +1,7 @@
 import { QueryClient } from '@tanstack/react-query';
 import { isFeathersError } from '../utils/feathersErrors.js';
-import { isSseFocusRefetchSuppressed } from '../utils/sseReconnect.js';
 
-/** How long cached data is considered fresh (no refetch on mount/focus). */
+/** How long cached data is considered fresh (no refetch on mount). */
 const STALE_TIME_MS = 30_000;
 /** Infinite retry budget for unexpected failures; 4xx errors never retry. */
 const MAX_RETRIES = 3;
@@ -16,14 +15,18 @@ function shouldRetry(failureCount, error) {
 /**
  * App-wide TanStack Query client. Server state for all Feathers services lives
  * here; the Feathers fetch+SSE transport keeps running underneath it.
+ *
+ * Focus and browser-online refetch stay off. Those refetches race the SSE
+ * cache bridge and replace a live cache with a stale HTTP snapshot. Reconnect
+ * reloads active queries in one place (`reconnectResync.js`) instead.
  */
 export function createAppQueryClient() {
   return new QueryClient({
     defaultOptions: {
       queries: {
         staleTime: STALE_TIME_MS,
-        refetchOnWindowFocus: () => !isSseFocusRefetchSuppressed(),
-        refetchOnReconnect: true,
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
         retry: shouldRetry,
       },
       mutations: {
@@ -31,37 +34,4 @@ export function createAppQueryClient() {
       },
     },
   });
-}
-
-/**
- * Active-query catch-up while the SSE stream is still paused (before setup).
- * A `setQueryData` during an in-flight queryFn is reapplied afterward — TanStack
- * replaces the cache with the HTTP snapshot when the fetch resolves.
- * `cancelRefetch: true` drops a focus or pre-hide request so the queryFn runs
- * after the resume delay, not against that earlier snapshot.
- */
-export async function refetchActiveQueriesForResumeCatchUp(queryClient) {
-  /** @type {Map<string, unknown>} */
-  const manualWrites = new Map();
-  const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
-    if (event.type !== 'updated' || !event.action?.manual) return;
-    manualWrites.set(event.query.queryHash, event.action.data);
-  });
-  try {
-    await queryClient.refetchQueries({ type: 'active' }, { cancelRefetch: true });
-  } finally {
-    unsubscribe();
-  }
-  for (const query of queryClient.getQueryCache().findAll({ type: 'active' })) {
-    if (!manualWrites.has(query.queryHash)) continue;
-    queryClient.setQueryData(query.queryKey, manualWrites.get(query.queryHash));
-  }
-}
-
-/**
- * Refetch mounted queries after a visible-tab SSE drop (stream was never paused).
- * `cancelRefetch: false` avoids cancelling an in-flight fetch and racing live events.
- */
-export function refetchActiveQueriesOnSseReconnect(queryClient) {
-  void queryClient.refetchQueries({ type: 'active' }, { cancelRefetch: false });
 }

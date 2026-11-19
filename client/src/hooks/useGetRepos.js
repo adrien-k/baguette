@@ -6,9 +6,8 @@ import { feathersFind } from '../queries/feathersFinders.js';
 import { toastFeathersError } from '../utils/toastError.jsx';
 
 /**
- * Repos visible to the current user. Realtime created/removed events and SSE
- * reconnect refetches are handled by the central `sseCacheBridge` and the
- * global reconnect wiring.
+ * Repos visible to the current user. Realtime created/removed events are applied
+ * by the central `sseCacheBridge`. A reconnect reloads the list from the server.
  */
 export function useGetRepos(enabled = true) {
   const [clearingCache, setClearingCache] = useState(false);

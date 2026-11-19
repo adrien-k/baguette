@@ -50,6 +50,7 @@ vi.mock('../../feathers.js', () => ({
 
 import { QueryClient } from '@tanstack/react-query';
 import { startSseCacheBridge } from '../sseCacheBridge.js';
+import { resyncActiveQueriesFromServer, resetReconnectResyncForTests } from '../reconnectResync.js';
 import { setRealtimeScope } from '../realtimeScope.js';
 import { sessionKeys, sessionIssueKeys, loopKeys, agentModelPresetKeys } from '../keys.js';
 
@@ -63,6 +64,7 @@ beforeEach(() => {
 
 afterEach(() => {
   stopBridge();
+  resetReconnectResyncForTests();
   setRealtimeScope({ repos: [], currentUserId: null });
   queryClient.clear();
 });
@@ -182,6 +184,27 @@ describe('sseCacheBridge', () => {
     mocks.messagesService.emit('created', { id: 2, session_id: 10, agent_id: 3 });
 
     expect(queryClient.getQueryData(agentScopedKey).pages[0]).toHaveLength(1);
+  });
+
+  it('holds message events until an in-flight reconnect reload finishes', async () => {
+    const allAgentsKey = ['messages', '10', null];
+    queryClient.setQueryData(allAgentsKey, {
+      pages: [[{ id: 1, session_id: 10, agent_id: 2 }]],
+      pageParams: [null],
+    });
+    let release;
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    queryClient.invalidateQueries = () => gate;
+
+    const pending = resyncActiveQueriesFromServer(queryClient);
+    mocks.messagesService.emit('created', { id: 2, session_id: 10, agent_id: 2 });
+    expect(queryClient.getQueryData(allAgentsKey).pages[0]).toHaveLength(1);
+
+    release();
+    await pending;
+    expect(queryClient.getQueryData(allAgentsKey).pages[0]).toHaveLength(2);
   });
 
   it('invalidates session counts when tasks or issues change', () => {
