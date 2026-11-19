@@ -51,6 +51,7 @@ export default [
   {
     ignores: [
       'node_modules/**',
+      '.claude/**',
       'client/node_modules/**',
       'dist/**',
       'client/dist/**',

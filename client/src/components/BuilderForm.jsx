@@ -39,6 +39,13 @@ import {
   stringifyModelParams,
 } from '../utils/models.js';
 import Toggle from './Toggle.jsx';
+import UsageLimitActionSelect from './UsageLimitActionSelect.jsx';
+import UsageLimitInput from './UsageLimitInput.jsx';
+import {
+  DEFAULT_USAGE_LIMIT_ACTION,
+  parseUsageLimit,
+  usageLimitInputText,
+} from '../utils/usageLimitActions.jsx';
 import { isSessionOwner } from '@baguette/shared/session-sharing.js';
 import { INPUT_CLASS, INLINE_SECONDARY_LINK_CLASS } from '../utils/ui.js';
 import { DROPDOWN_PANEL_CLASS } from '../utils/dropdownPanel.js';
@@ -152,6 +159,16 @@ export default function BuilderForm({
   const [autoPush, setAutoPush] = persistentState.useState('autoPush', true, {
     persistWhen: hasPromptText,
   });
+  const [usageLimitAction, setUsageLimitAction] = persistentState.useState(
+    'usageLimitAction',
+    editingLoop?.usage_limit_action ?? DEFAULT_USAGE_LIMIT_ACTION,
+    { persistWhen: hasPromptText }
+  );
+  const [usageLimitText, setUsageLimitText] = persistentState.useState(
+    'usageLimit',
+    usageLimitInputText(editingLoop?.usage_limit),
+    { persistWhen: hasPromptText }
+  );
   useEffect(() => {
     if (localRepo) setAutoPush(false);
   }, [localRepo, setAutoPush]);
@@ -435,7 +452,6 @@ export default function BuilderForm({
   const isLoop = mode === 'loop';
   const hasMcpOrPlugins = mcpCatalog.length > 0 || availablePlugins.length > 0;
   const showBranchNameField = !isLoop && !isGlobal && sessionStartMode !== 'same-branch';
-  const hasFormOptions = skillCatalog.length > 0 || showBranchNameField;
   const skillPreloadBlock =
     skillCatalog.length > 0 ? (
       <div>
@@ -453,9 +469,12 @@ export default function BuilderForm({
         />
       </div>
     ) : null;
+  // The dollar cap only exists under Continue: null = none, undefined = invalid text.
+  const usageCap = usageLimitAction === 'continue' ? parseUsageLimit(usageLimitText) : null;
   const canSubmit =
     !loopReadOnly &&
     !loading &&
+    usageCap !== undefined &&
     hasAgentConfig &&
     (isGlobal || (repos.length > 0 && repoFullName && branch)) &&
     (!isLoop || (Boolean(initialPrompt.trim()) && isScheduleComplete(schedule)));
@@ -505,6 +524,8 @@ export default function BuilderForm({
       createNewBranch,
       branchName: createNewBranch ? branchName || undefined : undefined,
       autoPush: autoPushEnabledForRepo(repoFullName, autoPush, linkedRepo),
+      usageLimitAction,
+      usageLimit: usageCap,
       isShared,
       plugins: selectedPlugins.length > 0 ? selectedPlugins : undefined,
       autoLoadSkills: selectedAutoLoadSkills.length > 0 ? selectedAutoLoadSkills : undefined,
@@ -534,6 +555,8 @@ export default function BuilderForm({
         single_session: singleSession,
         create_new_branch: false,
         auto_push: false,
+        usage_limit_action: payload.usageLimitAction,
+        usage_limit: payload.usageLimit,
         agent_config_id: payload.agentConfigId,
         model: payload.model ?? null,
         model_params: payload.modelParams ?? null,
@@ -553,6 +576,8 @@ export default function BuilderForm({
       single_session: singleSession,
       create_new_branch: newBranch,
       auto_push: autoPushEnabledForRepo(payload.repoFullName, payload.autoPush, linkedRepo),
+      usage_limit_action: payload.usageLimitAction,
+      usage_limit: payload.usageLimit,
       agent_config_id: payload.agentConfigId,
       model: payload.model ?? null,
       model_params: payload.modelParams ?? null,
@@ -902,27 +927,43 @@ export default function BuilderForm({
         </>
       )}
 
-      {hasFormOptions && (
-        <div className="space-y-4">
-          <div className="text-sm font-medium text-heading">Options</div>
-          {skillPreloadBlock}
-          {showBranchNameField && (
-            <div>
-              <label className="block text-sm font-medium text-secondary mb-1">
-                New branch name{' '}
-                <span className="text-faint font-normal">(optional, auto-generated if empty)</span>
-              </label>
-              <input
-                type="text"
-                value={branchName}
-                onChange={(e) => setBranchName(e.target.value)}
-                placeholder="my-feature-branch"
-                className={`${INPUT_CLASS} focus:border-transparent`}
-              />
-            </div>
-          )}
+      <div className="space-y-4">
+        <div className="text-sm font-medium text-heading">Options</div>
+        <div>
+          <label className="block text-sm font-medium text-secondary mb-1">
+            When a usage limit is reached
+          </label>
+          <UsageLimitActionSelect value={usageLimitAction} onChange={setUsageLimitAction} />
         </div>
-      )}
+
+        {usageLimitAction === 'continue' && (
+          <div>
+            <label className="block text-sm font-medium text-secondary mb-1">
+              Overage Usage limit{' '}
+              <span className="text-faint font-normal">
+                (USD of credits this session may spend — empty for unlimited)
+              </span>
+            </label>
+            <UsageLimitInput value={usageLimitText} onChange={setUsageLimitText} />
+          </div>
+        )}
+        {skillPreloadBlock}
+        {showBranchNameField && (
+          <div>
+            <label className="block text-sm font-medium text-secondary mb-1">
+              New branch name{' '}
+              <span className="text-faint font-normal">(optional, auto-generated if empty)</span>
+            </label>
+            <input
+              type="text"
+              value={branchName}
+              onChange={(e) => setBranchName(e.target.value)}
+              placeholder="my-feature-branch"
+              className={`${INPUT_CLASS} focus:border-transparent`}
+            />
+          </div>
+        )}
+      </div>
 
       {hasMcpOrPlugins && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">

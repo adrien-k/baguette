@@ -2,7 +2,7 @@ import { resolveDataDirRelativePath } from '../config.js';
 import { loadBuiltinSkills } from './builtin-skills.js';
 import { loadProjectSkills } from './project-skills.js';
 
-export const AUTO_LOAD_SKILLS_MAX = 20;
+const AUTO_LOAD_SKILLS_MAX = 20;
 
 export function parseAutoLoadSkillLabels(value) {
   if (Array.isArray(value)) {

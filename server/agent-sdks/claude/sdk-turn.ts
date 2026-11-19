@@ -62,8 +62,22 @@ export type ClaudeStreamCallbacks = {
   trackBackgroundTasks?: boolean;
 };
 
+/** A usage limit that must end the turn (see `ClaudeUsageLimitGuard`). */
+export type ClaudeUsageLimitHit = { reason: string; resetAtMs: number | null };
+
 export type ProcessClaudeQueryStreamOptions = {
   writer?: MessageStreamWriter | null;
+  /** Inspects each persisted message; a returned hit stops the stream. */
+  usageGuard?: {
+    observe(message: SDKMessage): ClaudeUsageLimitHit | null;
+    checkpointDue?(): boolean;
+  } | null;
+  /**
+   * Re-reads the plan's limits; a returned hit stops the turn. Run whenever the guard says a
+   * checkpoint is due (every 10 tool calls / ~$1), so a window that fills mid-turn cannot
+   * quietly roll into paid overage.
+   */
+  usageCheck?: (() => Promise<ClaudeUsageLimitHit | null>) | null;
   abortSignal?: AbortSignal;
 } & ClaudeStreamCallbacks;
 
@@ -73,6 +87,8 @@ export type ProcessClaudeQueryStreamResult = {
   outcome: ClaudeStreamTurnOutcome;
   /** Last `result` message seen in this consume pass (may follow background auto-resume). */
   lastResult: SDKMessage | null;
+  /** Set when the usage guard ended the stream early. */
+  usageLimit: ClaudeUsageLimitHit | null;
 };
 
 type TaskStartedMessage = SDKMessage & {
@@ -125,7 +141,10 @@ export async function processClaudeQueryStream(
     onStreamError,
     persistMessage,
     trackBackgroundTasks = false,
+    usageGuard,
+    usageCheck,
   } = options;
+  let usageLimit: ClaudeUsageLimitHit | null = null;
 
   const pendingBackgroundTaskIds = new Set<string>();
   let awaitingStreamContinuation = false;
@@ -244,7 +263,20 @@ export async function processClaudeQueryStream(
         }
       }
 
-      await persistSdkMessage(message);
+      // The guard sees the message first: a tripping rate-limit event is replaced by the
+      // session's own limit notice (stop / waiting until reset) instead of the generic row.
+      usageLimit = usageGuard?.observe(message) ?? null;
+      if (!usageLimit && usageCheck && usageGuard?.checkpointDue?.()) {
+        usageLimit = await usageCheck().catch(() => null);
+      }
+      if (!(usageLimit && message.type === 'rate_limit_event')) {
+        await persistSdkMessage(message);
+      }
+      if (usageLimit) {
+        outcome = 'stopped';
+        if (message.type === 'result') lastResult = message;
+        break;
+      }
 
       if (message.type === 'result' && !isModelLessResultMessage(message)) {
         turnComplete = true;
@@ -289,7 +321,7 @@ export async function processClaudeQueryStream(
     // real verdict (e.g. it decided the pushed prompt needed no model turn). Close the
     // turn out with the model-less result — the pre-fix behavior — instead of leaving
     // the loop to report "ended without completing".
-    if (modelLessResult && !turnComplete) {
+    if (modelLessResult && !turnComplete && !usageLimit) {
       turnComplete = true;
       const resultMsg = modelLessResult as SDKMessage & {
         subtype?: string;
@@ -312,5 +344,5 @@ export async function processClaudeQueryStream(
 
   await flushDeferredTurnResult();
 
-  return { turnComplete, streamFailed, outcome, lastResult };
+  return { turnComplete, streamFailed, outcome, lastResult, usageLimit };
 }

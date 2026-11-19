@@ -895,6 +895,8 @@ export default function Session() {
     createNewBranch,
     branchName,
     autoPush,
+    usageLimitAction,
+    usageLimit,
     plugins,
     autoLoadSkills,
     mcpServers,
@@ -917,6 +919,8 @@ export default function Session() {
             repos.find((r) => r.full_name === repoFullName)
           ),
         };
+    if (usageLimitAction) params.usage_limit_action = usageLimitAction;
+    if (usageLimit != null) params.usage_limit = usageLimit;
     if (agentConfigId) params.agent_config_id = agentConfigId;
     if (model) params.model = model;
     if (modelParams) params.model_params = modelParams;

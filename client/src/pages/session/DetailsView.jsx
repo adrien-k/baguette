@@ -23,6 +23,7 @@ import McpSessionServers from '../../components/McpSessionServers.jsx';
 import { useCurrentUser } from '../../context/CurrentUserContext.jsx';
 import { isSessionOwner } from '@baguette/shared/session-sharing.js';
 import Toggle from '../../components/Toggle.jsx';
+import SubscriptionCard from '../../components/SubscriptionCard.jsx';
 
 const SECTION_HEADING_CLASS = 'text-xs font-medium uppercase tracking-wide text-faint';
 
@@ -189,7 +190,7 @@ export default function DetailsView({ session, readonly, onSessionUpdate }) {
   const showCost = usage?.breakdown?.some((row) => row.cost_usd > 0);
 
   return (
-    <div className="flex-1 min-h-0 overflow-auto bg-page p-4 sm:p-6">
+    <div className="flex-1 min-h-0 overflow-auto bg-page p-4 pb-16 sm:p-6 sm:pb-20">
       <div className={`${SESSION_CONTENT_MAX_WIDTH_CLASS} space-y-4`}>
         <DetailsCard label="Description">
           <div className="space-y-3">
@@ -399,6 +400,12 @@ export default function DetailsView({ session, readonly, onSessionUpdate }) {
             </>
           )}
         </DetailsCard>
+
+        <SubscriptionCard
+          session={session}
+          locked={settingsLocked}
+          onSessionUpdate={onSessionUpdate}
+        />
       </div>
     </div>
   );

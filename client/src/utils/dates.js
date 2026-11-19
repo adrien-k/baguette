@@ -58,6 +58,30 @@ export function formatMessageDateTimeTooltip(isoString) {
   });
 }
 
+/** Browser UTC offset as "UTC", "UTC+1", "UTC-5" or "UTC+5:30" for the given instant. */
+function formatUtcOffset(date) {
+  const minutes = -date.getTimezoneOffset();
+  if (minutes === 0) return 'UTC';
+  const sign = minutes > 0 ? '+' : '-';
+  const abs = Math.abs(minutes);
+  const hours = Math.floor(abs / 60);
+  const rest = abs % 60;
+  return `UTC${sign}${hours}${rest ? `:${String(rest).padStart(2, '0')}` : ''}`;
+}
+
+/** Absolute time in the browser's timezone with its offset: "Nov 18, 9:10 PM UTC+1". */
+export function formatDateTimeWithZone(isoString) {
+  const date = parseIsoDate(isoString);
+  if (!date) return '';
+  const local = date.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+  return `${local} ${formatUtcOffset(date)}`;
+}
+
 /** Month, day, and time without year (commits, scheduled messages). */
 export function formatMonthDayTime(isoString) {
   const date = parseIsoDate(isoString);

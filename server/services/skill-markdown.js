@@ -1,8 +1,8 @@
 import * as yaml from 'js-yaml';
 
-export const SKILL_LABEL_MAX = 120;
-export const SKILL_DESCRIPTION_MAX = 2000;
-export const SKILL_CONTENT_MAX = 200_000;
+const SKILL_LABEL_MAX = 120;
+const SKILL_DESCRIPTION_MAX = 2000;
+const SKILL_CONTENT_MAX = 200_000;
 
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n([\s\S]*))?$/;
 

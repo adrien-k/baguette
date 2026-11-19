@@ -10,6 +10,10 @@ import {
   type SDKUserMessage,
   type SettingSource,
 } from '@anthropic-ai/claude-agent-sdk';
+import { ClaudeUsageLimitGuard } from './usage-limit.js';
+import { getLastResultTotals } from './usage-totals.js';
+import { allowsOverage, usageLimitStatusText } from '../../lib/usage-limit.js';
+import type { ClaudeUsageLimitHit } from './sdk-turn.ts';
 import logger from '../../logger.js';
 import { disableExternal } from '../../services/feathers/hooks.js';
 import { METADATA_TIMEOUT_MS } from '../../services/session-metadata.js';
@@ -494,6 +498,32 @@ export class ClaudeAgentService {
     });
     const { model, modelParams } = turnModel;
     const turnAgentConfigId = requireAgentConfigId(row.agent_config_id);
+
+    // Never start a turn on a used-up plan window: providers would keep serving it on paid
+    // overage. Applies to every agent of the session (builder, subagents, reviewer).
+    const blocked = await this.app
+      .service('sessions')
+      .checkUsageLimitGate(sessionId, agent.id, { agentConfigId: turnAgentConfigId });
+    if (blocked) {
+      if (isReview) {
+        await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'failed', {
+          sdk: 'claude',
+          error_message: usageLimitStatusText({
+            label: 'Claude',
+            reason: blocked.reason,
+            action: 'stop',
+            resetAtMs: blocked.reset_at_ms,
+          }),
+        });
+        return;
+      }
+      await setAgentTurnTerminal(this.app, agent, session.user_id, 'stopped');
+      await this.app.service('sessions').onUsageLimit(sessionId, agent.id, {
+        ...blocked,
+        label: 'Claude',
+      });
+      return;
+    }
     await prepareAgentTurnCompaction(this.app, session);
     const writer =
       row.turn_id != null
@@ -887,6 +917,65 @@ export class ClaudeAgentService {
     return recordClaudeTurnUsage(this.app, session, result, opts);
   }
 
+  /** Paid overage spent this turn counts against the session's `usage_limit` in later turns. */
+  async _recordOverageSpend(
+    sessionState: ClaudeAgentState,
+    guard: ClaudeUsageLimitGuard | null
+  ): Promise<void> {
+    if (!guard || guard.spentUsd <= 0) return;
+    const db = this.app.get('db') as DbLike;
+    await db('sessions')
+      .where({ id: sessionState.sessionId })
+      .increment('usage_limit_spent', guard.spentUsd)
+      .catch((err: Error) =>
+        logger.warn(
+          { sessionId: sessionState.sessionId, err: err.message },
+          'claude-agent: failed to record overage spend'
+        )
+      );
+  }
+
+  /**
+   * A synthetic `result` for a turn cut before its own: absolute per-model totals (what the
+   * last recorded result left in the running totals, plus the tokens seen since), so the
+   * usual delta recording yields exactly the cut turn's usage.
+   */
+  _partialResult(
+    sessionState: ClaudeAgentState,
+    partial: Record<string, Record<string, number>> | null | undefined
+  ): SDKMessage | null {
+    if (!partial) return null;
+    const prev = getLastResultTotals(sessionState.sessionId).models as Record<
+      string,
+      Record<string, number>
+    >;
+    const modelUsage: Record<string, Record<string, number>> = {};
+    for (const [model, used] of Object.entries(partial)) {
+      const before = prev?.[model] ?? {};
+      modelUsage[model] = Object.fromEntries(
+        Object.entries(used).map(([field, n]) => [field, (before[field] ?? 0) + n])
+      );
+    }
+    return { type: 'result', modelUsage } as unknown as SDKMessage;
+  }
+
+  /** Usage for a turn cut short by a limit, so the spend before the cut is still recorded. */
+  async _recordLimitTurnUsage(sessionState: ClaudeAgentState, result: SDKMessage): Promise<void> {
+    const db = this.app.get('db') as DbLike;
+    const session = (await db('sessions').where({ id: sessionState.sessionId }).first()) as
+      AgentSessionRow | undefined;
+    const agent = (await getAgentById(db as never, sessionState.agentId)) as AgentRow | undefined;
+    if (!session || !agent) return;
+    await this._recordClaudeTurnUsage(
+      session,
+      agent,
+      result,
+      sessionState.turnChannel ?? 'chat',
+      sessionState.turnAgentConfigId,
+      sessionState.turnModel
+    );
+  }
+
   /** Persist one turn's Claude usage from the final SDK `result` for this consume pass. */
   async _recordClaudeTurnUsage(
     session: AgentSessionRow,
@@ -916,7 +1005,7 @@ export class ClaudeAgentService {
     const db = this.app.get('db') as DbLike;
     const activeKey = sessionState.activeKey ?? sessionId;
     const isReview = sessionState.turnChannel === 'review';
-    const { turnComplete, streamFailed, outcome, lastResult, lastStreamError } =
+    const { turnComplete, streamFailed, outcome, lastResult, lastStreamError, usageLimit } =
       await this._consumeQuery(sessionState, {
         streamWriter: sessionState.streamWriter ?? null,
         persistMessage: (message) => this.persistMessage(sessionState, message),
@@ -948,6 +1037,27 @@ export class ClaudeAgentService {
       });
 
     const awaitingUser = Boolean(sessionState.endTurnAwaitingUser);
+
+    // A subscription limit (or the session's usage limit) ended the turn: persist the notice,
+    // stop the agent, and — when the session asks for it — schedule the resume.
+    if (usageLimit && !isReview) {
+      if (lastResult) {
+        await this._recordLimitTurnUsage(sessionState, lastResult).catch((err) =>
+          logger.warn(
+            { sessionId, err: (err as Error).message },
+            'claude-agent: failed to record limit-turn usage'
+          )
+        );
+      }
+      await setAgentTurnTerminal(this.app, { id: sessionState.agentId }, userId, 'stopped');
+      await this.app.service('sessions').onUsageLimit(sessionId, sessionState.agentId, {
+        label: 'Claude',
+        sdk: 'claude',
+        reason: usageLimit.reason,
+        reset_at_ms: usageLimit.resetAtMs,
+      });
+      return;
+    }
 
     // A turn can also end with a failed `result` message (quota, max turns, budget) without
     // the stream throwing — the mirror of the Cursor terminal-status gap. Bubble it to the
@@ -1073,14 +1183,18 @@ export class ClaudeAgentService {
     outcome: TurnOutcome;
     lastResult: SDKMessage | null;
     lastStreamError: string | null;
+    usageLimit: ClaudeUsageLimitHit | null;
   }> {
     const { queryInstance, sessionId, userId } = sessionState;
     const key = activeKey ?? sessionId;
 
     let streamFailed = false;
     let lastStreamError: string | null = null;
+    const usageGuard = await this._createUsageGuard(sessionState);
     const result = await processClaudeQueryStream(queryInstance, {
       writer: streamWriter,
+      usageGuard,
+      usageCheck: usageGuard ? () => this._checkPlanLimits(sessionState) : null,
       persistMessage,
       onInitSessionId,
       onResult,
@@ -1113,13 +1227,66 @@ export class ClaudeAgentService {
       }
     });
 
+    await this._recordOverageSpend(sessionState, usageGuard);
+    // A turn cut before its own `result` is recorded from the tokens seen so far.
+    const lastResult =
+      result.lastResult ??
+      (result.usageLimit
+        ? this._partialResult(sessionState, usageGuard?.partialModelUsageSinceResult())
+        : null);
+
     return {
       turnComplete: result.turnComplete,
       streamFailed: result.streamFailed || streamFailed,
       outcome: result.outcome,
-      lastResult: result.lastResult,
+      lastResult,
       lastStreamError,
+      usageLimit: result.usageLimit,
     };
+  }
+
+  /**
+   * Guard that ends a chat turn on a subscription limit (see `usage-limit.js`). Review turns
+   * are not guarded: they have no resume path, so they keep the old rejected-limit behavior.
+   */
+  async _createUsageGuard(sessionState: ClaudeAgentState): Promise<ClaudeUsageLimitGuard | null> {
+    if (sessionState.turnChannel === 'review') return null;
+    try {
+      const db = this.app.get('db') as DbLike;
+      const row = (await db('sessions').where({ id: sessionState.sessionId }).first()) as
+        | {
+            usage_limit_action?: string | null;
+            usage_limit?: number | null;
+            usage_limit_spent?: number | null;
+          }
+        | undefined;
+      return new ClaudeUsageLimitGuard({
+        overage: allowsOverage(row?.usage_limit_action),
+        usageLimitUsd: row?.usage_limit ?? null,
+        priorSpentUsd: row?.usage_limit_spent ?? 0,
+      });
+    } catch (err) {
+      // The guard is optional: without it the turn just runs unguarded.
+      logger.warn(
+        { sessionId: sessionState.sessionId, err: (err as Error).message },
+        'claude-agent: usage guard unavailable'
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Re-read the plan limits mid-turn (see `ClaudeUsageLimitGuard.checkpointDue`). A full
+   * session/weekly window ends the turn for `stop` / `wait` sessions — including turns run by
+   * subagents — instead of letting the provider roll it onto paid overage.
+   */
+  async _checkPlanLimits(sessionState: ClaudeAgentState): Promise<ClaudeUsageLimitHit | null> {
+    const blocked = await this.app
+      .service('sessions')
+      .checkUsageLimitGate(sessionState.sessionId, sessionState.agentId, {
+        agentConfigId: sessionState.turnAgentConfigId ?? null,
+      });
+    return blocked ? { reason: blocked.reason, resetAtMs: blocked.reset_at_ms } : null;
   }
 
   async sendMessage(sessionId: number, content: string): Promise<void> {
@@ -1175,7 +1342,10 @@ export class ClaudeAgentService {
     session?.channel.push(toSdkUserMessage(content));
   }
 
-  syncSessionSettingsFromPatch(sessionId: number, _sessionRow: AgentSessionRow): void {
+  async syncSessionSettingsFromPatch(
+    sessionId: number,
+    _sessionRow: AgentSessionRow
+  ): Promise<void> {
     const session = this.getActiveSession(sessionId);
     if (!session?.queryInstance) return;
     void (async () => {

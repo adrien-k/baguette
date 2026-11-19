@@ -84,6 +84,15 @@ export const sessionUsageKeys = {
   session: (sessionId) => ['session-usage', idPart(sessionId)],
 };
 
+export const subscriptionLimitsKeys = {
+  all: ['subscription-limits'],
+  provider: (agentSdk, agentConfigId) => [
+    'subscription-limits',
+    agentSdk ?? null,
+    idPart(agentConfigId),
+  ],
+};
+
 export const systemInfoKeys = {
   all: ['system-info'],
 };
