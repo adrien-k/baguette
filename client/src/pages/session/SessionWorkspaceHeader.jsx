@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { ChevronLeft, MessageSquare, Repeat, GitBranch, Copy, Trash2 } from 'lucide-react';
+import { ChevronLeft, MessageSquare, Repeat, GitBranch, Copy } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { isGlobalSession } from '@baguette/shared/session-scope.js';
 import CardRepoBadge from '../../components/CardRepoBadge.jsx';
@@ -95,16 +95,6 @@ export default function SessionWorkspaceHeader({
                 )}
               </div>
             </div>
-            {loopWorkspace.headerLoop && (
-              <button
-                type="button"
-                onClick={() => loopWorkspace.handleDeleteLoop()}
-                className="shrink-0 p-1.5 text-faint hover:text-danger transition-colors rounded"
-                title="Delete loop"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            )}
           </div>
         ) : null
       ) : isNewSessionRoute ? (

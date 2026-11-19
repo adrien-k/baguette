@@ -10,13 +10,22 @@ import {
   builderChatActiveKey,
   getAgentById,
   listActiveChildAgents,
-  listSubagentsForSession,
+  listAgentsForSession,
+  SESSION_AGENT_TYPES,
 } from '../agents-db.js';
 import { getAgentServiceForAgent, getAgentServiceForSession } from '../agent-session-routing.js';
 import { getUtilityModelService } from '../utility-model.js';
 import { completeSessionMetadata } from '../session-metadata.js';
 import { setAgentTurnTerminal } from '../agent-turn-patch.js';
-import { resolveMcpStartSubagentModel } from '../agent-mcp-model-resolver.js';
+import {
+  resolveMcpReviewerModel,
+  resolveMcpStartSubagentModel,
+} from '../agent-mcp-model-resolver.js';
+import { assertReviewNotInProgress } from '../review-mcp.js';
+import {
+  BAGUETTE_REVIEW_LATEST_TITLE,
+  buildReviewLatestChangesContent,
+} from '../../../shared/review-latest-changes-prompt.js';
 import { waitForAgentTurnEnd } from '../wait-for-agent-turn.js';
 import { insertAgentObserver, notifyParentAgentIds } from '../agents-db.js';
 import {
@@ -34,6 +43,47 @@ import {
   killTasksUnderSubagentWorktrees,
   teardownIsolatedSubagentWorktree,
 } from '../subagent-worktree.js';
+
+function normalizeListAgentTypes(raw) {
+  if (raw == null) return [...SESSION_AGENT_TYPES];
+  if (!Array.isArray(raw)) throw new BadRequest('agent_types must be an array');
+  const allowed = new Set(SESSION_AGENT_TYPES);
+  const types = [...new Set(raw.map((t) => String(t).trim()).filter(Boolean))];
+  if (!types.length) throw new BadRequest('agent_types cannot be empty');
+  for (const t of types) {
+    if (!allowed.has(t)) {
+      throw new BadRequest(`agent_types must be builder, reviewer, or subagent (got ${t})`);
+    }
+  }
+  return types;
+}
+
+function mapListedAgentRow(row, watching) {
+  const base = {
+    agent_id: row.id,
+    ref: row.ref,
+    name: row.name,
+    agent_type: row.agent_type,
+    is_primary: Boolean(row.is_primary),
+    status: row.status,
+    error_message: agentFailureError(row),
+    agent_sdk: row.agent_sdk ?? null,
+    model: row.model ?? null,
+    agent_config_id: row.agent_config_id ?? null,
+    parent_agent_id: row.parent_agent_id ?? null,
+    active_turn_id: row.active_turn_id ?? null,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+  if (row.agent_type === 'subagent') {
+    return {
+      ...base,
+      notify_parent: watching.has(row.id),
+      ...subagentWorktreePayload(row),
+    };
+  }
+  return base;
+}
 
 async function resolveStartSubagentParentId(db, sessionId, parentAgentId) {
   if (parentAgentId == null || parentAgentId === '') return null;
@@ -334,11 +384,16 @@ class AgentsService extends KnexService {
     return agent;
   }
 
-  async listSubagents(data, params) {
+  async listAgents(data, params) {
     const sessionId = Number(data?.session_id);
     if (!Number.isFinite(sessionId)) throw new BadRequest('session_id is required');
     await this.app.service('sessions').get(sessionId, { user: params.user });
-    const rows = await listSubagentsForSession(this.app.get('db'), sessionId, {
+    const agentTypes = normalizeListAgentTypes(data?.agent_types);
+    if (data?.status != null && data?.active_only === true) {
+      throw new BadRequest('Pass status or active_only, not both');
+    }
+    const rows = await listAgentsForSession(this.app.get('db'), sessionId, {
+      agent_types: agentTypes,
       status: data?.status,
       active_only: data?.active_only === true,
     });
@@ -349,16 +404,97 @@ class AgentsService extends KnexService {
     await hydrateAgentFailureErrors(this.app.get('db'), rows);
     return {
       session_id: sessionId,
-      subagents: rows.map((row) => ({
-        agent_id: row.id,
-        ref: row.ref,
-        name: row.name,
-        status: row.status,
-        error_message: agentFailureError(row),
-        parent_agent_id: row.parent_agent_id ?? null,
-        notify_parent: watching.has(row.id),
-        ...subagentWorktreePayload(row),
-      })),
+      agents: rows.map((row) => mapListedAgentRow(row, watching)),
+    };
+  }
+
+  async startReview(data, params) {
+    const sessionId = Number(data?.session_id);
+    if (!Number.isFinite(sessionId)) throw new BadRequest('session_id is required');
+    const session = await this.app.service('sessions').get(sessionId, { user: params.user });
+    const db = this.app.get('db');
+    const existing = await assertReviewNotInProgress(db, sessionId);
+    if (existing && data?.clear_previous_review !== true) {
+      throw new BadRequest(
+        'Session already has a reviewer; pass clear_previous_review to clear and restart'
+      );
+    }
+    if (existing) {
+      await this.remove(existing.id, { user: params.user, provider: 'rest' });
+    }
+    const resolved = await resolveMcpReviewerModel(db, params.user.id);
+    const initialPrompt =
+      data?.initial_prompt != null ? String(data.initial_prompt).trim() || null : null;
+    const extraPrompt =
+      data?.extra_prompt != null ? String(data.extra_prompt).trim() || null : null;
+    const agent = await this.create(
+      {
+        session_id: sessionId,
+        agent_type: 'reviewer',
+        agent_config_id: resolved.agent_config_id,
+        model: resolved.model,
+        ...(resolved.model_params != null ? { model_params: resolved.model_params } : {}),
+        initial_prompt: initialPrompt,
+        ...(extraPrompt != null ? { extra_prompt: extraPrompt } : {}),
+      },
+      { user: params.user, provider: 'rest' }
+    );
+    return {
+      ok: true,
+      session_id: sessionId,
+      agent_id: agent.id,
+      ref: agent.ref,
+      status: agent.status,
+      agent_sdk: agent.agent_sdk,
+      model: agent.model,
+      cleared_previous_reviewer: Boolean(existing),
+      repo_full_name: session.repo_full_name ?? null,
+    };
+  }
+
+  async continueReview(data, params) {
+    const sessionId = Number(data?.session_id);
+    if (!Number.isFinite(sessionId)) throw new BadRequest('session_id is required');
+    const session = await this.app.service('sessions').get(sessionId, { user: params.user });
+    const db = this.app.get('db');
+    const reviewer = await assertReviewNotInProgress(db, sessionId);
+    if (!reviewer) {
+      throw new BadRequest('Start a review first');
+    }
+    let content = buildReviewLatestChangesContent(session.base_branch);
+    const extra =
+      data?.additional_instructions != null ? String(data.additional_instructions).trim() : '';
+    if (extra) {
+      content = `${content}\n\nAdditional instructions:\n${extra}`;
+    }
+    const messageJson = JSON.stringify({
+      type: 'user',
+      subtype: 'baguette',
+      source: 'baguette',
+      title: BAGUETTE_REVIEW_LATEST_TITLE,
+      content,
+    });
+    const result = await this.app.service('messages').create(
+      {
+        session_id: sessionId,
+        type: 'user',
+        subtype: 'baguette',
+        message_json: messageJson,
+        agent_id: reviewer.id,
+        agent_sdk: reviewer.agent_sdk,
+        model: reviewer.model,
+        ...(reviewer.model_params != null ? { model_params: reviewer.model_params } : {}),
+        ...(reviewer.agent_config_id != null ? { agent_config_id: reviewer.agent_config_id } : {}),
+      },
+      { user: params.user, provider: 'rest' }
+    );
+    return {
+      ok: true,
+      session_id: sessionId,
+      agent_id: reviewer.id,
+      ref: reviewer.ref,
+      queued: result?.queued === true,
+      message_id: result?.id ?? null,
     };
   }
 }
@@ -720,7 +856,9 @@ export function registerAgentsService(app, path = 'agents') {
       'generateName',
       'startSubagent',
       'awaitSubagent',
-      'listSubagents',
+      'listAgents',
+      'startReview',
+      'continueReview',
     ],
   });
   app.service(path).hooks(agentsHooks);

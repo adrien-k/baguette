@@ -24,6 +24,7 @@ import { usePersistentState } from '../hooks/usePersistentState.js';
 import { useMediaQuery } from '../hooks/useMediaQuery.js';
 import { useCursorModelPrefs } from '../hooks/useAgentPreferences.js';
 import AgentMessageComposer from './AgentMessageComposer.jsx';
+import { GHOST_BUTTON_CLASS, PRIMARY_BUTTON_SIZED } from '../utils/buttonStyles.js';
 import ComposerPrimaryMenuAddon from './ComposerPrimaryMenuAddon.jsx';
 import FileAttachmentPicker from './FileAttachmentPicker.jsx';
 import SearchableSelect from './SearchableSelect';
@@ -74,6 +75,11 @@ const SESSION_START_MODES = [
     repoOnly: true,
   },
 ];
+
+function loopSaveButtonLabel(loading, editing) {
+  if (loading) return editing ? 'Saving…' : 'Creating…';
+  return editing ? 'Save' : 'Create';
+}
 
 export default function BuilderForm({
   onSubmit,
@@ -186,6 +192,9 @@ export default function BuilderForm({
   const [loopName, setLoopName] = useState(editingLoop?.name ?? '');
   const [singleSession, setSingleSession] = useState(!!editingLoop?.single_session);
   const [newBranch, setNewBranch] = useState(editingLoop?.create_new_branch ?? true);
+  const [loopEnabled, setLoopEnabled] = useState(
+    editingLoop?.enabled === undefined ? true : !!editingLoop.enabled
+  );
   const [isShared, setIsShared] = persistentState.useState('isShared', !!editingLoop?.is_shared, {
     persistWhen: hasPromptText,
   });
@@ -193,6 +202,12 @@ export default function BuilderForm({
     editingLoop && userSettings && !isSessionOwner(editingLoop, userSettings)
   );
   const [schedule, setSchedule] = useState(() => scheduleFromLoop(editingLoop));
+
+  useEffect(() => {
+    if (!editingLoop) return;
+    setLoopEnabled(!!editingLoop.enabled);
+  }, [editingLoop?.id, editingLoop?.enabled]);
+
   // Whether the initial SDK/model seeding (agent defaults or last session) has resolved;
   // the models fetch waits for it so the persisted default never resolves against
   // another SDK's list.
@@ -525,6 +540,7 @@ export default function BuilderForm({
         plugins: payload.plugins ?? [],
         mcp_servers: payload.mcpServers ?? {},
         is_shared: payload.isShared,
+        enabled: loopEnabled,
         ...schedulePayload(schedule),
         ...(payload.autoLoadSkills?.length ? { auto_load_skills: payload.autoLoadSkills } : {}),
       };
@@ -544,6 +560,7 @@ export default function BuilderForm({
       mcp_servers: payload.mcpServers ?? {},
       ...(payload.autoLoadSkills?.length ? { auto_load_skills: payload.autoLoadSkills } : {}),
       is_shared: payload.isShared,
+      enabled: loopEnabled,
       ...schedulePayload(schedule),
     };
   };
@@ -570,16 +587,6 @@ export default function BuilderForm({
     setModel(modelId);
     setModelParamsJson(paramsJson ?? null);
   };
-
-  const composerToolbarExtra = editingLoop ? (
-    <button
-      type="button"
-      onClick={onCancelEdit}
-      className="inline-flex items-center justify-center shrink-0 h-8 px-3 rounded-md border border-strong bg-control hover:bg-control-hover text-secondary hover:text-fg text-xs font-medium transition-colors"
-    >
-      Cancel
-    </button>
-  ) : null;
 
   const composerPlaceholder = isLoop
     ? 'Describe what the agent should do on every run...'
@@ -618,6 +625,7 @@ export default function BuilderForm({
       canSend={canSubmit}
       submitDisabled={!canSubmit}
       submitLabel={isLoop ? (editingLoop ? 'Save' : 'Create') : loading ? 'Creating...' : 'Start'}
+      showSubmitButton={!isLoop}
       submitSubtitle={!isLoop ? activeSessionStartMode.subtitle : undefined}
       sendAddon={
         !isLoop ? (
@@ -634,12 +642,7 @@ export default function BuilderForm({
           />
         ) : undefined
       }
-      toolbarExtra={
-        <>
-          {attachButton}
-          {composerToolbarExtra}
-        </>
-      }
+      toolbarExtra={attachButton}
       autoFocus={!isMobile()}
     />
   );
@@ -844,6 +847,15 @@ export default function BuilderForm({
 
       {isLoop && (
         <>
+          <Toggle
+            checked={loopEnabled}
+            onChange={setLoopEnabled}
+            disabled={loopReadOnly}
+            label="Enabled"
+            title="When off, the loop is paused and will not run on a schedule or via Run now."
+            className="gap-2"
+          />
+
           <LoopScheduleFields schedule={schedule} onChange={setSchedule} disabled={loopReadOnly} />
 
           <div className="flex items-center gap-4">
@@ -984,6 +996,24 @@ export default function BuilderForm({
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {isLoop && !loopReadOnly && (
+        <div className="flex items-center justify-end gap-2 border-t border-line pt-4">
+          {onCancelEdit ? (
+            <button type="button" onClick={onCancelEdit} className={GHOST_BUTTON_CLASS}>
+              Cancel
+            </button>
+          ) : null}
+          <button
+            type="button"
+            disabled={!canSubmit}
+            onClick={() => handleSaveLoop()}
+            className={PRIMARY_BUTTON_SIZED}
+          >
+            {loopSaveButtonLabel(loading, Boolean(editingLoop))}
+          </button>
         </div>
       )}
     </div>

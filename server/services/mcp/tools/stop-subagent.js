@@ -12,7 +12,7 @@ export function createStopSubagentTool(ctx) {
     description:
       'Stop a running subagent turn (and any active child subagents it spawned). ' +
       'Use when a subagent is stuck or after AwaitSubagent times out with no progress (GetAgentMessages first). ' +
-      'Identify the subagent by agent_id or agent_ref from ListSubagents.',
+      'Identify the subagent by agent_id or agent_ref from ListAgents.',
     schema: {
       session_id: z
         .number()
@@ -25,7 +25,7 @@ export function createStopSubagentTool(ctx) {
         .int()
         .min(1)
         .optional()
-        .describe('Session-relative agent ref from ListSubagents'),
+        .describe('Session-relative agent ref from ListAgents'),
     },
     handler: async ({ session_id, agent_id, agent_ref }) => {
       let targetSessionId = callerSession?.id ?? null;

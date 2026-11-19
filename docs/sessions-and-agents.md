@@ -52,7 +52,7 @@ Pass **`isolated_worktree: true`** when the subagent needs its own checkout (par
 
 `isolated_worktree` is **rejected** for global sessions and for repo sessions that have no worktree.
 
-`StartSubagent` and `ListSubagents` include **`isolated_worktree`**, **`worktree_path`** (absolute path when isolated, otherwise `null`), and **`local_branch`** (the throwaway branch name when isolated, otherwise `null`).
+`StartSubagent` and `ListAgents` (subagent rows) include **`isolated_worktree`**, **`worktree_path`** (absolute path when isolated, otherwise `null`), and **`local_branch`** (the throwaway branch name when isolated, otherwise `null`).
 
 ### What isolated subagents see (`CurrentSessionInfo`)
 

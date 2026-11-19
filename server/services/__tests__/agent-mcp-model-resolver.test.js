@@ -5,8 +5,10 @@ import {
   MCP_AGENT_CREATED_ANY_REQUIRED_ERROR,
   MCP_AGENT_CREATED_MODEL_NOT_ALLOWED_ERROR,
   MCP_BUILDER_MODEL_SETTINGS_ERROR,
+  MCP_REVIEWER_MODEL_SETTINGS_ERROR,
   MCP_SUBAGENT_PRESET_REQUIRED_ERROR,
   resolveMcpBuilderModel,
+  resolveMcpReviewerModel,
   resolveMcpStartSubagentModel,
 } from '../agent-mcp-model-resolver.js';
 import {
@@ -367,5 +369,40 @@ describe('resolveMcpStartSubagentModel', () => {
         model: MOCK_SECONDARY_MODEL_ID,
       })
     ).rejects.toThrow(/not both/);
+  });
+});
+
+describe('resolveMcpReviewerModel', () => {
+  let userId;
+  let configId;
+
+  beforeEach(async () => {
+    await db('users').insert({ github_id: 77, username: 'reviewer-mcp', status: 'approved' });
+    const user = await db('users').where({ username: 'reviewer-mcp' }).first();
+    userId = user.id;
+    configId = await ensureTestMockConfig(db, userId);
+  });
+
+  it('returns account reviewer defaults', async () => {
+    await db('users')
+      .where({ id: userId })
+      .update({
+        reviewer_default_config_id: configId,
+        reviewer_default_model: JSON.stringify({
+          model: MOCK_STANDARD_MODEL_ID,
+          model_params: null,
+        }),
+      });
+    const resolved = await resolveMcpReviewerModel(db, userId);
+    expect(resolved).toMatchObject({
+      agent_config_id: configId,
+      model: MOCK_STANDARD_MODEL_ID,
+    });
+  });
+
+  it('throws when reviewer defaults are missing', async () => {
+    await expect(resolveMcpReviewerModel(db, userId)).rejects.toThrow(
+      MCP_REVIEWER_MODEL_SETTINGS_ERROR
+    );
   });
 });

@@ -37,7 +37,7 @@ Use **account** MCP tools to work across repositories rather than pretending thi
 
 - `ListRepos` / `ListBranches` / `ListModels` — discover linked repos and how to start work in them.
 - `ListPresetModels` — enabled presets; pass `context` (`subagent` or `new_session`) to list only presets usable for that kind of call. `CreateSession`, loops, and `StartSubagent` follow Settings → Agent → Agent-created sessions and subagents. When that setting is Any preset or model, call `ListModels` (omit `agent_config_id` to list every configuration) and pass `preset_model_id` or `agent_config_id` plus `model`. Otherwise pass only the model fields the tool schema lists. `CreateSessionMessage` uses the target agent’s stored model (`agent_ref` optional).
-- Subagents — `StartSubagent` (optional `attach: false`, optional `notify_parent`), `ListSubagents`, `AwaitSubagent`, `StopSubagent`; model arguments on `StartSubagent`. UI **Add builder** is unrelated.
+- Subagents — `StartSubagent` (optional `attach: false`, optional `notify_parent`), `ListAgents` (optional `agent_types`), `AwaitSubagent`, `StopSubagent`; model arguments on `StartSubagent`. UI **Add builder** is unrelated.
 - `CreateSession` — start a normal **repo** session (with a branch) when the user needs code changes, a PR, tests, or a preview. That session gets the full git/PR toolset. Pass `notify_parent: true` to manage it from here (see orchestrator workflow below).
 - `SearchSessions` / `GetSession` / `GetAgentMessages` — inspect existing sessions (including other global ones). `SearchSessions` results include `builder_status` per session.
 - `ListLoops` / `CreateLoop` / `UpdateLoop` — scheduled runs. Pass `is_global` for another global loop, or `repo_full_name` + `base_branch` for a repo loop.

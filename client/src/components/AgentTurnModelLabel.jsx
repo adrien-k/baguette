@@ -32,12 +32,15 @@ export default function AgentTurnModelLabel({
   const fullModelLabel = messageModelLabel({ model, modelParams, models });
   const paramsText = messageModelParamsText(modelParams, models, model);
   const sdkLabel = config?.sdk ? formatAgentSdkDisplayName(config.sdk) : null;
+  const configLabel = config?.label?.trim() || null;
+  const showSdkInTooltip =
+    sdkLabel && configLabel && sdkLabel.toLowerCase() !== configLabel.toLowerCase();
 
   if (!typeLabel && !modelName && !config) return null;
 
   const hasTooltipDetail =
-    Boolean(config?.label) ||
-    Boolean(sdkLabel) ||
+    Boolean(configLabel) ||
+    Boolean(showSdkInTooltip) ||
     Boolean(paramsText) ||
     Boolean(fullModelLabel && fullModelLabel !== modelName);
 
@@ -66,9 +69,9 @@ export default function AgentTurnModelLabel({
     <Tooltip
       content={
         <div className="space-y-0.5">
-          {config?.label ? <div className="font-medium text-heading">{config.label}</div> : null}
+          {configLabel ? <div className="font-medium text-heading">{configLabel}</div> : null}
           {typeLabel ? <div>{typeLabel}</div> : null}
-          {sdkLabel ? <div>{sdkLabel}</div> : null}
+          {showSdkInTooltip ? <div>{sdkLabel}</div> : null}
           {fullModelLabel ? <div>{fullModelLabel}</div> : null}
           {paramsText ? <div className="text-faint whitespace-pre-wrap">{paramsText}</div> : null}
         </div>

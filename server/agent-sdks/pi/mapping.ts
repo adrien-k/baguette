@@ -7,7 +7,11 @@ import type {
   ToolCallPayload,
   ToolResultByKind,
 } from '../../../shared/message-types.ts';
-import { mapCursorToolArgs, mapCursorToolResult } from '../cursor/mapping.ts';
+import {
+  mapCursorBashToolResult,
+  mapCursorToolArgs,
+  mapCursorToolResult,
+} from '../cursor/mapping.ts';
 import {
   baguetteMcpShortName,
   isBaguetteMcpToolName,
@@ -82,6 +86,65 @@ function piEditDiffFromResult(raw: unknown): string | null {
   return strOrNull(details.diff ?? details.patch);
 }
 
+function textFromPiToolContent(raw: Record<string, unknown>): string {
+  const content = raw.content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .map((block) => {
+      if (!block || typeof block !== 'object') return '';
+      if (typeof (block as { text?: unknown }).text === 'string') {
+        return (block as { text: string }).text;
+      }
+      return '';
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
+/** Pi bash returns command output in `structuredContent.output` and/or text `content` blocks. */
+function mapPiBashToolResult(
+  rawResult: unknown,
+  opts: { isError?: boolean } = {}
+): ToolResultByKind['bash'] {
+  if (isDict(rawResult)) {
+    const structured = isDict(rawResult.structuredContent) ? rawResult.structuredContent : null;
+    if (structured && structured.output != null) {
+      const exitRaw = structured.exit_code ?? structured.exitCode;
+      let exitCode = exitRaw != null ? Number(exitRaw) : 0;
+      if (Number.isNaN(exitCode)) exitCode = opts.isError ? 1 : 0;
+      const stdout = str(structured.output);
+      const failed = opts.isError || exitCode !== 0;
+      return {
+        status: failed ? 'error' : 'ok',
+        error_message: failed ? stdout || 'Tool call failed' : null,
+        exit_code: exitCode,
+        stdout,
+        stderr: '',
+      };
+    }
+    const text = textFromPiToolContent(rawResult);
+    if (text) {
+      let stdout = text;
+      let exitCode = 0;
+      const exitSuffix = stdout.match(/\n\nCommand exited with code (\d+)\s*$/);
+      if (exitSuffix && exitSuffix.index != null) {
+        exitCode = Number(exitSuffix[1]);
+        stdout = stdout.slice(0, exitSuffix.index);
+      }
+      if (opts.isError && exitCode === 0) exitCode = 1;
+      const failed = opts.isError || exitCode !== 0;
+      return {
+        status: failed ? 'error' : 'ok',
+        error_message: failed ? stdout || 'Tool call failed' : null,
+        exit_code: Number.isNaN(exitCode) ? 1 : exitCode,
+        stdout,
+        stderr: '',
+      };
+    }
+  }
+  return mapCursorBashToolResult(rawResult, opts);
+}
+
 function mapPiEditToolArgs(input: Record<string, unknown>): ToolArgsByKind['edit'] {
   const path = str(input.path ?? input.file_path);
   // Pi's native shape is `edits[]` with oldText/newText; UI reads result.diff for that case.
@@ -111,6 +174,9 @@ export function mapPiToolResult(
   rawResult: unknown,
   opts: { isError?: boolean } = {}
 ): AnyToolResult {
+  if (kind === 'bash') {
+    return mapPiBashToolResult(rawResult, opts);
+  }
   const result = mapCursorToolResult(kind, rawResult, opts);
   if (kind !== 'edit') return result;
   const piDiff = piEditDiffFromResult(rawResult);
@@ -136,6 +202,23 @@ export function piTurnResultOps(status: 'ok' | 'error', error_message: string | 
 
 function turnResult(status: 'ok' | 'error', error_message: string | null): MessageOp[] {
   return piTurnResultOps(status, error_message);
+}
+
+/** When streaming omits thinking_delta, recover thinking blocks from the final assistant message. */
+export function mapPiAssistantMessageThinkingBackfill(message: unknown): MessageOp[] | null {
+  if (!isDict(message) || message.role !== 'assistant') return null;
+  const content = message.content;
+  if (!Array.isArray(content)) return null;
+  const parts: string[] = [];
+  for (const block of content) {
+    if (!isDict(block) || block.type !== 'thinking') continue;
+    if (block.redacted === true) continue;
+    const thinking = block.thinking;
+    if (typeof thinking !== 'string' || !thinking.trim()) continue;
+    parts.push(thinking);
+  }
+  if (!parts.length) return null;
+  return [{ op: 'assistant_thinking', text: parts.join('\n\n') }];
 }
 
 export function mapPiEvent(event: Record<string, unknown>): MessageOp[] | null {
