@@ -11,6 +11,8 @@ import {
   MOCK_E2E_SUBAGENT_PROMPT,
   MOCK_E2E_SUBAGENT_SUMMARY,
   expectComposerAgentSwitcherSections,
+  parseSessionIdFromUrl,
+  saveE2eLocatorScreenshot,
   saveE2eScreenshot,
   selectAgentInTree,
   selectAgentViaComposer,
@@ -18,6 +20,7 @@ import {
   expectMockQuickTurnComplete,
   sendSessionChatMessage,
   sessionChatComposer,
+  settleForScreenshot,
   startMockBuilderSession,
 } from './helpers.js';
 
@@ -46,6 +49,40 @@ test.describe('session agents (mock)', () => {
 
     await page.keyboard.press('Escape');
     await expect(page.getByText(MOCK_AGENT_SUMMARY_TEXT)).toBeVisible({ timeout: 120_000 });
+  });
+
+  test('sidebar highlights the open session while a subagent chat is selected', async ({
+    page,
+  }) => {
+    await devLogin(page);
+
+    const repoId = await createLocalRepo(page);
+    await startMockBuilderSession(page, repoId, MOCK_E2E_QUICK_TURN_PROMPT);
+    await expectMockQuickTurnComplete(page);
+
+    await sendSessionChatMessage(page, MOCK_E2E_SUBAGENT_PROMPT);
+    await expect(page.getByText(MOCK_E2E_SUBAGENT_SUMMARY)).toBeVisible({ timeout: 120_000 });
+
+    await selectAgentInTree(page, MOCK_E2E_SUBAGENT_NAME);
+
+    const sessionId = parseSessionIdFromUrl(page.url());
+    const sessionEntry = page.locator(
+      `[data-testid="mini-session-entry"][data-session-id="${sessionId}"][data-selected="true"]`
+    );
+    await expect(sessionEntry).toBeVisible({ timeout: 30_000 });
+    await expect(sessionEntry.getByTestId('mini-session-title')).toHaveClass(/bg-control-hover/);
+
+    const subagentRow = sessionAgentTreeRow(page, MOCK_E2E_SUBAGENT_NAME);
+    await expect(subagentRow).toHaveAttribute('data-selected', 'true');
+    await expect(subagentRow).toHaveClass(/border-control-hover/);
+    const builderRow = sessionAgentTreeRow(page, 'Builder');
+    await expect(builderRow).toHaveAttribute('data-selected', 'false');
+
+    await settleForScreenshot(page);
+    await saveE2eLocatorScreenshot(
+      page.getByTestId('session-list-rail'),
+      'session-highlight-with-agent-chat.png'
+    );
   });
 
   test('manual builder, MCP subagent, and readonly chat', async ({ page }) => {
