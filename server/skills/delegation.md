@@ -70,8 +70,8 @@ Track the count yourself across turns (e.g. in the plan or a todo); Baguette doe
 
 After each review finishes, **`ListIssues`** (no filter or per-status) and triage:
 
-- **`needs_decision`** — wait for the user; do not fix or submit.
-- **`opened`** — valid findings; ready to assign.
+- **`needs_decision`** — the user must pick an approach. **`ReadIssue`**, present `options` with **`AskUserQuestions`**, then **`UpdateIssue`** with **`selected_option_id`** set to the chosen option’s `id` (one field only in that call). Do not fix or submit until the choice is recorded and status is **`opened`** again.
+- **`opened`** — valid findings; ready to assign (`selected_option_id` on **`ReadIssue`** means follow that approach).
 - **`submitted`** — already queued for a fix agent.
 - **`resolved`** — builder claimed a fix; reviewer must still **`CloseIssue`** on the next review pass.
 
@@ -85,7 +85,9 @@ Call **`ListIssues`** with `status: "submitted"` (or fix a single issue the user
 
 ### B. Delegate fixes to subagents (parallel)
 
-For each **`opened`** issue you want off your plate (skip `needs_decision`):
+Clear **`needs_decision`** first (see triage above): ask the user, then **`UpdateIssue`** with **`selected_option_id`**. You cannot record a decision by editing `options` alone — that only defines choices; **`selected_option_id`** applies the user’s pick.
+
+For each **`opened`** issue you want off your plate:
 
 1. **`ReadIssue`** for full description and `selected_option_id` when set.
 2. **`StartSubagent`** with a prompt shaped like:
