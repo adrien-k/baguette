@@ -1,18 +1,39 @@
-import { TURN_ENDING_BAGUETTE_TOOLS, baguetteMcpShortName } from './baguette-mcp-tool-names.js';
 import { isTurnStartingUserMessage } from './turn-model.js';
 
-/** Minimum tool calls in a run before it collapses into a work summary. */
-export const CHAT_WORK_COLLAPSE_MIN_CALLS = 6;
+/**
+ * First user (or Baguette/loop/MCP) message per `turn_id` starts a Worked span; later
+ * rows with the same `turn_id` are steering or in-turn follow-ups and fold into Worked.
+ */
+function computeTurnInitiatingUserFlags(messages) {
+  const flags = new Array(messages.length).fill(false);
+  const seenTurnIds = new Set();
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    if (!isTurnStartingUserMessage(msg)) continue;
+    const turnId = msg.turn_id;
+    if (turnId == null) {
+      flags[i] = true;
+      continue;
+    }
+    if (!seenTurnIds.has(turnId)) {
+      seenTurnIds.add(turnId);
+      flags[i] = true;
+    }
+  }
+  return flags;
+}
 
-/** How many of the newest tool calls stay expanded in an open (in-progress or expanded) work run. */
-export const CHAT_WORK_VISIBLE_TAIL_CALLS = 10;
+function turnInitiatesWorkedSpan(context) {
+  if (!context?.turnInitiatingUser || context.index == null) return true;
+  return context.turnInitiatingUser[context.index] === true;
+}
 
-/** Chat-pinned MCP tools: always visible, never inside Worked. Includes turn-ending tools. */
-const CHAT_PINNED_BAGUETTE_TOOLS = new Set([
-  ...TURN_ENDING_BAGUETTE_TOOLS,
-  'StartSubagent',
-  'ConfigureMcpServer',
-]);
+/** Turn delimiter shown after Worked (Completed line, legacy result, stop status). */
+function isTurnEndChatMessage(msg) {
+  if (msg?.type === 'turn_result' || msg?.type === 'result') return true;
+  if (msg?.type === 'system' && msg.subtype === 'status') return true;
+  return false;
+}
 
 function toolUseNameIs(name, shortName) {
   if (!name) return false;
@@ -63,36 +84,6 @@ function messageIsToolCallRow(msg) {
   return msg?.type === 'tool_call';
 }
 
-function toolCallRowShortName(msg) {
-  if (msg.kind === 'mcp') return msg.args?.tool ?? baguetteMcpShortName(msg.name);
-  return baguetteMcpShortName(msg.name) || msg.name;
-}
-
-function toolCallRowIsPinnedChatTool(msg) {
-  if (!messageIsToolCallRow(msg)) return false;
-  if (msg.kind === 'ask_user') return true;
-  return CHAT_PINNED_BAGUETTE_TOOLS.has(toolCallRowShortName(msg));
-}
-
-function blockIsPinnedChatTool(block) {
-  if (block._hidden) return false;
-  for (const shortName of CHAT_PINNED_BAGUETTE_TOOLS) {
-    if (blockIsNamedMcpTool(block, shortName)) return true;
-  }
-  if (block.type === 'tool_use') {
-    const n = block.name;
-    if (n === 'AskUserQuestion' || n === 'AskUserQuestions') return true;
-  }
-  return false;
-}
-
-/** CreatePlan, EditPlan, AskUserQuestions, StartSubagent, or ConfigureMcpServer — always visible, never inside Worked. */
-export function messageContainsPinnedChatTool(msg) {
-  if (toolCallRowIsPinnedChatTool(msg)) return true;
-  if (msg.type !== 'assistant' || !Array.isArray(msg.message?.content)) return false;
-  return msg.message.content.some(blockIsPinnedChatTool);
-}
-
 /** Message whose visible tools include PrUpsert (MCP or legacy bash op). */
 export function messageContainsPrUpsert(msg) {
   if (messageIsToolCallRow(msg)) return blockIsPrUpsert(msg);
@@ -125,7 +116,7 @@ export function isChatAnchorMessage(msg) {
  * Turns start at turn-starting user messages and end at the next user message
  * or turn result; `-1` means the index has no later assistant anchor in its turn.
  */
-function computeTurnLastAnchorIndices(messages) {
+function computeTurnLastAnchorIndices(messages, turnInitiatingUser) {
   const result = new Array(messages.length).fill(-1);
   let lastAnchor = -1;
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -133,7 +124,7 @@ function computeTurnLastAnchorIndices(messages) {
     result[i] = lastAnchor;
     if (msg.type === 'assistant' && isChatAnchorMessage(msg)) lastAnchor = i;
     else if (
-      isTurnStartingUserMessage(msg) ||
+      (msg.type === 'user' && turnInitiatingUser[i]) ||
       msg.type === 'turn_result' ||
       msg.type === 'result'
     ) {
@@ -151,20 +142,32 @@ function computeTurnLastAnchorIndices(messages) {
 function assistantIsMidTurn(msg, context) {
   if (msg?.type !== 'assistant' || !isChatAnchorMessage(msg)) return false;
   if (isTurnReplyAssistantMessage(msg)) return false;
-  if (!context || !Array.isArray(context.turnLastAnchors)) return false;
+  if (!Array.isArray(context?.turnLastAnchors) || context.index == null) return false;
+
   const last = context.turnLastAnchors[context.index];
-  return last !== -1 && last !== context.index;
+  if (last !== -1 && last !== context.index) return true;
+
+  if (!context.messages) return false;
+  const { messages, index } = context;
+  for (let i = index + 1; i < messages.length; i++) {
+    const m = messages[i];
+    if (m.type === 'user' && context.turnInitiatingUser?.[i]) break;
+    if (isTurnEndChatMessage(m)) continue;
+    return true;
+  }
+  return false;
 }
 
 /**
- * User/assistant text or pinned chat tools — splits work runs and enables collapse.
+ * User/assistant closing text — splits work runs (final reply of a turn only).
  * Mid-turn assistant messages fold into the Worked run instead of splitting it.
  */
 export function isChatGroupBoundary(msg, context) {
-  return (
-    (isChatAnchorMessage(msg) && !assistantIsMidTurn(msg, context)) ||
-    messageContainsPinnedChatTool(msg)
-  );
+  if (isTurnEndChatMessage(msg)) return true;
+  if (msg?.type === 'user') {
+    return isTurnStartingUserMessage(msg) && turnInitiatesWorkedSpan(context);
+  }
+  return isChatAnchorMessage(msg) && !assistantIsMidTurn(msg, context);
 }
 
 /**
@@ -173,10 +176,12 @@ export function isChatGroupBoundary(msg, context) {
  */
 export function isChatWorkMessage(msg, context) {
   if (!msg) return false;
-  if (messageContainsPinnedChatTool(msg)) return false;
-  if (msg.type === 'result' || msg.type === 'turn_result') return true;
+  if (isTurnEndChatMessage(msg)) return false;
+  if (msg.type === 'user') {
+    return isTurnStartingUserMessage(msg) && !turnInitiatesWorkedSpan(context);
+  }
   if (msg.type === 'tool_call') return true;
-  if (msg.type === 'system') return msg.subtype !== 'prompt';
+  if (msg.type === 'system') return msg.subtype !== 'prompt' && msg.subtype !== 'status';
   if (msg.type === 'assistant') {
     return !isChatAnchorMessage(msg) || assistantIsMidTurn(msg, context);
   }
@@ -197,21 +202,6 @@ function countToolCallsInMessages(messages) {
   let n = 0;
   for (const msg of messages) n += toolCallCountInMessage(msg);
   return n;
-}
-
-/**
- * Index in `run` where the visible tail starts so the tail holds at most `tailCalls` tool calls.
- * Returns 0 when the whole run fits in the tail.
- */
-export function findWorkRunVisibleTailStart(run, tailCalls = CHAT_WORK_VISIBLE_TAIL_CALLS) {
-  let callsFromEnd = 0;
-  for (let k = run.length - 1; k >= 0; k--) {
-    const n = toolCallCountInMessage(run[k]);
-    if (n === 0) continue;
-    callsFromEnd += n;
-    if (callsFromEnd >= tailCalls) return k;
-  }
-  return 0;
 }
 
 function workSpanDurationMs(messages) {
@@ -240,27 +230,13 @@ function pushMessageItems(items, messages, startIndex) {
   }
 }
 
-function runContainsAssistantText(run) {
-  return run.some((msg) => msg.type === 'assistant' && isChatAnchorMessage(msg));
-}
-
-function pushWorkRun(items, run, startIndex, { collapseAll }) {
-  const callCount = countToolCallsInMessages(run);
-  if (collapseAll && (callCount >= CHAT_WORK_COLLAPSE_MIN_CALLS || runContainsAssistantText(run))) {
-    pushWorkItem(items, run, startIndex, callCount);
+function pushWorkRun(items, run, startIndex, { flat } = {}) {
+  if (run.length === 0) return;
+  if (flat) {
+    pushMessageItems(items, run, startIndex);
     return;
   }
-  if (callCount > CHAT_WORK_VISIBLE_TAIL_CALLS) {
-    const split = findWorkRunVisibleTailStart(run);
-    const prefix = run.slice(0, split);
-    const prefixCalls = countToolCallsInMessages(prefix);
-    if (prefixCalls > 0) {
-      pushWorkItem(items, prefix, startIndex, prefixCalls);
-      pushMessageItems(items, run.slice(split), startIndex + split);
-      return;
-    }
-  }
-  pushMessageItems(items, run, startIndex);
+  pushWorkItem(items, run, startIndex, countToolCallsInMessages(run));
 }
 
 /**
@@ -274,12 +250,16 @@ function pushWorkRun(items, run, startIndex, { collapseAll }) {
  * >}
  */
 export function groupChatDisplayMessages(messages, opts = {}) {
-  const turnLastAnchors =
-    opts.foldMidTurnAssistants === false ? null : computeTurnLastAnchorIndices(messages);
+  const flatWorkRuns = opts.foldMidTurnAssistants === false;
+  const turnInitiatingUser = computeTurnInitiatingUserFlags(messages);
+  const turnLastAnchors = flatWorkRuns
+    ? null
+    : computeTurnLastAnchorIndices(messages, turnInitiatingUser);
   const groupContext = (index) => ({
     messages,
     index,
     turnLastAnchors,
+    turnInitiatingUser,
   });
   const items = [];
   let i = 0;
@@ -293,10 +273,7 @@ export function groupChatDisplayMessages(messages, opts = {}) {
     let j = i;
     while (j < messages.length && isChatWorkMessage(messages[j], groupContext(j))) j += 1;
     const run = messages.slice(i, j);
-    const hasFutureBoundary = messages
-      .slice(j)
-      .some((m, k) => isChatGroupBoundary(m, groupContext(j + k)));
-    pushWorkRun(items, run, i, { collapseAll: hasFutureBoundary });
+    pushWorkRun(items, run, i, { flat: flatWorkRuns });
     i = j;
   }
   return items;
