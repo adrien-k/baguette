@@ -37,7 +37,7 @@ describe('usage limit notice', () => {
     );
     const alert = screen.getByRole('alert');
     expect(alert.textContent).not.toContain(resetAt);
-    expect(alert.textContent).toMatch(/UTC[+-]\d/);
+    expect(alert.textContent).toMatch(/\d{1,2}:\d{2} [AP]M UTC([+-]\d+(:\d{2})?)?/);
     expect(alert.textContent).toMatch(/1h (29|30)m( \d+s)?$/);
     expect(alert.textContent).toMatch(/resume the stopped session after the reset/);
     // The Continue hint is a note under the alert, not inside it.

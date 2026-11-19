@@ -1,7 +1,7 @@
 import { BadRequest } from 'feathers/errors';
 import { getReviewerAgent } from './agents-db.js';
 
-export function isReviewerTurnActive(agent) {
+function isReviewerTurnActive(agent) {
   if (!agent) return false;
   return agent.status === 'running' || agent.status === 'approval';
 }

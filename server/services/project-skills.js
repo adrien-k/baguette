@@ -5,7 +5,7 @@ import { resolveDataDirRelativePath } from '../config.js';
 import { BAGUETTE_DIR } from './baguette-config.js';
 import { parseSkillMarkdown } from './skill-markdown.js';
 
-export const PROJECT_SKILLS_SUBDIR = path.join(BAGUETTE_DIR, 'skills');
+const PROJECT_SKILLS_SUBDIR = path.join(BAGUETTE_DIR, 'skills');
 
 /**
  * Markdown skills from `.baguette/skills/*.md` (YAML frontmatter: label, description; body = content).
