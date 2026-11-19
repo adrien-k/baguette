@@ -877,7 +877,7 @@ export default function BuilderForm({
           {showBranchNameField && (
             <div>
               <label className="block text-sm font-medium text-secondary mb-1">
-                Branch name{' '}
+                New branch name{' '}
                 <span className="text-faint font-normal">(optional, auto-generated if empty)</span>
               </label>
               <input
