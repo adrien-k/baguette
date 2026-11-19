@@ -27,6 +27,13 @@ import { resolveMcpMessageSenderForParentAgent } from '../mcp/lib/mcp-message-se
 import { agentFailureError, hydrateAgentFailureErrors } from '../agent-error-message.js';
 import { nextSessionItemRef } from '../session-item-ref.js';
 import { titleFromPrompt } from '../../../shared/agent-naming.js';
+import {
+  assertIsolatedWorktreeAllowed,
+  provisionIsolatedSubagentWorktree,
+  subagentWorktreePayload,
+  killTasksUnderSubagentWorktrees,
+  teardownIsolatedSubagentWorktree,
+} from '../subagent-worktree.js';
 
 async function resolveStartSubagentParentId(db, sessionId, parentAgentId) {
   if (parentAgentId == null || parentAgentId === '') return null;
@@ -57,6 +64,7 @@ async function subagentTurnResult(app, sessionId, agentId) {
     error_message: agentFailureError(agent),
     session_id: sessionId,
     last_assistant_message: summarizeAssistantMessage(lastAssistant),
+    ...subagentWorktreePayload(agent),
   };
 }
 
@@ -170,9 +178,15 @@ class AgentsService extends KnexService {
 
     const waitForCompletion = data.wait_for_completion !== false;
     const notifyParent = data.notify_parent === true;
+    const isolatedWorktree = data.isolated_worktree === true;
 
     const session = await this.app.service('sessions').get(sessionId, { user: params.user });
+    if (isolatedWorktree) {
+      assertIsolatedWorktreeAllowed(session);
+    }
     const db = this.app.get('db');
+    const repo =
+      session.repo_id != null ? await db('repos').where({ id: session.repo_id }).first() : null;
     const parentAgentId = await resolveStartSubagentParentId(
       db,
       sessionId,
@@ -203,6 +217,30 @@ class AgentsService extends KnexService {
       },
       { ...params, provider: 'rest' }
     );
+
+    let worktreeMeta = null;
+    if (isolatedWorktree) {
+      try {
+        worktreeMeta = await provisionIsolatedSubagentWorktree(session, repo, agent.id);
+        await this.patch(
+          agent.id,
+          {
+            worktree_path: worktreeMeta.worktree_path_stored,
+            local_branch: worktreeMeta.local_branch,
+          },
+          { user: params.user, provider: undefined }
+        );
+      } catch (err) {
+        if (worktreeMeta) {
+          await teardownIsolatedSubagentWorktree(repo, {
+            worktree_path: worktreeMeta.worktree_path_stored,
+            local_branch: worktreeMeta.local_branch,
+          });
+        }
+        await this.remove(agent.id, { user: params.user, provider: undefined });
+        throw err;
+      }
+    }
 
     // Observer row must exist before the first message dispatches the turn — a very
     // fast turn would otherwise go terminal before the wake-up subscription lands.
@@ -239,6 +277,12 @@ class AgentsService extends KnexService {
         { user: params.user, provider: 'rest' }
       );
     } catch (err) {
+      if (worktreeMeta) {
+        await teardownIsolatedSubagentWorktree(repo, {
+          worktree_path: worktreeMeta.worktree_path_stored,
+          local_branch: worktreeMeta.local_branch,
+        });
+      }
       await this.remove(agent.id, { user: params.user, provider: undefined });
       throw err;
     }
@@ -252,6 +296,7 @@ class AgentsService extends KnexService {
         status: fresh?.status ?? agent.status,
         session_id: sessionId,
         notify_parent: watching.has(agent.id),
+        ...subagentWorktreePayload(fresh ?? agent),
       };
     }
 
@@ -312,6 +357,7 @@ class AgentsService extends KnexService {
         error_message: agentFailureError(row),
         parent_agent_id: row.parent_agent_id ?? null,
         notify_parent: watching.has(row.id),
+        ...subagentWorktreePayload(row),
       })),
     };
   }
@@ -605,6 +651,16 @@ async function beforeRemove(context) {
     throw new BadRequest('Could not stop agent before removal');
   }
   const db = context.app.get('db');
+  if (row.worktree_path) {
+    const session = await db('sessions').where({ id: row.session_id }).first();
+    const repo =
+      session?.repo_id != null ? await db('repos').where({ id: session.repo_id }).first() : null;
+    await killTasksUnderSubagentWorktrees(context.app, row.session_id, [row]);
+    await teardownIsolatedSubagentWorktree(repo, {
+      worktree_path: row.worktree_path,
+      local_branch: row.local_branch,
+    });
+  }
   if (row.agent_type === 'reviewer') {
     context.app.service('sessions').resetUsageTotals(reviewTurnKey(row.id));
   }

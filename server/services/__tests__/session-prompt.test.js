@@ -163,6 +163,9 @@ describe('buildSystemPromptAppend', () => {
     const session = await seedSession({ session_path: '/tmp/wt' });
     const result = await buildSystemPromptAppend(session, { agent: { agent_type: 'subagent' } });
     expect(result).toContain('Subagent role');
+    expect(result).toContain('Worktree (shared with the builder)');
+    expect(result).toContain('leave changes **uncommitted**');
+    expect(result).not.toContain('Worktree (isolated)');
     expect(result).toContain('StartSubagent');
     expect(result).not.toContain('End-of-turn shipping (required every turn)');
     expect(result).not.toContain('Baguette repo configuration');
@@ -177,6 +180,23 @@ describe('buildSystemPromptAppend', () => {
     expect(result).toContain('Mark todos **`completed`**');
     expect(result).toContain('do **not** use **`DeleteTodo`** as the normal workflow');
     expect(loadBaguetteAgentPrompt).toHaveBeenCalledWith('/tmp/wt', 'subagent');
+  });
+
+  it('uses isolated subagent worktree rules when agent.worktree_path is set', async () => {
+    const session = await seedSession({ session_path: '/tmp/parent-wt' });
+    const result = await buildSystemPromptAppend(session, {
+      agent: {
+        agent_type: 'subagent',
+        worktree_path: '/tmp/subagent-wt',
+        local_branch: 'baguette/subagent/42',
+      },
+    });
+    expect(result).toContain('Worktree (isolated)');
+    expect(result).toContain('subagent_worktree_path');
+    expect(result).toContain('baguette/subagent/<id>');
+    expect(result).toContain('Do **not** run **`git push`**');
+    expect(result).not.toContain('Worktree (shared with the builder)');
+    expect(result).not.toContain('leave changes **uncommitted**');
   });
 
   it('loadFullSubagentPromptTemplate includes subagent role rules', async () => {

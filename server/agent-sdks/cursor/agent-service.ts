@@ -23,6 +23,7 @@ import logger from '../../logger.js';
 import { disableExternal } from '../../services/feathers/hooks.js';
 import { METADATA_TIMEOUT_MS } from '../../services/session-metadata.js';
 import { resolveDataDirRelativePath, DATA_DIR } from '../../config.js';
+import { agentWorktreeCwd } from '../../services/subagent-worktree.js';
 import { buildBaguetteToolList, buildReviewerAgentTools } from '../../services/mcp/server.js';
 import { loadEnabledMcpServersForSession } from '../../services/user-mcp-runtime.js';
 import { loadConfiguredSlackApps } from '../../services/mcp/lib/slack.js';
@@ -290,7 +291,8 @@ ${body}`,
       agent?: AgentRow | null;
     } = {}
   ): Promise<AgentOptions> {
-    const cwd = resolveDataDirRelativePath(session.session_path) || '';
+    const cwd =
+      agentWorktreeCwd(session, agent) || resolveDataDirRelativePath(session.session_path) || '';
     const configId = requireAgentConfigId(agentConfigId);
     const resolvedApiKey =
       apiKey !== undefined ? apiKey : await this.resolveApiKey(session, channel, configId);
@@ -521,9 +523,13 @@ ${body}`,
     agent: SDKAgent,
     session: AgentSessionRow,
     userText: string,
-    sendOptions: Record<string, unknown> = {}
+    sendOptions: Record<string, unknown> = {},
+    baguetteAgent: AgentRow | null = null
   ): Promise<Run> {
-    const cwd = resolveDataDirRelativePath(session.session_path) || '';
+    const cwd =
+      agentWorktreeCwd(session, baguetteAgent) ||
+      resolveDataDirRelativePath(session.session_path) ||
+      '';
     const store = await this.openSessionStore(session);
     try {
       return await agent.send(userText, sendOptions as never);
@@ -556,6 +562,7 @@ ${body}`,
     sendOptions = {},
     activeKey,
     abortController,
+    baguetteAgent = null,
   }: {
     session: AgentSessionRow;
     userText: string;
@@ -570,6 +577,7 @@ ${body}`,
     sendOptions?: Record<string, unknown>;
     activeKey?: string | number;
     abortController?: AbortController;
+    baguetteAgent?: AgentRow | null;
   }): Promise<{ outcome: 'completed' | 'failed' | 'stopped'; agent?: SDKAgent; run?: Run }> {
     const key = activeKey ?? session.id;
     const controller = abortController ?? new AbortController();
@@ -587,7 +595,13 @@ ${body}`,
         resumeAgentId,
         persistAgentId,
       });
-      const run = await this._sendWithBusyRetry(agent, session, userText, sendOptions);
+      const run = await this._sendWithBusyRetry(
+        agent,
+        session,
+        userText,
+        sendOptions,
+        baguetteAgent
+      );
       sessionState.currentRun = run;
       const turnUsage = emptyTurnUsage() as TurnUsage;
       const { allFinishedOk } = await this._streamRunChainWithFollowUps(
@@ -604,6 +618,7 @@ ${body}`,
           onUsage,
           onStatus,
         },
+        baguetteAgent ?? null,
         (nextRun) => {
           sessionState.currentRun = nextRun;
         }
@@ -765,7 +780,7 @@ ${body}`,
         sendOptions.mode = 'plan';
       }
 
-      const run = await this._sendWithBusyRetry(cursorAgent, session, userText, sendOptions);
+      const run = await this._sendWithBusyRetry(cursorAgent, session, userText, sendOptions, agent);
       sessionState.currentRun = run;
 
       const { allFinishedOk } = await this._streamRunChainWithFollowUps(
@@ -775,6 +790,7 @@ ${body}`,
         turnUsage,
         turnModel,
         { activeKey, channel, writer },
+        agent,
         (nextRun) => {
           sessionState.currentRun = nextRun;
         }
@@ -1082,6 +1098,7 @@ ${body}`,
     turnUsage: TurnUsage,
     turnModel: { model?: string | null; modelParams?: unknown },
     streamOpts: StreamOneRunOpts,
+    baguetteAgent?: AgentRow | null,
     onFollowUpRun?: (run: Run) => void
   ): Promise<{ allFinishedOk: boolean }> {
     const sessionId = session.id;
@@ -1094,7 +1111,12 @@ ${body}`,
 
     const MAX_FOLLOW_UPS = 10;
     for (let i = 0; hasBackgroundTask && i < MAX_FOLLOW_UPS; i++) {
-      const followUpRun = await this._findFollowUpRun(session, agent, lastCompletedRunId);
+      const followUpRun = await this._findFollowUpRun(
+        session,
+        agent,
+        lastCompletedRunId,
+        baguetteAgent ?? null
+      );
       if (!followUpRun) break;
 
       logger.info(
@@ -1118,9 +1140,13 @@ ${body}`,
   async _findFollowUpRun(
     session: AgentSessionRow,
     agent: SDKAgent,
-    completedRunId: string
+    completedRunId: string,
+    baguetteAgent?: AgentRow | null
   ): Promise<Run | null> {
-    const cwd = resolveDataDirRelativePath(session.session_path) || '';
+    const cwd =
+      agentWorktreeCwd(session, baguetteAgent ?? null) ||
+      resolveDataDirRelativePath(session.session_path) ||
+      '';
     const store = await this.openSessionStore(session);
     const INTERVAL_MS = 2000;
     const MAX_IDLE_POLLS = 30;

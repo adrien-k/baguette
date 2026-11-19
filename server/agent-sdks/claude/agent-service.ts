@@ -24,6 +24,7 @@ import { toolListToClaudeMcpServer } from './adapt-tools.js';
 import { createMessageChannel } from '../../services/message-channel.js';
 import { buildSystemPromptAppend } from '../../services/session-prompt.js';
 import { resolveDataDirRelativePath } from '../../config.js';
+import { agentWorktreeCwd } from '../../services/subagent-worktree.js';
 import { SDK_QUERY_CLOSED_MESSAGE } from './claude-agent-sdk-constants.js';
 import { normalizeUserMessageForAgentSdk } from '../../../shared/user-message-content.js';
 import { isBaguetteUserMessage, requireTurnModelFromRow } from '../../../shared/turn-model.js';
@@ -246,7 +247,10 @@ export class ClaudeAgentService {
     if (!claudeEnv) throw new Error('Agent configuration is required to run this turn');
     const resolvedModel = model;
     const cwd =
-      resolveDataDirRelativePath(sessionRow.session_path) || sessionRow.absolute_session_path || '';
+      agentWorktreeCwd(sessionRow, agent) ||
+      sessionRow.absolute_session_path ||
+      resolveDataDirRelativePath(sessionRow.session_path) ||
+      '';
     const resolvedMcp =
       mcpServer ??
       (getSdkPlugin(CLAUDE_AGENT_SDK_KEY)?.adaptTools ?? toolListToClaudeMcpServer)(

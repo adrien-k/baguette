@@ -288,6 +288,31 @@ describe('TasksService._findRunningTask', () => {
     expect(service._findRunningTask(1, 'baguette:webserver:default')).toBe(task);
     expect(service._findRunningTask(1, 'dev-server')).toBeNull();
   });
+
+  it('optionally matches command task cwd for depends-on reuse', () => {
+    const parent = service.createTask({
+      sessionId: 1,
+      command: 'pnpm dev',
+      taskKey: 'dev-server',
+      cwd: '/tmp/session-wt',
+    });
+    setTaskRunning(parent);
+    const isolated = service.createTask({
+      sessionId: 1,
+      command: 'pnpm dev',
+      taskKey: 'dev-server',
+      cwd: '/tmp/sub-wt',
+    });
+    setTaskRunning(isolated);
+
+    expect(
+      service._findRunningTask(1, 'dev-server', { cwd: '/tmp/session-wt', matchCwd: true })
+    ).toBe(parent);
+    expect(
+      service._findRunningTask(1, 'dev-server', { cwd: '/tmp/sub-wt', matchCwd: true })
+    ).not.toBe(parent);
+    expect(service._findRunningTask(1, 'dev-server')).toBe(parent);
+  });
 });
 
 describe('TasksService.getTask', () => {

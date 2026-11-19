@@ -767,6 +767,7 @@ describe('GitPush', () => {
     const push = tools.find((t) => t.name === 'GitPush');
     expect(push.schema).toHaveProperty('force');
     expect(push.schema).toHaveProperty('reason');
+    expect(push.schema).toHaveProperty('source_branch');
   });
 
   it('returns ok: false when push is rejected', async () => {
@@ -899,6 +900,31 @@ describe('GitPush', () => {
     expect(result.ok).toBe(true);
     expect(result.approval_requested).toBeUndefined();
     expect(mockEmit).not.toHaveBeenCalled();
+  });
+
+  it('includes source_branch on the push:request emit payload', async () => {
+    const { tools, mockEmit } = buildStandaloneGitPrTools({
+      remote_branch: 'feature-branch',
+      local_branch: 'feature-branch-test',
+    });
+    const result = parseResult(
+      await callTool(tools, 'GitPush', {
+        source_branch: 'topic/subagent-work',
+        reason: 'publish the subagent branch to the session remote',
+      })
+    );
+    expect(result.ok).toBe(true);
+    expect(result.approval_requested).toBe(true);
+    expect(result.source_branch).toBe('topic/subagent-work');
+    expect(mockEmit).toHaveBeenCalledWith(
+      'push:request',
+      expect.objectContaining({
+        source_branch: 'topic/subagent-work',
+        branch: 'feature-branch',
+        agentRequest: true,
+      })
+    );
+    expect(gitPush).not.toHaveBeenCalled();
   });
 });
 

@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { resolveDataDirRelativePath } from '../../config.js';
+import { agentWorktreeCwd } from '../../services/subagent-worktree.js';
 import {
   mockAgentFullTurnClosingMessage,
   MOCK_E2E_QUICK_TURN_PROMPT,
@@ -12,6 +13,7 @@ import {
   MOCK_E2E_ASK_ANSWER_SUMMARY,
   MOCK_E2E_ASK_QUESTION_TEXT,
   MOCK_E2E_GITPUSH_REASON,
+  MOCK_E2E_GITPUSH_SESSION_SUMMARY,
   MOCK_E2E_GITPUSH_SUMMARY,
   MOCK_E2E_GITPUSH_TARGET_BRANCH,
   MOCK_E2E_PLAN_MARKDOWN,
@@ -247,7 +249,16 @@ async function runMockAskAnswerTurn({ writer }) {
  * actual tool handler so the Push approval modal opens in the UI. Needs a
  * session whose repo has an origin (seeded by the e2e spec).
  */
-async function runMockGitPushE2eTurn({ session, app, writer, abortSignal, force }) {
+async function runMockGitPushE2eTurn({
+  session,
+  app,
+  writer,
+  abortSignal,
+  branch,
+  source_branch: sourceBranch,
+  force,
+  summary = MOCK_E2E_GITPUSH_SUMMARY,
+}) {
   const cwd = resolveDataDirRelativePath(session.session_path);
   if (!cwd) {
     throw new Error('Session worktree is not ready');
@@ -266,7 +277,8 @@ async function runMockGitPushE2eTurn({ session, app, writer, abortSignal, force 
   );
 
   const toolArgs = {
-    branch: MOCK_E2E_GITPUSH_TARGET_BRANCH,
+    ...(branch ? { branch } : {}),
+    ...(sourceBranch ? { source_branch: sourceBranch } : {}),
     ...(force ? { force } : {}),
     reason: MOCK_E2E_GITPUSH_REASON,
   };
@@ -279,7 +291,7 @@ async function runMockGitPushE2eTurn({ session, app, writer, abortSignal, force 
     rawResult: await tool.handler(toolArgs),
   });
 
-  await writer.appendAssistantText(MOCK_E2E_GITPUSH_SUMMARY);
+  await writer.appendAssistantText(summary);
   await writer.flushAssistant();
   await persistMockTurnResult(writer);
   return {};
@@ -371,6 +383,7 @@ export async function runMockAgentTurn({
   app,
   userId,
   turnId = null,
+  agent = null,
 }) {
   const scenario = mockAgentScenarioForPrompt(userPrompt);
   if (scenario === 'quick') {
@@ -397,14 +410,36 @@ export async function runMockAgentTurn({
   if (scenario === 'ask-answer') {
     return runMockAskAnswerTurn({ writer, abortSignal });
   }
+  if (scenario === 'gitpush-session-e2e') {
+    return runMockGitPushE2eTurn({
+      session,
+      app,
+      writer,
+      abortSignal,
+      summary: MOCK_E2E_GITPUSH_SESSION_SUMMARY,
+    });
+  }
   if (scenario === 'gitpush-e2e') {
-    return runMockGitPushE2eTurn({ session, app, writer, abortSignal, force: null });
+    return runMockGitPushE2eTurn({
+      session,
+      app,
+      writer,
+      abortSignal,
+      branch: MOCK_E2E_GITPUSH_TARGET_BRANCH,
+    });
   }
   if (scenario === 'gitpush-force-e2e') {
-    return runMockGitPushE2eTurn({ session, app, writer, abortSignal, force: 'force' });
+    return runMockGitPushE2eTurn({
+      session,
+      app,
+      writer,
+      abortSignal,
+      branch: MOCK_E2E_GITPUSH_TARGET_BRANCH,
+      force: 'force',
+    });
   }
 
-  const cwd = resolveDataDirRelativePath(session.session_path);
+  const cwd = agentWorktreeCwd(session, agent);
   if (!cwd) {
     throw new Error('Session worktree is not ready');
   }

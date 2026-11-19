@@ -45,6 +45,7 @@ import {
 } from '../github.js';
 import { trimSessionMessagesForArchive } from '../session-archive.js';
 import { persistGitPushApprovalOutcome } from '../git-push-approval-persistence.js';
+import * as sessionPushWorktree from '../session-push-worktree.js';
 import { loadSessionFooterUsageLines } from '../pr-footer-usage.js';
 import logger from '../../logger.js';
 import { requireUser, scopeByUser } from './hooks.js';
@@ -80,6 +81,7 @@ import {
   interpolateSessionImagePlaceholders,
 } from '../../../shared/session-images.js';
 import { stringifyModelParamsForStorage } from '../../../shared/agent-session-defaults.js';
+import { teardownSubagentWorktreesForSessionArchive } from '../subagent-worktree.js';
 import {
   computeSessionGitStatus,
   sessionNeedsPrMetadataSync,
@@ -745,6 +747,7 @@ export class SessionsService extends KnexService {
     const repo = session?.repo_id ? await db('repos').where({ id: session.repo_id }).first() : null;
     await trimSessionMessagesForArchive(db, sessionId);
     if (!isGlobalSession(session)) {
+      await teardownSubagentWorktreesForSessionArchive(this.app, sessionId, session, repo);
       await removeWorktree(session, repo, { keepLocalBranch: true });
     }
     this.app.service('tasks').deleteSessionTasks(sessionId);
@@ -1189,8 +1192,12 @@ export class SessionsService extends KnexService {
       const user = await this.app.service('users').get(session.user_id, {});
       const auth = await sessionGitAuth(this.app, session, user);
       const branch = data.branch || session.remote_branch || session.local_branch;
+      const sourceBranch =
+        typeof data?.source_branch === 'string' && data.source_branch.trim()
+          ? data.source_branch.trim()
+          : null;
       if (branch) await gitFetch(cwd, auth, branch).catch(() => {});
-      return await gitLocalAndRemoteSha(cwd, branch || null);
+      return await gitLocalAndRemoteSha(cwd, branch || null, sourceBranch);
     } catch (err) {
       return { localSha: null, remoteSha: null, error: err.message };
     }
@@ -1315,9 +1322,18 @@ export class SessionsService extends KnexService {
       // Only governs creating a *new* PR; an existing PR is synced unless syncPr is false.
       const createPr = data?.createPr !== false;
       const syncPr = data?.syncPr !== false;
+      const sourceBranch =
+        typeof data?.source_branch === 'string' && data.source_branch.trim()
+          ? data.source_branch.trim()
+          : null;
       let commitsToPush = 0;
       if (!forceGit) {
-        if (pushToAlternateBranch && branch) {
+        if (sourceBranch && branch) {
+          commitsToPush = await gitCommitsToPush(cwd, branch, {
+            missingOriginRefMeansUnpushed: true,
+            localRef: sourceBranch,
+          });
+        } else if (pushToAlternateBranch && branch) {
           commitsToPush = await gitCommitsToPush(cwd, branch, {
             missingOriginRefMeansUnpushed: true,
           });
@@ -1330,10 +1346,14 @@ export class SessionsService extends KnexService {
       const isSessionBranchPush = session.remote_branch
         ? branch === session.remote_branch
         : branch === session.local_branch;
+      if (sourceBranch && isSessionBranchPush) {
+        await sessionPushWorktree.fastForwardWorktreeToSourceBranch(cwd, sourceBranch);
+      }
       if (forceGit || commitsToPush > 0) {
         try {
           const result = await gitPush(cwd, auth, {
             branch,
+            ...(sourceBranch ? { sourceBranch } : {}),
             force: forceMode === 'lease',
             forceOverwrite: forceMode === 'force',
           });

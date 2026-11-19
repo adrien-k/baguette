@@ -424,6 +424,7 @@ export default function Session() {
     const onPushRequest = ({
       sessionId: sid,
       branch,
+      source_branch: sourceBranch,
       forceMode,
       reason,
       autoPushOff,
@@ -431,7 +432,15 @@ export default function Session() {
       request_id: requestId,
     }) => {
       if (sid !== sessionId) return;
-      setPushRequest({ branch, forceMode, reason, autoPushOff, agentRequest, requestId });
+      setPushRequest({
+        branch,
+        sourceBranch,
+        forceMode,
+        reason,
+        autoPushOff,
+        agentRequest,
+        requestId,
+      });
       setShowPushModal(true);
     };
     sessionsService.on('push:request', onPushRequest);
@@ -706,7 +715,13 @@ export default function Session() {
     setShowPushModal(true);
   };
 
-  const handlePushConfirmed = async ({ forceMode, branch, createPr, syncPr } = {}) => {
+  const handlePushConfirmed = async ({
+    forceMode,
+    branch,
+    sourceBranch,
+    createPr,
+    syncPr,
+  } = {}) => {
     if (!session?.id || pushing) return;
     const approvalRequestId = pushRequest?.requestId ?? null;
     setShowPushModal(false);
@@ -717,6 +732,7 @@ export default function Session() {
         id: session.id,
         forceMode,
         branch,
+        ...(sourceBranch ? { source_branch: sourceBranch } : {}),
         createPr,
         ...(syncPr === false ? { syncPr: false } : {}),
         ...(approvalRequestId ? { request_id: approvalRequestId } : {}),

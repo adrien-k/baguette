@@ -165,8 +165,12 @@ export class PiAgentService {
     if (sessionsDir) await mkdir(sessionsDir, { recursive: true });
   }
 
-  _openSessionManager(session: AgentSessionRow, storedPiSessionId?: string | null): SessionManager {
-    const cwd = piWorktreeCwd(session);
+  _openSessionManager(
+    session: AgentSessionRow,
+    storedPiSessionId?: string | null,
+    agent: AgentRow | null = null
+  ): SessionManager {
+    const cwd = piWorktreeCwd(session, agent);
     const sessionsDir = piSessionsDir(session) ?? undefined;
     if (storedPiSessionId && sessionsDir) {
       const sessionFile = SessionManager.findById(cwd, storedPiSessionId, sessionsDir);
@@ -200,7 +204,7 @@ export class PiAgentService {
     } = {}
   ): Promise<PiBuildAgentOptionsResult> {
     await this._ensurePiDirs(session);
-    const cwd = piWorktreeCwd(session);
+    const cwd = piWorktreeCwd(session, agent);
     const agentDir = piAgentDir(session) ?? undefined;
     const configId = requireAgentConfigId(agentConfigId);
     const agentConfig = await this.loadAgentConfig(session.user_id, configId);
@@ -243,7 +247,7 @@ export class PiAgentService {
           agent,
         })
       );
-    const sessionManager = this._openSessionManager(session, storedPiSessionId);
+    const sessionManager = this._openSessionManager(session, storedPiSessionId, agent);
     const options: PiBuildAgentOptionsResult = {
       cwd,
       agentDir,

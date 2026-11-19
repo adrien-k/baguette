@@ -105,9 +105,16 @@ Other config strings (`run`, docker `container`, `services`, etc.) use the same 
 
 ### `init`
 
-Shell commands run **once on the first task start** (after worktree creation). The block runs as a shell script under `set -e`, so the first failing command aborts it and the task fails to start.
+Shell commands run **once per checkout on the first task start** in that checkout (after worktree creation). The block runs as a shell script under `set -e`, so the first failing command aborts it and the task fails to start.
 
 On that first start, Baguette runs `init`, then the requested task's `depends-on` chain (e.g. docker Postgres), then the task itself. Use **`init` for install-only steps** (e.g. `pnpm install`, `bundle install`). Do **not** run database create, migrate, prepare, or reset in `init` — put those on tasks that list `depends-on: [postgres]` (or your DB task) so Postgres is running before they connect.
+
+| Checkout                         | Initialized flag                      | When `init` runs again                                                              |
+| -------------------------------- | ------------------------------------- | ----------------------------------------------------------------------------------- |
+| Session worktree (shared agents) | `sessions.initialized`                | First `RunTask` / panel start for that session                                      |
+| Isolated subagent worktree       | `agents.initialized` on that subagent | First task started **by that subagent**, even if the session is already initialized |
+
+An isolated subagent's checkout does not share `node_modules` or other install artifacts from the session worktree, so **`baguette:init` runs again in the sub-worktree** when needed. A successful init sets only **`agents.initialized`** for that subagent — it does not flip `sessions.initialized`.
 
 ```yaml
 init: |
@@ -194,6 +201,15 @@ Docker tasks follow the same rules based on how they were started, not on whethe
 #### Dependencies (`depends-on`)
 
 When a task declares `depends-on`, Baguette starts each dependency if needed and waits until it is ready before starting the dependent task. If a dependency isn't running, Baguette starts it automatically.
+
+**Caller cwd.** Command tasks (`run:`) execute in the **caller's cwd** — the session worktree for the builder, or an isolated subagent's `sub-worktrees/<agent_id>/` checkout when that subagent runs `RunTask`. **Docker tasks** always use the **session worktree** as their spawn context: one `baguette_session_<short_id>` volume and container set per session, shared by every agent in that session.
+
+**Reusing running dependencies.** A already-running dependency is reused only when its scope matches:
+
+| Dependency type  | Reused when…                                                            |
+| ---------------- | ----------------------------------------------------------------------- |
+| Command (`run:`) | Same `task_key` **and** the running task's cwd matches the caller's cwd |
+| Docker           | Same `task_key` anywhere in the session (session-wide)                  |
 
 - **Docker dependency** — ready when the container has started (and, if `container.healthcheck` is set in YAML, when Docker reports healthy). No host port polling.
 - **Command dependency with `ports`** — ready when every allocated host port is listening on `127.0.0.1`.

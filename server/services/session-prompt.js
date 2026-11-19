@@ -68,12 +68,22 @@ async function renderBasePromptForSession(sessionPath, role, { prMetadataHint } 
   return base + extra;
 }
 
-async function loadRoleAndEndOfTurn(role, snippets) {
+async function loadSubagentWorktreeSection(agent) {
+  const promptName = agent?.worktree_path
+    ? 'subagent-role-isolated-worktree'
+    : 'subagent-role-shared-worktree';
+  return loadPrompt(promptName, {});
+}
+
+async function loadRoleAndEndOfTurn(role, snippets, { agent = null } = {}) {
   const gitRemotePrompt = await loadPrompt(snippets.gitRemote, {});
   const rolePromptName = role === 'subagent' ? 'subagent-role-prompt' : 'builder-role-prompt';
+  const subagentWorktreeSection =
+    role === 'subagent' ? await loadSubagentWorktreeSection(agent) : '';
   const builderRolePrompt = await loadPrompt(rolePromptName, {
     git_remote_prompt: gitRemotePrompt,
     subagent_session_tools: snippets.subagentSessionTools,
+    subagent_worktree_section: subagentWorktreeSection,
   });
   const repoConfigPrompt =
     role === 'builder' ? await loadPrompt('build-prompt-repo-config-prompt', {}) : '';
@@ -121,7 +131,7 @@ export async function buildSystemPromptAppend(
   const sessionPath = sessionRow?.session_path ?? null;
   const role = buildPromptRole(agent);
   const { builderRolePrompt, repoConfigPrompt, builderEndOfTurnPrompt } =
-    await loadRoleAndEndOfTurn(role, snippets);
+    await loadRoleAndEndOfTurn(role, snippets, { agent });
   const buildTemplate = role === 'subagent' ? 'subagent-build-prompt' : 'build-prompt';
   const templateVars = {
     base_prompt: await renderBasePromptForSession(sessionPath, role, {
@@ -161,9 +171,11 @@ export async function loadFullSessionPromptTemplate() {
 export async function loadFullSubagentPromptTemplate() {
   const snippets = promptSnippetsForAccess('github');
   const basePrompt = await loadBaseSessionPromptTemplate();
+  const sharedWorktreeSection = await loadPrompt('subagent-role-shared-worktree', {});
   const builderRolePrompt = await loadPrompt('subagent-role-prompt', {
     git_remote_prompt: await loadPrompt(snippets.gitRemote, {}),
     subagent_session_tools: snippets.subagentSessionTools,
+    subagent_worktree_section: sharedWorktreeSection,
   });
   return loadPrompt('subagent-build-prompt', {
     base_prompt: basePrompt,

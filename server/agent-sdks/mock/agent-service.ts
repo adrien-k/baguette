@@ -209,6 +209,7 @@ class MockAgentService {
           app: this.app,
           userId,
           turnId,
+          agent,
         });
         turnFinishedOk = true;
         const terminalStatus = turnMeta?.awaitingUser ? 'approval' : 'completed';

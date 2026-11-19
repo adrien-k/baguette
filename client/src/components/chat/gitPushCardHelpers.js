@@ -5,10 +5,15 @@ export function gitPushNeedsApproval(args, session) {
   const force = args?.force;
   const isForcePush = force === 'lease' || force === 'force';
   const branch = typeof args?.branch === 'string' && args.branch ? args.branch : null;
+  const sourceBranch =
+    typeof args?.source_branch === 'string' && args.source_branch.trim()
+      ? args.source_branch.trim()
+      : null;
 
   if (!session) {
     if (isForcePush) return true;
     if (branch) return true;
+    if (sourceBranch) return true;
     return false;
   }
 
@@ -17,7 +22,7 @@ export function gitPushNeedsApproval(args, session) {
   const isNonSessionBranch = branch && branch !== sessionBranch && branch !== localBranch;
   const autoPushOff = !session.auto_push;
 
-  return isForcePush || isNonSessionBranch || autoPushOff;
+  return isForcePush || isNonSessionBranch || autoPushOff || !!sourceBranch;
 }
 
 export function resolveGitPushBranches(args, mcpResult, session) {
