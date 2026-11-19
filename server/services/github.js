@@ -178,6 +178,13 @@ const mapRepo = (r) => ({
 
 const GITHUB_REPO_FULL_NAME_RE = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
 
+/** Quote user text so it cannot inject GitHub search qualifiers. */
+function quoteGithubSearchFragment(text) {
+  const stripped = text.replaceAll('"', '').trim();
+  if (!stripped) return null;
+  return `"${stripped}"`;
+}
+
 async function githubJsonOrThrow(res, context) {
   if (res.ok) return res.json();
   const text = await res.text();
@@ -197,9 +204,11 @@ export async function fetchPublicRepoByFullName(token, fullName) {
 export async function searchPublicRepositories(token, query) {
   const q = query.trim();
   if (!q || q.length < 2) return [];
+  const fragment = quoteGithubSearchFragment(q);
+  if (!fragment) return [];
   const res = await githubFetch(
     `https://api.github.com/search/repositories?${new URLSearchParams({
-      q: `${q} in:name`,
+      q: `${fragment} in:name is:public`,
       sort: 'stars',
       per_page: '20',
     })}`,
