@@ -11,7 +11,8 @@
  *
  * `runLiveSdkSuite` also exercises agent-configs listModels + testConnectivity, a
  * `completeText` smoke call (predictable one-word answer), and a reviewer turn
- * (CurrentSessionInfo) per SDK.
+ * (CurrentSessionInfo) per SDK. `runLiveBashStdoutSuite` checks typed bash `result.stdout`
+ * on persisted `tool_call` rows.
  */
 import { execFile } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -57,6 +58,17 @@ const LIVE_SDK_REVIEW_PROMPT = [
 /** completeText smoke: fixed factual prompt with a single predictable word as the answer. */
 const LIVE_COMPLETE_PROMPT = 'What is the day after Monday? Respond with just a word.';
 const LIVE_COMPLETE_EXPECTED = 'tuesday';
+
+/** Unique marker echoed by live bash stdout integration turns. */
+export const LIVE_BASH_STDOUT_MARKER = 'baguette_sdk_live_bash_stdout';
+
+const LIVE_SDK_BASH_STDOUT_PROMPT = [
+  'You are running an automated integration test. Follow these steps in order, then stop.',
+  'Do not edit files. Do not ask questions. Do not start a subagent.',
+  'Do not call MCP tools (no CreateTodo, RunTask, or GitHub tools). Use only the Bash/shell tool.',
+  `1. Run this exact command: echo ${LIVE_BASH_STDOUT_MARKER}`,
+  '2. Reply with the single word BASH_OK.',
+].join('\n');
 
 async function initLiveWorktree(absPath) {
   await mkdir(absPath, { recursive: true });
@@ -178,6 +190,42 @@ function toolNamesFromMessages(rows) {
 function hasToolName(names, fragment) {
   const needle = String(fragment).toLowerCase();
   return names.some((n) => n.toLowerCase().includes(needle));
+}
+
+function completedBashToolCalls(rows) {
+  const out = [];
+  for (const row of rows) {
+    if (row.type !== 'tool_call') continue;
+    const payload = parsePayload(row);
+    const kind = payload.kind;
+    const name = typeof payload.name === 'string' ? payload.name : '';
+    const isBash = kind === 'bash' || /^bash$/i.test(name);
+    if (!isBash) continue;
+    const status = payload.status ?? payload.tool_status;
+    if (status !== 'completed') continue;
+    out.push(payload);
+  }
+  return out;
+}
+
+/** Assert completed bash tool_call rows expose non-empty typed `result.stdout`. */
+export function assertPersistedBashStdout(rows, expectedSubstring, dump) {
+  const bashCalls = completedBashToolCalls(rows);
+  expect(bashCalls.length, `expected a completed bash tool_call\n${dump}`).toBeGreaterThan(0);
+  const stdoutValues = bashCalls.map((payload) => {
+    const result = payload.result;
+    if (result && typeof result === 'object' && result.stdout != null) {
+      return String(result.stdout);
+    }
+    return '';
+  });
+  const combined = stdoutValues.join('\n');
+  expect(combined.trim().length, `bash tool_call result.stdout was empty\n${dump}`).toBeGreaterThan(
+    0
+  );
+  expect(combined, `bash stdout missing "${expectedSubstring}"\n${dump}`).toContain(
+    expectedSubstring
+  );
 }
 
 function sumUsageField(usageRows, field) {
@@ -570,4 +618,43 @@ export async function runLiveSdkSuite(sdk, opts = {}) {
  */
 export async function runLiveSdkIntegration(sdk, assertOpts = {}) {
   return runLiveSdkSuite(sdk, { builder: assertOpts, includeReviewer: false });
+}
+
+/**
+ * One builder turn that runs bash and asserts typed `result.stdout` is persisted.
+ *
+ * @param {'claude' | 'cursor' | 'pi' | 'mock'} sdk
+ */
+export async function runLiveBashStdoutSuite(sdk) {
+  const env = readLiveSdkEnv(sdk);
+  const prevMockEnv = applyMockLiveEnv(sdk);
+  const db = await createMigratedTestDb();
+  let app;
+  let ctx;
+  try {
+    app = await createLiveApp(db);
+    ctx = await seedLiveSession(db, sdk, env);
+    const expectedStdout = sdk === 'mock' ? 'mock bash' : LIVE_BASH_STDOUT_MARKER;
+    const builderOpts =
+      sdk === 'mock'
+        ? {
+            expectUsage: false,
+            expectTodo: false,
+            expectTaskTools: false,
+            prompt: 'exercise the mock agent turn',
+          }
+        : {
+            expectTodo: false,
+            expectTaskTools: false,
+            prompt: LIVE_SDK_BASH_STDOUT_PROMPT,
+          };
+    const { rows, usageRows, agent } = await runLiveTurnAndAssert(app, db, ctx, env, builderOpts);
+    const dump = formatTurnDump(rows, usageRows, agent);
+    assertPersistedBashStdout(rows, expectedStdout, dump);
+    return { rows };
+  } finally {
+    await stopLiveTurn(app, sdk, ctx);
+    await db.destroy();
+    restoreMockLiveEnv(prevMockEnv);
+  }
 }

@@ -7,7 +7,11 @@
  * Observed 2026-10-31: ~$0.0038 / builder turn (haiku-5-5 via OpenCode Go).
  */
 import { describe, it, vi } from 'vitest';
-import { liveSdkSuiteTimeoutMs, readLiveSdkEnv } from '../../../test-utils/sdk-live-env.js';
+import {
+  liveBashStdoutTimeoutMs,
+  liveSdkSuiteTimeoutMs,
+  readLiveSdkEnv,
+} from '../../../test-utils/sdk-live-env.js';
 
 // setup.js mocks the Claude Agent SDK so unit tests never call the network.
 // This file needs the real `query()` implementation when the suite is enabled.
@@ -22,6 +26,15 @@ describe.skipIf(!env.enabled)('claude live SDK', () => {
     async () => {
       const { runLiveSdkSuite } = await import('../../../test-utils/sdk-live.js');
       await runLiveSdkSuite('claude');
+    }
+  );
+
+  it(
+    'persists bash stdout on completed bash tool_call rows',
+    { timeout: liveBashStdoutTimeoutMs(env) },
+    async () => {
+      const { runLiveBashStdoutSuite } = await import('../../../test-utils/sdk-live.js');
+      await runLiveBashStdoutSuite('claude');
     }
   );
 });

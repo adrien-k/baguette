@@ -152,3 +152,5 @@ Recommended models (one harness turn each, measured 2026-10-31):
 Cursor `composer-2.5` ran the same harness at ~$0.028 — about 6× `glm-5p3-flash`. Suite total on the recommended models is ~$0.013.
 
 Each enabled `*.live.test.js` runs `runLiveSdkSuite`: **listModels** and **testConnectivity** on the saved agent config (Settings parity), a **builder** turn (CreateTodo / ListProjectCommands / RunTask), then a **reviewer** turn (CurrentSessionInfo, no issues). Mock runs list/connect/builder only.
+
+A second case in each live file calls `runLiveBashStdoutSuite`: one builder turn that runs bash and asserts the stored `tool_call` row has non-empty typed `result.stdout` (Pi/Cursor/Claude echo a marker; mock uses its scripted `echo mock bash`).

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  mapPiAssistantMessageThinkingBackfill,
   mapPiEvent,
   mapPiToolArgs,
   mapPiToolResult,
@@ -8,6 +9,25 @@ import {
 } from '../mapping.ts';
 
 describe('mapPiEvent', () => {
+  it('maps thinking_delta to assistant_thinking', () => {
+    const ops = mapPiEvent({
+      type: 'message_update',
+      assistantMessageEvent: { type: 'thinking_delta', delta: 'pondering…' },
+    });
+    expect(ops).toEqual([{ op: 'assistant_thinking', text: 'pondering…' }]);
+  });
+
+  it('backfills thinking blocks from a final assistant message', () => {
+    const ops = mapPiAssistantMessageThinkingBackfill({
+      role: 'assistant',
+      content: [
+        { type: 'thinking', thinking: 'step one' },
+        { type: 'text', text: 'THINK_OK' },
+      ],
+    });
+    expect(ops).toEqual([{ op: 'assistant_thinking', text: 'step one' }]);
+  });
+
   it('maps agent_settled to ok turn_result', () => {
     const ops = mapPiEvent({ type: 'agent_settled' });
     expect(ops).toEqual([
@@ -79,6 +99,44 @@ describe('mapPiEvent', () => {
     const done = piBuildToolCallComplete(start, { rawResult: 'ok' });
     expect(done.type).toBe('tool_call');
     expect(done.status).toBe('completed');
+    expect(done.result).toMatchObject({ status: 'ok', stdout: 'ok', exit_code: 0 });
+  });
+
+  it('maps Pi bash structuredContent into typed stdout', () => {
+    const result = mapPiToolResult('bash', {
+      content: [{ type: 'text', text: 'baguette_sdk_live_bash_stdout' }],
+      structuredContent: {
+        output: 'baguette_sdk_live_bash_stdout\n',
+        exit_code: 0,
+        truncated: false,
+        wall_time_seconds: 0.1,
+      },
+    });
+    expect(result).toMatchObject({
+      status: 'ok',
+      exit_code: 0,
+      stdout: 'baguette_sdk_live_bash_stdout\n',
+    });
+  });
+
+  it('maps Pi bash content text blocks when structuredContent is absent', () => {
+    const result = mapPiToolResult('bash', {
+      content: [{ type: 'text', text: 'hello pi\n' }],
+      details: {},
+    });
+    expect(result).toMatchObject({ status: 'ok', exit_code: 0, stdout: 'hello pi\n' });
+  });
+
+  it('strips Pi non-zero exit suffix from bash content text', () => {
+    const result = mapPiToolResult(
+      'bash',
+      {
+        content: [{ type: 'text', text: 'warn\n\nCommand exited with code 2' }],
+        details: {},
+      },
+      { isError: true }
+    );
+    expect(result).toMatchObject({ status: 'error', exit_code: 2, stdout: 'warn' });
   });
 
   it('completes Pi edit tool calls with stored diff', () => {
