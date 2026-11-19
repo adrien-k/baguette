@@ -1,8 +1,14 @@
 import { useState } from 'react';
-import { runPlanUserMessage } from '../../utils/sessionPlanRun.js';
 import { sessionsService } from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
 import { SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
+
+function runPlanMessage(planRef?: number | null) {
+  if (planRef != null && Number.isFinite(planRef)) {
+    return `Proceed with plan #${planRef}.`;
+  }
+  return 'Proceed with the plan.';
+}
 
 export default function RunPlanButton({
   sessionId,
@@ -25,7 +31,7 @@ export default function RunPlanButton({
     try {
       await sessionsService.createDefaultBuilderMessage({
         id: sessionId,
-        content: runPlanUserMessage(planRef ?? undefined),
+        content: runPlanMessage(planRef),
         ...(agentId != null ? { agent_id: agentId } : {}),
       });
     } catch (err) {
