@@ -896,6 +896,7 @@ export default function Session() {
     branchName,
     autoPush,
     plugins,
+    autoLoadSkills,
     mcpServers,
     agentConfigId,
     isShared,
@@ -921,6 +922,7 @@ export default function Session() {
     if (modelParams) params.model_params = modelParams;
     if (!isGlobal && branchName) params.branch_name = branchName;
     if (plugins?.length) params.plugins = plugins;
+    if (autoLoadSkills?.length) params.auto_load_skills = autoLoadSkills;
     if (mcpServers && typeof mcpServers === 'object') params.mcp_servers = mcpServers;
     if (isShared) params.is_shared = true;
     if (files?.length) {

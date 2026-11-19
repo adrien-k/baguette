@@ -6,7 +6,12 @@ import GithubIcon from './svg/GithubIcon.jsx';
 import LoopScheduleFields from './LoopScheduleFields.jsx';
 import Tooltip from './Tooltip.jsx';
 import { scheduleFromLoop, schedulePayload, isScheduleComplete } from '../utils/loopSchedule.js';
-import { agentConfigsService, mcpServersService, pluginsService } from '../feathers.js';
+import {
+  agentConfigsService,
+  mcpServersService,
+  pluginsService,
+  skillsService,
+} from '../feathers.js';
 import { useCurrentUser } from '../context/CurrentUserContext.jsx';
 import { localStateFromConfigDefault } from '../utils/agentConfigDefaultModel.js';
 import { useAgentConfigs } from '../hooks/useAgentConfigs.js';
@@ -163,7 +168,13 @@ export default function BuilderForm({
     editingLoop?.plugins ?? [],
     { persistWhen: hasPromptText }
   );
+  const [selectedAutoLoadSkills, setSelectedAutoLoadSkills] = persistentState.useState(
+    'autoLoadSkills',
+    editingLoop?.auto_load_skills ?? [],
+    { persistWhen: hasPromptText }
+  );
   const [availablePlugins, setAvailablePlugins] = useState([]);
+  const [skillCatalog, setSkillCatalog] = useState([]);
   const [mcpCatalog, setMcpCatalog] = useState([]);
   const [mcpEnabled, setMcpEnabled] = useState({});
   const [files, setFiles] = useState([]);
@@ -341,6 +352,26 @@ export default function BuilderForm({
 
   useEffect(() => {
     let cancelled = false;
+    const repoId = isGlobal ? null : selectedRepo?.id;
+    skillsService
+      .listCatalog({ repo_id: repoId ?? undefined })
+      .then((res) => {
+        if (cancelled) return;
+        const rows = res?.skills ?? [];
+        setSkillCatalog(rows);
+        const labels = new Set(rows.map((s) => s.label));
+        setSelectedAutoLoadSkills((prev) => prev.filter((label) => labels.has(label)));
+      })
+      .catch((err) => {
+        if (!cancelled) toastError('Failed to load skills', err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isGlobal, selectedRepo?.id, setSelectedAutoLoadSkills]);
+
+  useEffect(() => {
+    let cancelled = false;
     mcpServersService
       .find()
       .then((res) => {
@@ -425,6 +456,7 @@ export default function BuilderForm({
       autoPush: autoPushEnabledForRepo(repoFullName, autoPush, linkedRepo),
       isShared,
       plugins: selectedPlugins.length > 0 ? selectedPlugins : undefined,
+      autoLoadSkills: selectedAutoLoadSkills.length > 0 ? selectedAutoLoadSkills : undefined,
       mcpServers: mcpEnabled,
       agentConfigId: agentConfigId ? Number(agentConfigId) : undefined,
     };
@@ -455,6 +487,7 @@ export default function BuilderForm({
         model: payload.model ?? null,
         model_params: payload.modelParams ?? null,
         plugins: payload.plugins ?? [],
+        auto_load_skills: payload.autoLoadSkills ?? [],
         mcp_servers: payload.mcpServers ?? {},
         is_shared: payload.isShared,
         ...schedulePayload(schedule),
@@ -472,6 +505,7 @@ export default function BuilderForm({
       model: payload.model ?? null,
       model_params: payload.modelParams ?? null,
       plugins: payload.plugins ?? [],
+      auto_load_skills: payload.autoLoadSkills ?? [],
       mcp_servers: payload.mcpServers ?? {},
       is_shared: payload.isShared,
       ...schedulePayload(schedule),
@@ -771,6 +805,44 @@ export default function BuilderForm({
         title="Everyone on this Baguette instance can open this."
         className="gap-2"
       />
+
+      {skillCatalog.length > 0 && (
+        <div>
+          <label className="block text-sm font-medium text-secondary mb-1.5">Preload skills</label>
+          <p className="text-xs text-faint mb-2">
+            Inject selected skills into the agent system prompt for every turn in this session.
+          </p>
+          <div className="space-y-1.5 max-h-48 overflow-y-auto">
+            {skillCatalog.map((skill) => (
+              <label
+                key={skill.label}
+                className="flex cursor-pointer items-start gap-2 rounded-md border border-strong/80 bg-control/40 px-3 py-2"
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedAutoLoadSkills.includes(skill.label)}
+                  onChange={(e) =>
+                    setSelectedAutoLoadSkills((prev) =>
+                      e.target.checked
+                        ? [...prev, skill.label]
+                        : prev.filter((label) => label !== skill.label)
+                    )
+                  }
+                  disabled={loopReadOnly}
+                  className="mt-0.5 rounded border-strong text-accent focus:ring-brand/50"
+                />
+                <span className="text-sm text-secondary leading-tight min-w-0">
+                  <span className="font-medium text-heading">{skill.label}</span>
+                  <span className="block text-xs font-normal text-faint mt-0.5">
+                    {skill.source}
+                    {skill.description ? ` · ${skill.description}` : ''}
+                  </span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
 
       {isLoop && (
         <>

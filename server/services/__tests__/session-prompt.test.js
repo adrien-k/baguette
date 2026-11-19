@@ -11,6 +11,7 @@ const { loadBaguetteAgentPrompt } = vi.hoisted(() => ({
 }));
 
 vi.mock('../baguette-config.js', () => ({
+  BAGUETTE_DIR: '.baguette',
   loadBaguetteConfig: vi.fn().mockResolvedValue(null),
   loadBaguetteAgentPrompt,
   interpolateEnv: vi.fn(),

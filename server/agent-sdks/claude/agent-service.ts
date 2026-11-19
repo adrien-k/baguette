@@ -318,6 +318,7 @@ export class ClaudeAgentService {
     const systemPrompt = await buildSystemPromptAppend(sessionRow, {
       agent,
       db: this.app.get('db') as never,
+      app: this.app,
       agentSdk: CLAUDE_AGENT_SDK_KEY,
     });
     return this.buildQueryOptions(sessionRow, {

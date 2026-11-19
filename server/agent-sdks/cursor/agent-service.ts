@@ -436,7 +436,7 @@ ${body}`,
         ...session,
         absolute_session_path: absoluteCwd,
       },
-      { agent, db: this.app.get('db') as never, agentSdk: CURSOR_AGENT_SDK_KEY }
+      { agent, db: this.app.get('db') as never, app: this.app, agentSdk: CURSOR_AGENT_SDK_KEY }
     );
     return this.writePromptRule(session, 'build', {
       description: 'Baguette session rules (always applied)',

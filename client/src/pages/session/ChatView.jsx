@@ -624,6 +624,7 @@ export default function ChatView({
       if (composerModel) payload.model = composerModel;
       if (composerModelParams) payload.model_params = composerModelParams;
       if (session.plugins?.length) payload.plugins = session.plugins;
+      if (session.auto_load_skills?.length) payload.auto_load_skills = session.auto_load_skills;
       await loopsService.create({ ...payload, ...schedulePayload(schedule) });
       setInput('');
       persistentState.clear();

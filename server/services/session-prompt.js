@@ -4,6 +4,7 @@ import { combinePromptExtensions } from '../../shared/agent-prompts.js';
 import { repoAccessMode } from '../../shared/repo-origin.js';
 import { loadBaguetteAgentPrompt } from './baguette-config.js';
 import { sessionMcpPromptServers } from './user-mcp-runtime.js';
+import { buildPreloadedSkillsPrompt, parseAutoLoadSkillLabels } from './skill-resolution.js';
 
 const PR_METADATA_HINT_GITHUB =
   'Use **`UpdateSession`** to change label and description; for pull request title, URL, and description on GitHub, call **`PrRead`**.';
@@ -117,12 +118,23 @@ async function userMcpSection(sessionRow, { db = null, agentSdk = null } = {}) {
 
 export async function buildSystemPromptAppend(
   sessionRow,
-  { agent = null, repo = null, db = null, agentSdk = null } = {}
+  { agent = null, repo = null, db = null, agentSdk = null, app = null } = {}
 ) {
   const mcpSection = await userMcpSection(sessionRow, { db, agentSdk });
+
+  async function finishPrompt(basePrompt) {
+    let out = basePrompt;
+    const autoLabels = parseAutoLoadSkillLabels(sessionRow?.auto_load_skills);
+    if (autoLabels.length && app) {
+      const skillsSection = await buildPreloadedSkillsPrompt(app, sessionRow, autoLabels);
+      if (skillsSection) out = `${out}\n\n${skillsSection}`;
+    }
+    return mcpSection ? `${out}\n\n${mcpSection}` : out;
+  }
+
   if (isGlobalSession(sessionRow)) {
     const prompt = await loadPrompt('global-prompt', {});
-    return mcpSection ? `${prompt}\n\n${mcpSection}` : prompt;
+    return finishPrompt(prompt);
   }
 
   const repoRow = await resolveRepoRow(sessionRow, { repo, db });
@@ -145,7 +157,7 @@ export async function buildSystemPromptAppend(
     templateVars.builder_end_of_turn_prompt = builderEndOfTurnPrompt;
   }
   const prompt = await loadPrompt(buildTemplate, templateVars);
-  return mcpSection ? `${prompt}\n\n${mcpSection}` : prompt;
+  return finishPrompt(prompt);
 }
 
 /** Uninterpolated base-prompt.md for Settings (readonly base) — github/default text. */

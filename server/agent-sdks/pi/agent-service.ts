@@ -153,7 +153,7 @@ export class PiAgentService {
         ...session,
         absolute_session_path: absoluteCwd,
       },
-      { agent, db: this.app.get('db') as never, agentSdk: PI_AGENT_SDK_KEY }
+      { agent, db: this.app.get('db') as never, app: this.app, agentSdk: PI_AGENT_SDK_KEY }
     );
     return systemPrompt ? [systemPrompt] : [];
   }
