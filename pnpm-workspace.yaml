@@ -11,6 +11,7 @@ minimumReleaseAgeExclude:
   - '@cursor/sdk-linux-x64@1.0.30'
   - '@cursor/sdk-win32-x64@1.0.30'
   - '@cursor/sdk@1.0.30'
+  - '@lobehub/icons-static-avatar@2.9.0'
 packages:
   - 'client'
 peerDependencyRules:
