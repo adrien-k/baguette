@@ -176,6 +176,90 @@ const mapRepo = (r) => ({
   default_branch: r.default_branch,
 });
 
+const GITHUB_REPO_FULL_NAME_RE = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
+
+function isResolvablePublicRepoFullName(fullName) {
+  if (!GITHUB_REPO_FULL_NAME_RE.test(fullName)) return false;
+  const [owner, repo] = fullName.split('/');
+  if (!owner || !repo) return false;
+  if (owner === '.' || owner === '..' || repo === '.' || repo === '..') return false;
+  return true;
+}
+
+/** Quote user text so it cannot inject GitHub search qualifiers. */
+function quoteGithubSearchFragment(text) {
+  const stripped = text.replaceAll('"', '').trim();
+  if (!stripped) return null;
+  return `"${stripped}"`;
+}
+
+async function githubJsonOrThrow(res, context) {
+  if (res.ok) return res.json();
+  const text = await res.text();
+  throw new Error(`${context}: ${res.status} ${text}`);
+}
+
+/** Resolve a public GitHub repo by exact `owner/repo` (null when private or missing). */
+export async function fetchPublicRepoByFullName(token, fullName) {
+  if (!isResolvablePublicRepoFullName(fullName)) return null;
+  const res = await githubFetch(`https://api.github.com/repos/${fullName}`, { token });
+  if (res.status === 404) return null;
+  const data = await githubJsonOrThrow(res, `GitHub repos/${fullName}`);
+  if (typeof data.full_name !== 'string' || !data.full_name) return null;
+  if (data.private) return null;
+  return mapRepo(data);
+}
+
+/** Search public repositories on GitHub by name fragment (requires a non-empty query). */
+export async function searchPublicRepositories(token, query) {
+  const q = query.trim();
+  if (!q || q.length < 2) return [];
+  const fragment = quoteGithubSearchFragment(q);
+  if (!fragment) return [];
+  const res = await githubFetch(
+    `https://api.github.com/search/repositories?${new URLSearchParams({
+      q: `${fragment} in:name is:public`,
+      sort: 'stars',
+      per_page: '20',
+    })}`,
+    { token }
+  );
+  if (res.status === 422) return [];
+  const data = await githubJsonOrThrow(res, 'GitHub search/repositories');
+  return (data.items ?? []).filter((r) => !r.private).map(mapRepo);
+}
+
+/** Search public GitHub repos by name or exact `owner/repo` (up to 20 results). */
+export async function findPublicRemoteRepos(token, { query = '', org = '' } = {}) {
+  const q = query.trim();
+  if (!q || !token) return [];
+
+  const orgPrefix = org ? `${org.toLowerCase()}/` : '';
+  const seen = new Set();
+  const results = [];
+
+  const maybeAdd = (repo) => {
+    if (!repo || repo.private || typeof repo.full_name !== 'string' || !repo.full_name) return;
+    const key = repo.full_name.toLowerCase();
+    if (seen.has(key)) return;
+    if (orgPrefix && !key.startsWith(orgPrefix)) return;
+    seen.add(key);
+    results.push(repo);
+  };
+
+  if (isResolvablePublicRepoFullName(q)) {
+    const exact = await fetchPublicRepoByFullName(token, q);
+    maybeAdd(exact);
+  }
+
+  if (q.length >= 2) {
+    const searchResults = await searchPublicRepositories(token, q);
+    for (const repo of searchResults) maybeAdd(repo);
+  }
+
+  return results.slice(0, 20);
+}
+
 // Refreshing installation and repo lists is manual, so we can cache them indefinitely
 const REPOS_CACHE_TTL = Infinity;
 
