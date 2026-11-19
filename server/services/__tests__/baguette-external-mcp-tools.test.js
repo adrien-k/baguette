@@ -27,7 +27,7 @@ describe('buildExternalMcpToolList', () => {
     expect(names).toContain('CreateSession');
     expect(names).toContain('CreateSessionMessage');
     expect(names).toContain('SearchSessions');
-    expect(names).toContain('ListSubagents');
+    expect(names).toContain('ListAgents');
   });
 
   it('in-session base layer includes excluded tools for agents with callerSession', () => {

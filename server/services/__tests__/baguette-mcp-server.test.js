@@ -320,6 +320,8 @@ describe('builder MCP tool registry', () => {
     expect(names).not.toContain('PrUpsert');
     expect(names).toContain('UpdateSession');
     expect(names).toContain('ConfigureMcpServer');
+    expect(names).toContain('StartReview');
+    expect(names).toContain('ContinueReview');
     const push = tools.find((t) => t.name === 'GitPush');
     expect(push.description).toMatch(/not for regular turn work/i);
     expect(push.description).toMatch(/approval/i);
@@ -400,7 +402,7 @@ describe('builder MCP tool registry', () => {
     expect(names).toContain('ListPlans');
     expect(names).toContain('EditPlan');
     expect(names).toContain('CompletePlan');
-    expect(names).toContain('ListSubagents');
+    expect(names).toContain('ListAgents');
     expect(names).toContain('AwaitSubagent');
     expect(names).toContain('StopSubagent');
     expect(names).toContain('CurrentSessionInfo');
@@ -411,6 +413,8 @@ describe('builder MCP tool registry', () => {
     expect(names).toContain('UpdateIssue');
     expect(names).not.toContain('UpdateIssueStatus');
     expect(names).not.toContain('CloseIssue');
+    expect(names).not.toContain('StartReview');
+    expect(names).not.toContain('ContinueReview');
   });
 
   it('plan and todo tool descriptions tell agents CreatePlan does not attach and to complete todos', async () => {

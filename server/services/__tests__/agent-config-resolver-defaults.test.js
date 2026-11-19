@@ -5,6 +5,7 @@ import {
   assertAgentConfigOnCreate,
   resolveAgentConfigIdForRepoSdk,
   resolveEffectiveAgentDefaults,
+  resolveExplicitReviewerDefaults,
   resolveSessionFormDefaults,
 } from '../agent-config-resolver.js';
 import { feathers } from 'feathers';
@@ -78,6 +79,26 @@ describe('resolveEffectiveAgentDefaults', () => {
       source: 'user',
     });
     expect(resolved.model_params).toEqual([{ id: 'fast', value: 'true' }]);
+  });
+
+  it('resolveExplicitReviewerDefaults uses account settings only', async () => {
+    await db('users')
+      .where({ id: userId })
+      .update({
+        reviewer_default_config_id: claudeConfigId,
+        reviewer_default_model: JSON.stringify({ model: 'sonnet', model_params: null }),
+      });
+    const resolved = await resolveExplicitReviewerDefaults(db, userId);
+    expect(resolved).toMatchObject({
+      agent_config_id: claudeConfigId,
+      model: 'sonnet',
+    });
+    const [noRevUserId] = await db('users').insert({
+      github_id: 2002,
+      username: 'no-rev-explicit',
+      status: 'approved',
+    });
+    expect(await resolveExplicitReviewerDefaults(db, noRevUserId)).toBeNull();
   });
 
   it('resolveSessionFormDefaults includes reviewer fields', async () => {

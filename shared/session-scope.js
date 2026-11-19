@@ -154,6 +154,8 @@ export const SUBAGENT_EXCLUDED_MCP_TOOLS = [
   'UpdateSkill',
   'DeleteSkill',
   'ConfigRepoPrompt',
+  'StartReview',
+  'ContinueReview',
   // Fleet orchestration is the parent's job: a subagent must not stop sessions
   // (including its own parent's turn), subscribe to wake-ups that dispatch
   // subagent turns outside the parent's control, or inspect/await other sessions.
