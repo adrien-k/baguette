@@ -258,128 +258,132 @@ function RepositoriesTab({ settings, onSave }) {
           title="My repositories"
           description="Repositories linked to your account. Removing one cleans up its data if no other users have it linked."
         >
-          <div>
-            <h4 className="text-xs font-medium text-fg-muted mb-2">Add from GitHub</h4>
-            <form onSubmit={handleAdd}>
-              <RepoSearchInput
-                value={selectedRepo}
-                onSelect={setSelectedRepo}
-                addedNames={addedNames}
-                trailing={
-                  <button
-                    type="submit"
-                    disabled={adding || !selectedRepo}
-                    className={`${PRIMARY_BUTTON_SIZED} py-2.5 shrink-0`}
-                  >
-                    {adding ? 'Adding…' : 'Add'}
-                  </button>
-                }
-              />
-            </form>
-          </div>
-
-          <div>
-            <h4 className="text-xs font-medium text-fg-muted mb-2">Add a public repository</h4>
-            <form onSubmit={handleAddPublic}>
-              <PublicRepoSearchInput
-                value={selectedPublicRepo}
-                onSelect={setSelectedPublicRepo}
-                addedNames={addedNames}
-                trailing={
-                  <button
-                    type="submit"
-                    disabled={addingPublic || !selectedPublicRepo}
-                    className={`${PRIMARY_BUTTON_SIZED} py-2.5 shrink-0`}
-                  >
-                    {addingPublic ? 'Adding…' : 'Add'}
-                  </button>
-                }
-              />
-            </form>
-          </div>
-
-          <div>
-            <h4 className="text-xs font-medium text-fg-muted mb-2">
-              Create a local repository (no GitHub required)
-            </h4>
-            <form onSubmit={handleAddLocal} className="flex flex-col sm:flex-row gap-2">
-              <TextInput
-                type="text"
-                value={localName}
-                onChange={(e) => setLocalName(e.target.value)}
-                placeholder="Repository name (e.g. my-project)"
-                required
-                className="flex-1"
-              />
-              <button
-                type="submit"
-                disabled={addingLocal || !localName.trim()}
-                className={`${PRIMARY_BUTTON_SIZED} py-2.5 shrink-0`}
-              >
-                {addingLocal ? 'Creating…' : 'Create'}
-              </button>
-            </form>
-          </div>
-
-          {addResult && !addResult.hasBaguetteConfig && (
-            <div className={`${BANNER_WARN} rounded-xl px-4 py-3`}>
-              <p className="text-sm text-warning">
-                <strong>{addResult.repo.full_name}</strong> doesn&apos;t have a baguette
-                configuration yet. Start a session on this repo — the agent will offer to configure
-                it automatically.
-              </p>
-              <button
-                onClick={() => setAddResult(null)}
-                className="mt-2 text-sm text-fg-muted hover:text-secondary"
-              >
-                Dismiss
-              </button>
+          <div className="space-y-6">
+            <div>
+              <h4 className="text-xs font-medium text-fg-muted mb-2">Add from GitHub</h4>
+              <form onSubmit={handleAdd}>
+                <RepoSearchInput
+                  value={selectedRepo}
+                  onSelect={setSelectedRepo}
+                  addedNames={addedNames}
+                  trailing={
+                    <button
+                      type="submit"
+                      disabled={adding || !selectedRepo}
+                      className={`${PRIMARY_BUTTON_SIZED} py-2.5 shrink-0`}
+                    >
+                      {adding ? 'Adding…' : 'Add'}
+                    </button>
+                  }
+                />
+              </form>
             </div>
-          )}
 
-          <GroupedRepositoriesList
-            repos={repos}
-            emptyMessage="No repositories added"
-            renderRepo={(r) => (
-              <div key={r.id} className="flex items-center justify-between gap-3 py-3">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <code className="text-sm text-fg font-medium">
-                      {repoDisplayName(r.full_name)}
-                    </code>
-                    <span className="text-xs bg-control-hover text-secondary px-1.5 py-0.5 rounded font-mono">
-                      {repoAccessModeLabel(r)}
-                    </span>
-                  </div>
-                  {r.full_name.startsWith('/') && (
-                    <div className="text-xs text-faint mt-0.5 font-mono truncate">
-                      {r.full_name}
-                    </div>
-                  )}
-                  <div className="text-xs text-faint mt-0.5">
-                    {r.session_count} session(s) · {r.exists_on_fs ? 'On disk' : 'Not on disk'}
-                  </div>
-                  <label className="mt-2 flex items-center gap-2 text-xs text-fg-muted cursor-pointer">
-                    <input
-                      type="checkbox"
-                      className="rounded border-strong bg-control text-accent focus:ring-brand/50"
-                      checked={r.show_in_all_sessions !== false}
-                      disabled={togglingShowInAllId === r.id}
-                      onChange={(e) => handleShowInAllSessionsChange(r, e.target.checked)}
-                    />
-                    Include in &ldquo;All sessions&rdquo; view
-                  </label>
-                </div>
+            <div>
+              <h4 className="text-xs font-medium text-fg-muted mb-2">Add a public repository</h4>
+              <form onSubmit={handleAddPublic}>
+                <PublicRepoSearchInput
+                  value={selectedPublicRepo}
+                  onSelect={setSelectedPublicRepo}
+                  addedNames={addedNames}
+                  trailing={
+                    <button
+                      type="submit"
+                      disabled={addingPublic || !selectedPublicRepo}
+                      className={`${PRIMARY_BUTTON_SIZED} py-2.5 shrink-0`}
+                    >
+                      {addingPublic ? 'Adding…' : 'Add'}
+                    </button>
+                  }
+                />
+              </form>
+            </div>
+
+            <div>
+              <h4 className="text-xs font-medium text-fg-muted mb-2">
+                Create a local repository (no GitHub required)
+              </h4>
+              <form onSubmit={handleAddLocal} className="flex flex-col sm:flex-row gap-2">
+                <TextInput
+                  type="text"
+                  value={localName}
+                  onChange={(e) => setLocalName(e.target.value)}
+                  placeholder="Repository name (e.g. my-project)"
+                  required
+                  className="flex-1"
+                />
                 <button
-                  onClick={() => handleUnlinkClick(r)}
-                  disabled={unlinkingId !== null}
-                  className="text-xs text-danger hover:text-danger disabled:opacity-50 shrink-0 self-start"
+                  type="submit"
+                  disabled={addingLocal || !localName.trim()}
+                  className={`${PRIMARY_BUTTON_SIZED} py-2.5 shrink-0`}
                 >
-                  Remove
+                  {addingLocal ? 'Creating…' : 'Create'}
+                </button>
+              </form>
+            </div>
+
+            {addResult && !addResult.hasBaguetteConfig && (
+              <div className={`${BANNER_WARN} rounded-xl px-4 py-3`}>
+                <p className="text-sm text-warning">
+                  <strong>{addResult.repo.full_name}</strong> doesn&apos;t have a baguette
+                  configuration yet. Start a session on this repo — the agent will offer to
+                  configure it automatically.
+                </p>
+                <button
+                  onClick={() => setAddResult(null)}
+                  className="mt-2 text-sm text-fg-muted hover:text-secondary"
+                >
+                  Dismiss
                 </button>
               </div>
             )}
-          />
+          </div>
+
+          <div className="border-t border-line pt-6 mt-2">
+            <GroupedRepositoriesList
+              repos={repos}
+              emptyMessage="No repositories added"
+              renderRepo={(r) => (
+                <div key={r.id} className="flex items-center justify-between gap-3 py-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <code className="text-sm text-fg font-medium">
+                        {repoDisplayName(r.full_name)}
+                      </code>
+                      <span className="text-xs bg-control-hover text-secondary px-1.5 py-0.5 rounded font-mono">
+                        {repoAccessModeLabel(r)}
+                      </span>
+                    </div>
+                    {r.full_name.startsWith('/') && (
+                      <div className="text-xs text-faint mt-0.5 font-mono truncate">
+                        {r.full_name}
+                      </div>
+                    )}
+                    <div className="text-xs text-faint mt-0.5">
+                      {r.session_count} session(s) · {r.exists_on_fs ? 'On disk' : 'Not on disk'}
+                    </div>
+                    <label className="mt-2 flex items-center gap-2 text-xs text-fg-muted cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="rounded border-strong bg-control text-accent focus:ring-brand/50"
+                        checked={r.show_in_all_sessions !== false}
+                        disabled={togglingShowInAllId === r.id}
+                        onChange={(e) => handleShowInAllSessionsChange(r, e.target.checked)}
+                      />
+                      Include in &ldquo;All sessions&rdquo; view
+                    </label>
+                  </div>
+                  <button
+                    onClick={() => handleUnlinkClick(r)}
+                    disabled={unlinkingId !== null}
+                    className="text-xs text-danger hover:text-danger disabled:opacity-50 shrink-0 self-start"
+                  >
+                    Remove
+                  </button>
+                </div>
+              )}
+            />
+          </div>
         </SettingsSection>
       </div>
 
