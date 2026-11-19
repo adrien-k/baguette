@@ -1,7 +1,7 @@
 /**
  * Env-gated live agent-SDK tests: real LLM (or mock) turns against a full Feathers app.
  *
- * Set SDK_TESTS_<SDK>_API_KEY + SDK_TESTS_<SDK>_MODEL (see `.env.example`) to enable.
+ * Set SDK_TESTS_<SDK>_API_KEY + SDK_TESTS_<SDK>_MODEL (see `.env.dev.example`) to enable.
  * Suites skip when those vars are unset so `pnpm test` stays free/offline by default.
  *
  * Recommended cheap models and observed harness costs (one turn, 2026-10-31):

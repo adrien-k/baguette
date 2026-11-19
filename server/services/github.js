@@ -3,13 +3,7 @@ import { promisify } from 'util';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import {
-  PUBLIC_HOST,
-  PUBLIC_API_URL,
-  REPOS_DIR,
-  resolveRepoPath,
-  resolveDataDirRelativePath,
-} from '../config.js';
+import { PUBLIC_HOST, REPOS_DIR, resolveRepoPath, resolveDataDirRelativePath } from '../config.js';
 import * as cache from '../lib/cache.js';
 import {
   buildLogRangeHeader,
@@ -2375,7 +2369,7 @@ export function descriptionHasImage(markdown) {
 export function baguetteDescriptionLink(sessionId) {
   return (
     `Images not showing? ` +
-    `[Open the full description in Baguette](${PUBLIC_API_URL}/session/${sessionId}/description)`
+    `[Open the full description in Baguette](${PUBLIC_HOST}/session/${sessionId}/description)`
   );
 }
 

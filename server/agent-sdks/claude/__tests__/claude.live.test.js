@@ -1,5 +1,5 @@
 /**
- * Live Claude SDK turn. Skips unless SDK_TESTS_CLAUDE_* are set (see `.env.example`).
+ * Live Claude SDK turn. Skips unless SDK_TESTS_CLAUDE_* are set (see `.env.dev.example`).
  *
  * Recommended (OpenCode Go Anthropic gateway — cheapest Claude-compatible Go model):
  *   SDK_TESTS_CLAUDE_AUTH_TOKEN + SDK_TESTS_CLAUDE_API_URL=https://opencode.ai/inference/go/anthropic

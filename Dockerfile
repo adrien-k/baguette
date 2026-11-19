@@ -5,14 +5,17 @@ FROM base AS builder
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y python3 make g++ git && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /client
+WORKDIR /app
 
-COPY client/package*.json .
+COPY package*.json .
 RUN npm install
 
-COPY client .
-COPY shared ../shared
-RUN npm run build
+COPY client ./client
+COPY shared ./shared
+COPY server ./server
+COPY lib ./lib
+COPY scripts/build-server.mjs ./scripts/build-server.mjs
+RUN npm run build:all
 
 
 FROM base AS runner
@@ -89,12 +92,13 @@ WORKDIR /app
 COPY --chown=baguette:baguette package*.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm rebuild better-sqlite3
 
-COPY --chown=baguette:baguette --from=builder /client/dist client/dist/
-COPY --chown=baguette:baguette shared/ shared/
-COPY --chown=baguette:baguette server/ server/
+COPY --chown=baguette:baguette --from=builder /app/client/dist client/dist/
+COPY --chown=baguette:baguette --from=builder /app/dist dist/
 COPY --chown=baguette:baguette knexfile.js ./
+COPY --chown=baguette:baguette lib/ lib/
 COPY --chown=baguette:baguette bin/ bin/
-COPY --chown=baguette:baguette scripts/ scripts/
+COPY --chown=baguette:baguette scripts/migrate-latest.js scripts/migrate-latest.js
+COPY --chown=baguette:baguette scripts/start-server.mjs scripts/start-server.mjs
 
 RUN chmod +x /app/bin/entrypoint.sh
 
@@ -114,4 +118,4 @@ EXPOSE 3000
 # entrypoint runs as root: adjusts docker group GID, symlinks $HOME dirs to /data, then drops to baguette
 USER root
 ENTRYPOINT ["/app/bin/entrypoint.sh"]
-CMD ["sh", "-c", "npm run migrate && exec node server/index.js"]
+CMD ["sh", "-c", "npm run migrate && exec node scripts/start-server.mjs"]

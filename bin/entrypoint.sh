@@ -36,6 +36,11 @@ if [ -S /var/run/docker.sock ]; then
     fi
 fi
 
+# App data (SQLite, encryption.key, repos) lives under DATA_DIR; the process runs as baguette.
+DATA_DIR="${DATA_DIR:-/data/baguette}"
+mkdir -p "$DATA_DIR"
+chown baguette:baguette "$DATA_DIR"
+
 # Persist the whole home folder on the mounted volume while keeping the original home folder
 # from the docker image.
 # - Claude authentication

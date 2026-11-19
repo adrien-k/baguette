@@ -9,7 +9,7 @@ describe('getBundledLunaroutePiExtensionPath', () => {
   it('points at the in-repo chat-only extension entry', () => {
     const entry = getBundledLunaroutePiExtensionPath();
     expect(existsSync(entry)).toBe(true);
-    expect(entry).toMatch(/lunaroute-chat[/\\]index\.ts$/);
+    expect(entry).toMatch(/lunaroute-chat[/\\]index\.(ts|js)$/);
   });
 });
 

@@ -8,7 +8,7 @@
  * Usage: node server/scripts/recompute-cursor-usage.js [--dry-run]
  */
 import knex from 'knex';
-import knexfile from '../../knexfile.js';
+import { loadKnexConfig } from '../lib/load-knex-config.js';
 import {
   deriveCursorUsageFromRaw,
   parseCursorRawTokenUsage,
@@ -17,7 +17,7 @@ import { estimateCursorUsageCostUsd } from '../lib/cursor-usage-row-cost.js';
 import { usageQueryWithAgentPricing } from '../lib/usage-agent-join.js';
 
 const dryRun = process.argv.includes('--dry-run');
-const db = knex(knexfile);
+const db = knex(await loadKnexConfig());
 
 function reportProgress(done, total) {
   const pct = total === 0 ? 100 : Math.min(100, Math.floor((done / total) * 100));

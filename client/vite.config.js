@@ -4,20 +4,53 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import { loadRootDotenv, publicHostHostname } from '../server/lib/public-host.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 
+loadRootDotenv();
+const viteDevPublicHostEnv = {
+  ...process.env,
+  VITE_SERVER_ENABLED: process.env.VITE_SERVER_ENABLED ?? 'true',
+};
+const devAllowedHost = publicHostHostname(viteDevPublicHostEnv);
+
 const APP_PORT = process.env.PORT || 3000;
 const VITE_PORT = parseInt(process.env.VITE_PORT) || 5173;
 
+const reactRoot = path.join(repoRoot, 'node_modules/react');
+const reactDomRoot = path.join(repoRoot, 'node_modules/react-dom');
+
 export default defineConfig({
+  root: __dirname,
   define: {
     'import.meta.env.VITE_ENABLE_MOCK_AGENT': JSON.stringify(process.env.ENABLE_MOCK_AGENT ?? ''),
   },
   resolve: {
     alias: {
       '@baguette/shared': path.resolve(repoRoot, 'shared'),
+      // Single React copy (client/ had a nested 19.2.x vs root 19.3.x — Rolldown duplicated hooks).
+      react: reactRoot,
+      'react-dom': reactDomRoot,
+      'react-dom/client': path.join(reactDomRoot, 'client'),
+      'react/jsx-runtime': path.join(reactRoot, 'jsx-runtime.js'),
+      'react/jsx-dev-runtime': path.join(reactRoot, 'jsx-dev-runtime.js'),
+    },
+    dedupe: ['react', 'react-dom'],
+  },
+  build: {
+    rolldownOptions: {
+      output: {
+        advancedChunks: {
+          groups: [
+            {
+              name: 'vendor-react',
+              test: /[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/,
+            },
+          ],
+        },
+      },
     },
   },
   plugins: [
@@ -67,7 +100,7 @@ export default defineConfig({
     fs: {
       allow: [repoRoot],
     },
-    allowedHosts: process.env.PUBLIC_HOST ? [new URL(process.env.PUBLIC_HOST).hostname] : undefined,
+    allowedHosts: devAllowedHost ? [devAllowedHost] : undefined,
     proxy: {
       '/api': `http://127.0.0.1:${APP_PORT}`,
       '/auth': `http://127.0.0.1:${APP_PORT}`,

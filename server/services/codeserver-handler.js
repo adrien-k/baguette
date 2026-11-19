@@ -1,4 +1,5 @@
-import { PUBLIC_API_URL } from '../config.js';
+import { PUBLIC_HOST } from '../config.js';
+import { resolveSessionSubdomainPublicUrl } from '../lib/public-host.js';
 import { buildSessionHostname } from './preview.js';
 import { DEFAULT_TTL_MS } from './task.js';
 import logger from '../logger.js';
@@ -6,7 +7,7 @@ import { isApprovedUser } from '../../shared/user-status.js';
 
 const CODE_DOMAIN_PREFIX = 'code';
 
-const codeHostname = buildSessionHostname(new URL(PUBLIC_API_URL).hostname, CODE_DOMAIN_PREFIX);
+const codeHostname = buildSessionHostname(new URL(PUBLIC_HOST).hostname, CODE_DOMAIN_PREFIX);
 
 export class CodeServerHandler {
   startupTimeoutMs = 2 * 60 * 1000;
@@ -73,7 +74,7 @@ export class CodeServerHandler {
 
 /** Returns the VS Code web URL for a session folder on the shared code-server. */
 export function getCodeserverUrl(absoluteSessionPath) {
-  const url = new URL(PUBLIC_API_URL);
+  const url = new URL(resolveSessionSubdomainPublicUrl());
   url.hostname = codeHostname;
   url.searchParams.set('folder', absoluteSessionPath);
   return url.toString();

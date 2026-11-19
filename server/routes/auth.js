@@ -6,7 +6,8 @@ import { getClientIp } from '../lib/client-ip.js';
 import { touchUserLastIp } from '../lib/user-last-ip.js';
 import { signProxyToken, buildSessionHostname } from '../services/preview.js';
 import { cacheScopeForUser, clearReposCache, clearInstallationsCache } from '../services/github.js';
-import { PUBLIC_HOST, PUBLIC_API_URL } from '../config.js';
+import { PUBLIC_HOST } from '../config.js';
+import { resolveSessionSubdomainPublicUrl } from '../lib/public-host.js';
 import { getGithubAppConfig } from '../lib/instance-settings.js';
 import {
   buildGithubManifestPayload,
@@ -754,13 +755,13 @@ export function createAuthRoutes(app) {
     }
 
     const token = signProxyToken(req.user.id);
-    const { protocol, hostname } = new URL(PUBLIC_API_URL);
-
-    const redirectToParam = safeRedirectTo
-      ? `&redirectTo=${encodeURIComponent(safeRedirectTo)}`
-      : '';
-    const authUrl = `${protocol}//${buildSessionHostname(hostname, service)}/_baguette/auth?sign=${token}${redirectToParam}`;
-    return res.redirect(authUrl);
+    const authTarget = new URL(resolveSessionSubdomainPublicUrl());
+    authTarget.hostname = buildSessionHostname(authTarget.hostname, service);
+    authTarget.pathname = '/_baguette/auth';
+    authTarget.search = '';
+    authTarget.searchParams.set('sign', token);
+    if (safeRedirectTo) authTarget.searchParams.set('redirectTo', safeRedirectTo);
+    return res.redirect(authTarget.toString());
   });
 
   router.post('/auth/logout', (req, res) => {

@@ -41,9 +41,13 @@ Each repository can include a `.baguette.yaml` file at its root to configure per
 
 Baguette proxies session dev servers via subdomain routing. Each session's preview is served at `session-<session_short_id>.<host>`. Preview tasks always run in the **parent session worktree** (`.../worktree/`) — isolated subagent checkouts do not host the dev proxy.
 
-### Development - Localhost
+### Development
 
-`*.localhost` must resolve to `127.0.0.1`. Most systems do not support wildcard `.localhost` subdomains by default — use `dnsmasq`:
+By default, local Baguette uses `DOMAIN=127.0.0.1.traefik.me` ([wildcard DNS to `127.0.0.1`](https://traefik.me/)), so previews work at `session-<id>.127.0.0.1.traefik.me` without extra DNS setup. Open the dev UI at `http://www.127.0.0.1.traefik.me:5173` (see `.env.dev.example`).
+
+#### Localhost (optional)
+
+To use `*.localhost` instead, set `DOMAIN=localhost` (and matching `PUBLIC_HOST` in `.env`) and ensure wildcards resolve to `127.0.0.1`. Most systems do not support that by default — use `dnsmasq`:
 
 **macOS (Homebrew):**
 

@@ -1,15 +1,42 @@
 {
-  "name": "baguette",
+  "name": "baguette-ai",
   "version": "0.0.1",
-  "description": "Self-hosted Claude Code agent sessions on GitHub repo worktrees",
+  "description": "Self-hosted orchestrator for Claude, Cursor or Pi coding agents: worktree sessions, live previews, and GitHub PRs",
   "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/adrien-k/baguette.git"
+  },
+  "bin": {
+    "baguette": "bin/baguette.mjs"
+  },
+  "files": [
+    "bin/",
+    "client/dist/",
+    "dist/",
+    "knexfile.js",
+    "lib/",
+    "scripts/migrate-latest.js",
+    "scripts/start-server.mjs"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "dev": "concurrently \"VITE_SERVER_ENABLED=true npm run dev:server\" \"npm run dev:client\"",
-    "dev:server": "NODE_ENV=development node --watch server/index.js",
-    "dev:client": "npm run dev --prefix client",
-    "install:all": "\"$npm_execpath\" install && cd client && \"$npm_execpath\" install",
-    "build": "npm run build --prefix client",
-    "start": "NODE_ENV=production node server/index.js",
+    "dev:server": "NODE_ENV=development node --experimental-strip-types --watch server/index.js",
+    "dev:client": "vite --config client/vite.config.js",
+    "build": "vite build --config client/vite.config.js",
+    "build:server": "node scripts/build-server.mjs",
+    "build:all": "npm run build && npm run build:server",
+    "build:client": "npm run build",
+    "preview:client": "vite preview --config client/vite.config.js",
+    "gen-icons": "node client/scripts/gen-icons.mjs",
+    "start": "NODE_ENV=production node scripts/start-server.mjs",
     "migrate": "node scripts/migrate-latest.js",
     "migrate:make": "knex migrate:make --knexfile knexfile.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -23,6 +50,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "fix": "\"$npm_execpath\" run lint:fix && \"$npm_execpath\" run format",
+    "prepublishOnly": "npm run build:all",
     "prepare": "husky || true"
   },
   "lint-staged": {
@@ -31,10 +59,29 @@
   },
   "allowScripts": {
     "@google/genai": false,
+    "esbuild@0.27.3": true,
     "esbuild@0.28.2": true,
     "fsevents@2.3.3": true,
     "protobufjs": false,
     "unrs-resolver@1.12.2": true
+  },
+  "overrides": {
+    "@hono/node-server": "^2.1.6",
+    "@emoji-mart/react": {
+      "react": "$react",
+      "react-dom": "$react-dom"
+    },
+    "fast-uri": "^3.1.9",
+    "glob": "$glob",
+    "hono": "^4.13.16",
+    "ip-address": "^10.7.4",
+    "@earendil-works/pi-coding-agent": {
+      "undici": "^8.12.2"
+    },
+    "minimatch": "^11.0.1",
+    "qs": "^6.17.1",
+    "undici": "^8.12.2",
+    "zod": "$zod"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.310",
@@ -44,7 +91,7 @@
     "@earendil-works/pi-coding-agent": "^1.0.4",
     "@feathersjs/knex": "^5.0.46",
     "@feathersjs/schema": "^5.0.46",
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "^1.32.0",
     "@simplewebauthn/server": "^14.0.3",
     "better-sqlite3": "13.0.3",
     "cookie": "^2.0.1",
@@ -55,7 +102,7 @@
     "express": "^4.22.3",
     "feathers": "6.0.0-pre.11",
     "geoip-country": "^5.0.202610310241",
-    "js-yaml": "^5.2.3",
+    "js-yaml": "^5.5.0",
     "knex": "latest",
     "pino": "^10.3.1",
     "pino-pretty": "^13.1.3",
@@ -64,25 +111,54 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
+    "@floating-ui/react": "^0.27.20",
+    "@lobehub/icons": "^6.13.0",
+    "@lobehub/icons-static-avatar": "2.9.0",
     "@playwright/test": "^1.55.0",
+    "@resvg/resvg-js": "^2.6.2",
+    "@simplewebauthn/browser": "^14.0.0",
+    "@tailwindcss/vite": "latest",
+    "@tanstack/react-query": "^5.107.1",
+    "@tanstack/react-query-devtools": "^5.107.1",
+    "@testing-library/react": "^16.3.3",
     "@types/node": "^26.6.4",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^5.1.4",
+    "ansi-to-html": "^0.7.2",
     "concurrently": "latest",
+    "diff": "^9.0.0",
+    "esbuild": "^0.28.2",
     "eslint": "^9.39.5",
     "eslint-config-prettier": "^10.1.8",
     "eslint-import-resolver-typescript": "^4.4.5",
-    "eslint-plugin-import-x": "^4.17.1",
+    "eslint-plugin-import-x": "^4.18.1",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.1.1",
+    "glob": "^14.0.2",
     "globals": "^17.9.0",
+    "highlight.js": "^11.12.0",
     "husky": "^9.1.7",
     "jsdom": "^27.4.0",
     "lint-staged": "^17.5.1",
+    "lucide-react": "^1.28.0",
+    "mermaid": "^12.0.0",
+    "postcss": "^8.5.25",
+    "postcss-100vh-fix": "^2.0.0",
     "prettier": "^3.9.6",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-hot-toast": "^2.6.0",
+    "react-markdown": "^10.1.0",
+    "react-qr-code": "^2.2.0",
+    "react-router-dom": "latest",
+    "remark-gfm": "^4.0.1",
+    "tailwindcss": "latest",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.71.0",
-    "vitest": "^4.1.10",
-    "zod": "^4.4.3"
+    "vite": "latest",
+    "vite-plugin-pwa": "^1.3.0",
+    "vitest": "^4.1.12",
+    "zod": "^4.6.7"
   }
 }

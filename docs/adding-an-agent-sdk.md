@@ -123,7 +123,7 @@ pnpm test                                 # full suite
 
 Each SDK can ship a `*.live.test.js` that drives a real turn (tools, a `.baguette.yaml`
 task, usage). The shared harness is `server/test-utils/sdk-live.js`. Tests **skip**
-unless the matching env vars are set (see `.env.example`):
+unless the matching env vars are set (see `.env.dev.example`):
 
 | SDK    | Required env                                                                                                         |
 | ------ | -------------------------------------------------------------------------------------------------------------------- |

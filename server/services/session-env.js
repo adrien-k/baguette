@@ -19,7 +19,6 @@ const SERVER_ONLY_ENV_KEYS = [
   'AUTH_GITHUB_APP_SLUG',
   'DATA_DIR',
   'PUBLIC_HOST',
-  'PUBLIC_API_HOST',
 ];
 
 export function stripServerEnv(env) {

@@ -32,130 +32,83 @@ Baguette is a self-hosted orchestrator for AI coding agents that runs in the clo
 - **Session config (`.baguette.yaml`)** -- Define per-session env vars, init commands, tasks with port allocation and dependencies, and cleanup in your repo. See **[docs/project-configuration.md](docs/project-configuration.md)**.
 - **User approval** -- The first visitor is the instance admin. Later GitHub users wait for approval on **Admin → Users**. Without a GitHub App, the admin invites additional users with a one-time link; they add a passkey when they open it.
 
+## Quick start
+
+**Prerequisites:** [Node.js](https://nodejs.org/) 20+. No `.env` file is required for a first run.
+
+```bash
+npm install -g baguette-ai
+baguette
+```
+
+The `baguette` command runs database migrations, then starts the server (default port **3000**). Open [http://www.127.0.0.1.traefik.me:3000](http://www.127.0.0.1.traefik.me:3000) (default public URL; matches WebAuthn and GitHub callback hosts), claim the instance as the first visitor (admin), and finish the wizard: create a GitHub App (manifest) or skip (passkey). Configure agents in **Settings → Agent** with your Anthropic and/or Cursor credentials.
+
+For a real deployment, run with **`NODE_ENV=production`** and configure the public URL with either **`PUBLIC_HOST`** (full URL) or **`DOMAIN`** (apex hostname). `npm start` sets `NODE_ENV=production`; the global `baguette` CLI does not — export both vars yourself when deploying that way.
+
+Persistent data (SQLite, encryption key, repo clones, worktrees) is stored under **`~/.baguette`** by default. On first boot, Baguette creates `encryption.key` there (mode `0600`) — back up that directory across restarts.
+
+**Optional on the host:**
+
+- [Claude Code](https://claude.ai/install.sh) for Claude agent sessions: `curl -fsSL https://claude.ai/install.sh | bash`
+- [code-server](https://coder.com/docs/code-server/install) for the **VS Code** button on sessions
+
+To set a public hostname, bootstrap password, custom data directory, or other server options, see **[Environment variables](#environment-variables)** (or export vars in your process manager / container platform — no `.env` file needed).
+
+To work on Baguette itself (Vite dev server, tests, optional `.env`), see **[CONTRIBUTING.md — Development setup](CONTRIBUTING.md#development-setup)**.
+
+### Configuring agents
+
+Configure your agent(s) in **Settings → Agent**.
+
+**Claude:** Enter a Console API key (`sk-ant-api…`) in **API key**, or a subscription token from `claude setup-token` (`sk-ant-oat…`) in **Auth token**. For an Anthropic-compatible gateway, set **API base URL** with the **Auth token** or **API key** your gateway expects. **Test connection** calls the gateway’s `/v1/models` API — it does not run Claude Code. Claude Code must be installed on the host for agent sessions.
+
+**Cursor:** Enter your Cursor API key and optionally set a default model and variant. No additional CLI installation required.
+
+### GitHub App (optional)
+
+To sign in with GitHub and open PRs on your repos, create and install a GitHub App. Step-by-step permissions and callback URLs for **development** (git checkout) are in [CONTRIBUTING.md](CONTRIBUTING.md#setting-up-the-github-app). For **production**, set `PUBLIC_HOST` to your public URL (see [Environment variables](#environment-variables)) and use `{PUBLIC_HOST}/auth/github/callback` as the App callback and setup URL.
+
 ## Deploy
 
 - **[Fly.io guide](docs/deployment/fly.io.md)** — Deploy in minutes with auto stop/start machines and pay-per-use billing. No server management required.
 - **[Kamal guide (VPS)](docs/deployment/kamal.md)** — Deploy to any Ubuntu VPS (Hetzner, EC2, DigitalOcean, etc.) using [Kamal](https://kamal-deploy.org/). Includes a GitHub Actions workflow for manual deploys via workflow_dispatch.
 - **[AWS EC2 + CloudFormation](docs/deployment/aws-ec2-kamal.md)** — Provision EC2, Route 53, and acme.sh for Kamal with stack outputs for GitHub Actions CI variables.
 
-## Advanced settings
+## Environment variables
 
-The env vars below only matter once Baguette is exposed beyond `localhost` — leave them at their defaults for local development.
+Baguette reads configuration from the process environment. None are required for a local try on `localhost` (no `NODE_ENV`, or `NODE_ENV` other than `production`).
+
+**Public URL (production):** set **either** `PUBLIC_HOST` **or** `DOMAIN`. With `NODE_ENV=production`, the server refuses to start if neither is set.
+
+- **`PUBLIC_HOST`** — Full base URL where the application will be available, including scheme and optional port (e.g. `https://your-app.fly.dev`, `https://www.baguette.example.com`).
+- **`DOMAIN`** — Apex hostname only (e.g. `baguette.example.com`). Baguette derives `PUBLIC_HOST` as `https://www.<DOMAIN>` in production.
+
+| Variable             | Description                                                                                                                                                                                     |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NODE_ENV`           | Set to `production` on real deployments (`npm start`, Docker, Kamal). With production, set `PUBLIC_HOST` or `DOMAIN` as above.                                                                  |
+| `PUBLIC_HOST`        | Public base URL of the UI. **Production:** set this _or_ `DOMAIN`.                                                                                                                              |
+| `DOMAIN`             | Apex hostname (e.g. `baguette.example.com`). **Production:** set this _or_ `PUBLIC_HOST`. Dev default when unset: `127.0.0.1.traefik.me`.                                                       |
+| `DATA_DIR`           | Data directory for the SQLite DB, `encryption.key`, repo clones, and worktrees (default: `~/.baguette`). Relative paths resolve from the install directory.                                     |
+| `PORT`               | Express listen port (default: `3000`). In development, also appended when deriving `PUBLIC_HOST` from `DOMAIN` (ignored when `PUBLIC_HOST` is set; omitted from derived production HTTPS URLs). |
+| `BOOTSTRAP_PASSWORD` | Optional. One-time first-visitor gate on public hosts. Env-only; never written to disk.                                                                                                         |
+| `TRUST_PROXY_HOPS`   | Reverse-proxy hops trusted for `X-Forwarded-For` (default: `1`). Set `0` when Baguette is exposed directly with no proxy.                                                                       |
+| `TRUST_EDGE_COUNTRY` | Optional. Set `1` behind Cloudflare, CloudFront, or App Engine; default off (country from geoip on client IP).                                                                                  |
+
+If `encryption.key` is missing under `DATA_DIR`, first boot generates one. Losing that file makes cookies and encrypted secrets unreadable — Baguette never regenerates over an existing file.
 
 ### What is IP detection used for?
 
-Baguette records the client IP of each request and uses it for three things:
+Baguette records the client IP of each request and uses it for:
 
 - **Rate limiting sign-in attempts** — failed bootstrap-password and passkey attempts are throttled per client IP.
 - **Last sign-in visibility** — **Admin → Users** shows each account's last-used IP and country.
 - **IP-public previews** — for previews used outside a browser (e.g. Expo Go), the IP that started the dev server can use the preview without signing in.
 
-The IP is read from `X-Forwarded-For` right-to-left: every proxy in front of Baguette appends the address it saw, so only the rightmost `TRUST_PROXY_HOPS` entries cannot be forged by the client. With the default of 1, a header value supplied directly by the browser is ignored.
+The IP is read from `X-Forwarded-For` right-to-left: every proxy in front of Baguette appends the address it saw, so only the rightmost `TRUST_PROXY_HOPS` entries cannot be forged by the client.
 
-| Variable             | Description                                                                                                                                                                                                           |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `TRUST_PROXY_HOPS`   | Reverse-proxy hops between the internet and Baguette trusted to set `X-Forwarded-For` (default: `1` — one proxy that appends the client address). Set `0` when Baguette is exposed directly with no proxy             |
-| `TRUST_EDGE_COUNTRY` | Optional. Set `1` only when Baguette runs behind Cloudflare, CloudFront, or App Engine, which set the client-country header. Default off — Admin → Users last-used country comes from a geoip lookup of the client IP |
+Defaults for `TRUST_PROXY_HOPS` and `TRUST_EDGE_COUNTRY` match the documented deployments ([Fly.io](docs/deployment/fly.io.md), [Kamal](docs/deployment/kamal.md), [AWS EC2](docs/deployment/aws-ec2-kamal.md)).
 
-Both defaults match the documented deployments ([Fly.io](docs/deployment/fly.io.md), [Kamal](docs/deployment/kamal.md), [AWS EC2](docs/deployment/aws-ec2-kamal.md)); see those guides for the exact commands.
-
-## Local development
-
-### Prerequisites
-
-- Node.js 20+
-- An [Anthropic API key](https://console.anthropic.com/) and/or a [Cursor](https://cursor.com) API key (configured in **Settings → Agent** after the first sign-in)
-- Optional: a [GitHub App](https://github.com/settings/apps) — you can create one in the first-user wizard or later from **Admin → GitHub App**. See [Setting up the GitHub App](#setting-up-the-github-app).
-
-### Setup
-
-A single-node install needs **no required env vars**. Persist `DATA_DIR` (default `~/.baguette`) across restarts. Optional `BOOTSTRAP_PASSWORD` gates the first visitor on public hosts; it stays env-only and is never copied to disk.
-
-1. Clone the repository and install dependencies:
-
-```bash
-npm install
-```
-
-2. Optionally copy the example env file:
-
-```bash
-cp .env.example .env
-```
-
-| Variable             | Description                                                                                                                                                   |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `BOOTSTRAP_PASSWORD` | Optional. One-time first-visitor gate. Env-only; never written to disk. Set this on public hosts so a stranger cannot claim the instance.                     |
-| `DATA_DIR`           | Data directory for the SQLite DB, `encryption.key`, repo clones, and worktrees (default: `~/.baguette`)                                                       |
-| `PUBLIC_HOST`        | Public base URL of the server (e.g. `https://www.your-domain.com`) (defaults to `http://localhost:3000`, or `http://localhost:5173` if running `npm run dev`) |
-| `PORT`               | Express server port (default: `3000`)                                                                                                                         |
-
-If `encryption.key` is missing, first boot generates a key (file mode `0600`). Losing that file makes cookies and encrypted secrets unreadable — Baguette never regenerates over an existing file.
-
-3. Run database migrations:
-
-```bash
-npm run migrate
-```
-
-4. Install Claude Code:
-
-```bash
-curl -fsSL https://claude.ai/install.sh | bash
-```
-
-5. _(Optional)_ Install [code-server](https://coder.com/docs/code-server/install) to enable the **VS Code** button on sessions:
-
-```bash
-curl -fsSL https://code-server.dev/install.sh | sh
-```
-
-6. Open the app, claim the instance as the first visitor (admin), and finish the wizard: create a GitHub App (manifest) or skip (passkey + optional PAT). Configure agents in **Settings → Agent**. Later users skip GitHub App and identity: they are invited by an admin (**Admin → Users**) and add a passkey from the invite link, or sign in with GitHub when an App is configured.
-
-### Setting up the GitHub App
-
-Baguette authenticates to GitHub exclusively through a GitHub App, so you choose which repositories it can touch when you install it — including just one.
-
-1. Create a new GitHub App at [github.com/settings/apps](https://github.com/settings/apps).
-2. Set **Callback URL** to `http://localhost:5173/auth/github/callback` (use your `PUBLIC_HOST` in production) and set **Setup URL** to the same value, so installing the App returns the user to Baguette.
-3. Leave **Expire user authorization tokens** unchecked, and check **Request user authorization (OAuth) during installation** so signing in and installing are a single flow.
-4. Grant these permissions:
-
-   | Permission                 | Access         | Used for                                            |
-   | -------------------------- | -------------- | --------------------------------------------------- |
-   | Repository → Metadata      | Read-only      | Required by GitHub                                  |
-   | Repository → Contents      | Read and write | Cloning, pushing, branches, tags                    |
-   | Repository → Pull requests | Read and write | Creating, updating, reviewing, and merging PRs      |
-   | Repository → Issues        | Read and write | PR comments, labels, and reactions                  |
-   | Repository → Actions       | Read-only      | Workflow run status and logs                        |
-   | Repository → Workflows     | Read and write | Pushing changes to files under `.github/workflows/` |
-   | Account → Email addresses  | Read-only      | Associating your account and git commits with you   |
-
-5. The first-user wizard (or **Admin → GitHub App**) can register the App via GitHub’s manifest flow and store credentials in the database.
-6. Sign in, then install the App and pick the repositories Baguette may access. The repo picker lists exactly those repositories, and you can change the selection at any time from **Manage repository access** in the picker.
-
-Notes:
-
-- Installing on a repository owned by an organization may need approval from an org owner.
-- Plugin marketplaces are third-party repositories outside your installation, so Baguette clones them without credentials. Public marketplaces work as usual; private ones are not supported.
-
-### Configuring agents
-
-Configure your agent(s) in **Settings** > **Agent**.
-
-**Claude:** Enter a Console API key (`sk-ant-api…`) in **API key**, or a subscription token from `claude setup-token` (`sk-ant-oat…`) in **Auth token** (sent as `ANTHROPIC_AUTH_TOKEN`, Authorization: Bearer). To use an LLM gateway compatible with the Anthropic API, set **API base URL** (`ANTHROPIC_BASE_URL`) together with the **Auth token** or **API key** your gateway expects — the model list is then fetched from the gateway's `/v1/models` endpoint. **Test connection** calls the Anthropic-compatible API (`/v1/models`, with `/v1/messages` as a fallback) — it does not run Claude Code. Claude Code must still be installed (step 4 above) for agent sessions.
-
-**Cursor:** Enter your Cursor API key and optionally set a default model and variant. No additional CLI installation required.
-
-### Run
-
-```bash
-npm run dev
-```
-
-The Vite dev server runs on `http://localhost:5173` and proxies API/WebSocket requests to the Express server on port 3000.
-
-For local sign-in without GitHub OAuth, use [`/auth/dev`](http://localhost:5173/auth/dev) when enabled.
+Repository contributors can copy [`.env.dev.example`](.env.dev.example) to `.env` for local overrides and live SDK test keys — see [CONTRIBUTING.md](CONTRIBUTING.md#development-setup).
 
 ## Tech Stack
 
