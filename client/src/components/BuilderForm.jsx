@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronRight, HelpCircle, Repeat, Trash2 } from 'lucide-react';
+import { HelpCircle, Repeat, Trash2 } from 'lucide-react';
 import Alert from './Alert.jsx';
 import GithubIcon from './svg/GithubIcon.jsx';
 import LoopScheduleFields from './LoopScheduleFields.jsx';
@@ -400,9 +400,6 @@ export default function BuilderForm({
   const isLoop = mode === 'loop';
   const hasMcpOrPlugins = mcpCatalog.length > 0 || availablePlugins.length > 0;
   const hasFormOptions = skillCatalog.length > 0 || (!isLoop && !isGlobal);
-  const defaultOptionsOpen =
-    selectedAutoLoadSkills.length > 0 || Boolean(String(branchName).trim());
-  const [optionsOpen, setOptionsOpen] = persistentState.useState('optionsOpen', defaultOptionsOpen);
   const skillPreloadBlock =
     skillCatalog.length > 0 ? (
       <div>
@@ -873,37 +870,24 @@ export default function BuilderForm({
       )}
 
       {hasFormOptions && (
-        <div>
-          <button
-            type="button"
-            onClick={() => setOptionsOpen((v) => !v)}
-            className="flex items-center gap-1.5 text-sm font-medium text-fg-muted hover:text-heading transition-colors"
-          >
-            <ChevronRight
-              className={`w-3.5 h-3.5 transition-transform ${optionsOpen ? 'rotate-90' : ''}`}
-            />
-            Options
-          </button>
-          {optionsOpen && (
-            <div className="mt-3 space-y-4">
-              {skillPreloadBlock}
-              {!isLoop && !isGlobal && (
-                <div>
-                  <label className="block text-sm font-medium text-secondary mb-1">
-                    Branch name{' '}
-                    <span className="text-faint font-normal">
-                      (optional, for Start — auto-generated if empty)
-                    </span>
-                  </label>
-                  <input
-                    type="text"
-                    value={branchName}
-                    onChange={(e) => setBranchName(e.target.value)}
-                    placeholder="my-feature-branch"
-                    className={`${INPUT_CLASS} focus:border-transparent`}
-                  />
-                </div>
-              )}
+        <div className="space-y-4">
+          <div className="text-sm font-medium text-heading">Options</div>
+          {skillPreloadBlock}
+          {!isLoop && !isGlobal && (
+            <div>
+              <label className="block text-sm font-medium text-secondary mb-1">
+                Branch name{' '}
+                <span className="text-faint font-normal">
+                  (optional, for Start — auto-generated if empty)
+                </span>
+              </label>
+              <input
+                type="text"
+                value={branchName}
+                onChange={(e) => setBranchName(e.target.value)}
+                placeholder="my-feature-branch"
+                className={`${INPUT_CLASS} focus:border-transparent`}
+              />
             </div>
           )}
         </div>
