@@ -309,7 +309,7 @@ describe('chat display grouping', () => {
     expect(grouped[1].callCount).toBe(total);
   });
 
-  it('does not collapse StartSubagent into a surrounding Worked group', () => {
+  it('folds StartSubagent into a surrounding Worked group', () => {
     const manyTools = Array.from({ length: 6 }, (_, i) => ({
       type: 'tool_use',
       name: 'Bash',
@@ -328,11 +328,11 @@ describe('chat display grouping', () => {
       { type: 'assistant', message: { content: [{ type: 'text', text: 'Done' }] } },
     ];
     const grouped = groupChatDisplayMessages(messages);
-    expect(grouped.map((g) => g.kind)).toEqual(['message', 'work', 'message', 'message']);
-    expect(grouped[2].message.args.tool).toBe('StartSubagent');
+    expect(grouped.map((g) => g.kind)).toEqual(['message', 'work', 'message']);
+    expect(grouped[1].callCount).toBe(7);
   });
 
-  it('treats StartSubagent as a group boundary', () => {
+  it('treats StartSubagent as work, not a group boundary', () => {
     const startSubagent = {
       type: 'tool_call',
       kind: 'mcp',
@@ -340,9 +340,9 @@ describe('chat display grouping', () => {
       args: { tool: 'StartSubagent', name: 'Scout' },
       id: 'sub',
     };
-    expect(messageContainsPinnedChatTool(startSubagent)).toBe(true);
-    expect(isChatGroupBoundary(startSubagent)).toBe(true);
-    expect(isChatWorkMessage(startSubagent)).toBe(false);
+    expect(messageContainsPinnedChatTool(startSubagent)).toBe(false);
+    expect(isChatGroupBoundary(startSubagent)).toBe(false);
+    expect(isChatWorkMessage(startSubagent)).toBe(true);
   });
 
   it('does not collapse ConfigureMcpServer into a surrounding Worked group', () => {
@@ -555,7 +555,7 @@ describe('chat display grouping', () => {
     expect(messageContainsPinnedChatTool(messages[1])).toBe(true);
   });
 
-  it('treats Cursor mcp meta-tool StartSubagent as a group boundary', () => {
+  it('treats Cursor mcp meta-tool StartSubagent as work, not a boundary', () => {
     const startSubagent = {
       type: 'assistant',
       message: {
@@ -569,8 +569,8 @@ describe('chat display grouping', () => {
         ],
       },
     };
-    expect(messageContainsPinnedChatTool(startSubagent)).toBe(true);
-    expect(isChatGroupBoundary(startSubagent)).toBe(true);
-    expect(isChatWorkMessage(startSubagent)).toBe(false);
+    expect(messageContainsPinnedChatTool(startSubagent)).toBe(false);
+    expect(isChatGroupBoundary(startSubagent)).toBe(false);
+    expect(isChatWorkMessage(startSubagent)).toBe(true);
   });
 });

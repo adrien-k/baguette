@@ -2,11 +2,7 @@ import { TURN_ENDING_BAGUETTE_TOOLS, baguetteMcpShortName } from './baguette-mcp
 import { isTurnStartingUserMessage } from './turn-model.js';
 
 /** Chat-pinned MCP tools: always visible, never inside Worked. Includes turn-ending tools. */
-const CHAT_PINNED_BAGUETTE_TOOLS = new Set([
-  ...TURN_ENDING_BAGUETTE_TOOLS,
-  'StartSubagent',
-  'ConfigureMcpServer',
-]);
+const CHAT_PINNED_BAGUETTE_TOOLS = new Set([...TURN_ENDING_BAGUETTE_TOOLS, 'ConfigureMcpServer']);
 
 function toolUseNameIs(name, shortName) {
   if (!name) return false;
@@ -80,7 +76,7 @@ function blockIsPinnedChatTool(block) {
   return false;
 }
 
-/** CreatePlan, EditPlan, AskUserQuestions, StartSubagent, or ConfigureMcpServer — always visible, never inside Worked. */
+/** CreatePlan, EditPlan, AskUserQuestions, or ConfigureMcpServer — always visible, never inside Worked. */
 export function messageContainsPinnedChatTool(msg) {
   if (toolCallRowIsPinnedChatTool(msg)) return true;
   if (msg.type !== 'assistant' || !Array.isArray(msg.message?.content)) return false;
