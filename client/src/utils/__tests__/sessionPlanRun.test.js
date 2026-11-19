@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RUN_PLAN_USER_MESSAGE, runPlanUserMessage } from '../session-plan-run.js';
+import { RUN_PLAN_USER_MESSAGE, runPlanUserMessage } from '../sessionPlanRun.js';
 
 describe('runPlanUserMessage', () => {
   it('returns the default proceed message without a ref', () => {

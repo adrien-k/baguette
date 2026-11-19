@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { runPlanUserMessage } from '@baguette/shared/session-plan-run.js';
+import { runPlanUserMessage } from '../../utils/sessionPlanRun.js';
 import { sessionsService } from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
 import { SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
