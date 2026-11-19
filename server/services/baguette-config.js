@@ -6,7 +6,7 @@ import { resolveDataDirRelativePath } from '../config.js';
 import { dockerBuildImageTag, dockerContainerHostname } from './docker-session.js';
 import { getBuiltinChatRecipes } from '../../shared/session-chat-recipes.js';
 
-const BAGUETTE_DIR = '.baguette';
+export const BAGUETTE_DIR = '.baguette';
 export const CONFIG_FILENAME = '.baguette.yaml';
 const AGENT_PROMPT_ROLES = new Set(['builder', 'reviewer', 'subagent']);
 

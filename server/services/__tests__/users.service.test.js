@@ -552,6 +552,21 @@ describe('Users service - agent defaults patch', () => {
       app.service('users').patch(user1.id, { subagent_default_mode: 'free' }, params(user1))
     ).rejects.toThrow(/inherit, config, preset, or any/);
   });
+
+  it('stores default_auto_load_skills as skill labels', async () => {
+    const updated = await app
+      .service('users')
+      .patch(
+        user1.id,
+        { default_auto_load_skills: ['Delegation and orchestration', 'My skill'] },
+        params(user1)
+      );
+    expect(updated.default_auto_load_skills).toEqual(['Delegation and orchestration', 'My skill']);
+    const cleared = await app
+      .service('users')
+      .patch(user1.id, { default_auto_load_skills: null }, params(user1));
+    expect(cleared.default_auto_load_skills).toEqual([]);
+  });
 });
 
 describe('Users service - setAdmin', () => {

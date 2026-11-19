@@ -16,6 +16,7 @@ const IGNORE = ['**/__tests__/**', '**/*.test.js', '**/*.test.ts', '**/*.live.te
 const ASSET_DIRS = [
   { from: 'server/migrations', to: 'server/migrations' },
   { from: 'server/prompts', to: 'server/prompts' },
+  { from: 'server/skills', to: 'server/skills' },
   { from: 'server/views', to: 'server/views' },
   { from: 'server/data', to: 'server/data' },
 ];

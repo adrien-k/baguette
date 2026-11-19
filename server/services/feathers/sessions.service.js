@@ -118,6 +118,11 @@ import {
 import { getGithubToken } from '../agent-settings.js';
 import { resolveSessionPrStatus, storedPrStatusSkipsGithubRefresh } from '../session-pr-status.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
+import {
+  applyUserDefaultAutoLoadSkillsOnCreate,
+  parseAutoLoadSkillLabels,
+  serializeAutoLoadSkillLabels,
+} from '../skill-resolution.js';
 import { getAgentById } from '../agents-db.js';
 import { normalizeUsageAgentType } from '../../../shared/usage-agent-type.js';
 import { getCodeserverUrl } from '../codeserver-handler.js';
@@ -2543,6 +2548,7 @@ async function withHasWebserver(session, { forExternalClient = false } = {}) {
     is_global: Boolean(session.is_global),
     mcp_servers: parseMcpServersMap(session.mcp_servers),
     is_shared: Boolean(session.is_shared),
+    auto_load_skills: parseAutoLoadSkillLabels(session.auto_load_skills),
     codeserver_url:
       absoluteSessionPath && !isGlobalSession(session)
         ? getCodeserverUrl(absoluteSessionPath)
@@ -2599,6 +2605,23 @@ function serializePlugins(context) {
   } else if (plugins == null) {
     delete context.data.plugins;
   }
+  return context;
+}
+
+function serializeAutoLoadSkills(context) {
+  const { auto_load_skills: labels } = context.data;
+  if (labels === null) {
+    context.data.auto_load_skills = null;
+    return context;
+  }
+  if (labels === undefined) {
+    delete context.data.auto_load_skills;
+    return context;
+  }
+  if (!Array.isArray(labels)) {
+    throw new BadRequest('auto_load_skills must be an array of skill labels');
+  }
+  context.data.auto_load_skills = serializeAutoLoadSkillLabels(labels);
   return context;
 }
 
@@ -2932,6 +2955,8 @@ const sessionsHooks = {
       validateSessionCreate,
       assertAgentConfigOnCreate,
       serializePlugins,
+      applyUserDefaultAutoLoadSkillsOnCreate,
+      serializeAutoLoadSkills,
       snapshotMcpServers,
       extractInitialFiles,
       normalizeModelFields,
@@ -2944,6 +2969,7 @@ const sessionsHooks = {
       clampAutoPushForLocalRepo,
       touchPrMetadataUpdatedAtOnPatch,
       redirectAgentFieldsOnSessionPatch,
+      serializeAutoLoadSkills,
       snapshotMcpServers,
       normalizeModelFields,
     ],

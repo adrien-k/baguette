@@ -1,11 +1,13 @@
 import { z } from 'zod';
+import { resolveDataDirRelativePath } from '../../../config.js';
+import { listSkillEntries, readSkillByLabel } from '../../skill-resolution.js';
 import { fail, ok } from '../lib/result.js';
 
 const LIST_DESCRIPTION =
-  'List skills saved on this account (Settings → Skills). Returns id, label, and description only — call ReadSkill with the label to load the content. Skills are not included in the prompt.';
+  'List skills available: Settings → Skills (`settings`), repo `.baguette/skills/*.md` (`project`), and Baguette built-ins (`builtin`). Returns id (settings only), label, description, and source. Call ReadSkill with the label to load the content. Skill bodies are not included in the prompt.';
 
 const READ_DESCRIPTION =
-  'Load one skill by the exact label from ListSkills. Returns the label, description, and full content. Use this when a skill description matches the task, then follow that content.';
+  'Load one skill by the exact label from ListSkills. Returns label, description, source, and full content. Use this when a skill description matches the task, then follow that content.';
 
 const CREATE_DESCRIPTION =
   'Create a skill saved on this account (Settings → Skills). Label must be unique per account. Agents can later discover it via ListSkills and load it with ReadSkill.';
@@ -30,13 +32,23 @@ async function skillsForUser(app, userId) {
   return Array.isArray(rows) ? rows : (rows?.data ?? []);
 }
 
-function skillToApi(skill) {
+function settingsSkillToApi(skill) {
   return {
     id: skill.id,
     label: skill.label,
     description: skill.description,
     content: skill.content,
+    source: 'settings',
   };
+}
+
+function sessionPathFromCaller(callerSession) {
+  if (!callerSession) return null;
+  return (
+    callerSession.absolute_session_path ||
+    resolveDataDirRelativePath(callerSession.session_path) ||
+    null
+  );
 }
 
 async function findOwnSkill(app, userId, { skillId, label }) {
@@ -61,26 +73,20 @@ function identifierError(params) {
 }
 
 export function createListSkillsTool(ctx) {
-  const { app, userId } = ctx;
+  const { app, userId, callerSession } = ctx;
   return {
     name: 'ListSkills',
     description: LIST_DESCRIPTION,
     schema: {},
     handler: async () => {
-      const rows = await skillsForUser(app, userId);
-      return ok({
-        skills: rows.map((skill) => ({
-          id: skill.id,
-          label: skill.label,
-          description: skill.description,
-        })),
-      });
+      const skills = await listSkillEntries(app, userId, { callerSession });
+      return ok({ skills });
     },
   };
 }
 
 export function createReadSkillTool(ctx) {
-  const { app, userId } = ctx;
+  const { app, userId, callerSession } = ctx;
   return {
     name: 'ReadSkill',
     description: READ_DESCRIPTION,
@@ -90,10 +96,11 @@ export function createReadSkillTool(ctx) {
     handler: async ({ label }) => {
       const wanted = String(label ?? '').trim();
       if (!wanted) return fail('label is required');
-      const rows = await skillsForUser(app, userId);
-      const skill = rows.find((row) => row.label === wanted);
+
+      const sessionPath = sessionPathFromCaller(callerSession);
+      const skill = await readSkillByLabel(app, userId, { sessionPath, label: wanted });
       if (!skill) return fail(`Skill "${wanted}" was not found`);
-      return ok({ skill: skillToApi(skill) });
+      return ok({ skill });
     },
   };
 }
@@ -118,7 +125,7 @@ export function createCreateSkillTool(ctx) {
         const skill = await app
           .service('skills')
           .create({ label, description, content }, skillParamsFor(userId));
-        return ok({ skill: skillToApi(skill) });
+        return ok({ skill: settingsSkillToApi(skill) });
       } catch (err) {
         return fail(err.message);
       }
@@ -157,7 +164,7 @@ export function createUpdateSkillTool(ctx) {
           return fail(`Skill was not found (skill_id: ${skill_id ?? '—'}, label: ${label ?? '—'})`);
         }
         const updated = await app.service('skills').patch(skill.id, patch, skillParamsFor(userId));
-        return ok({ skill: skillToApi(updated) });
+        return ok({ skill: settingsSkillToApi(updated) });
       } catch (err) {
         return fail(err.message);
       }

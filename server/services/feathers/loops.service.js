@@ -20,6 +20,11 @@ import { isLocalRepo } from '../../../shared/repo-origin.js';
 import { resolveSessionPrStatus } from '../session-pr-status.js';
 import { parseMcpServersMap } from '../mcp-server-config.js';
 import { sessionMcpServersColumn } from '../mcp-server-snapshot.js';
+import {
+  applyUserDefaultAutoLoadSkillsOnCreate,
+  parseAutoLoadSkillLabels,
+  serializeAutoLoadSkillLabels,
+} from '../skill-resolution.js';
 
 /** Fields a client may set. Everything else (bookkeeping, user_id) is server-owned. */
 const WRITABLE_FIELDS = [
@@ -37,6 +42,7 @@ const WRITABLE_FIELDS = [
   'model_params',
   'plugins',
   'mcp_servers',
+  'auto_load_skills',
   'schedule_type',
   'interval_minutes',
   'time_of_day',
@@ -281,6 +287,8 @@ function sessionDataFromLoop(loop) {
   if (loop.model_params) data.model_params = loop.model_params;
   const plugins = parseJsonArray(loop.plugins);
   if (plugins?.length) data.plugins = plugins;
+  const autoLoadSkills = parseAutoLoadSkillLabels(loop.auto_load_skills);
+  if (autoLoadSkills.length) data.auto_load_skills = autoLoadSkills;
   if (loop.mcp_servers != null && loop.mcp_servers !== '') {
     data.mcp_servers = parseMcpServersMap(loop.mcp_servers);
     data.mcp_servers_locked = true;
@@ -333,6 +341,22 @@ function serializePlugins(context) {
   if (Array.isArray(plugins)) context.data.plugins = JSON.stringify(plugins);
   else if (plugins === null) context.data.plugins = null;
   else if (plugins === undefined) delete context.data.plugins;
+  return context;
+}
+
+function serializeAutoLoadSkills(context) {
+  const { auto_load_skills: labels } = context.data;
+  if (labels === null) {
+    context.data.auto_load_skills = null;
+    return context;
+  }
+  if (labels === undefined) {
+    delete context.data.auto_load_skills;
+    return context;
+  }
+  if (!Array.isArray(labels))
+    throw new BadRequest('auto_load_skills must be an array of skill labels');
+  context.data.auto_load_skills = serializeAutoLoadSkillLabels(labels);
   return context;
 }
 
@@ -550,6 +574,7 @@ function formatLoop(loop) {
     ...loop,
     days_of_week: parseDaysOfWeek(loop.days_of_week),
     plugins: parseJsonArray(loop.plugins) ?? [],
+    auto_load_skills: parseAutoLoadSkillLabels(loop.auto_load_skills),
     mcp_servers:
       loop.mcp_servers == null || loop.mcp_servers === ''
         ? null
@@ -658,6 +683,8 @@ const loopsHooks = {
       resolveTiedSession,
       resolveRepo,
       serializePlugins,
+      applyUserDefaultAutoLoadSkillsOnCreate,
+      serializeAutoLoadSkills,
       snapshotMcpServers,
       normalizeAgentConfigOnLoopWrite,
       normalizeCreate,
@@ -666,6 +693,7 @@ const loopsHooks = {
       requireOwnLoop,
       only(WRITABLE_FIELDS),
       serializePlugins,
+      serializeAutoLoadSkills,
       snapshotMcpServers,
       normalizeAgentConfigOnLoopWrite,
       normalizePatch,
