@@ -9,6 +9,18 @@ function installHref() {
   return `/auth/github/install?redirectTo=${encodeURIComponent(back)}`;
 }
 
+/** Repos not yet linked to the account sort above already-added ones; names break ties. */
+function sortRemoteReposForPicker(repos, addedNames) {
+  return [...repos].sort((a, b) => {
+    const aAdded = addedNames.has(a.full_name);
+    const bAdded = addedNames.has(b.full_name);
+    if (aAdded !== bAdded) {
+      return aAdded ? 1 : -1;
+    }
+    return a.full_name.localeCompare(b.full_name);
+  });
+}
+
 export default function RepoSearchInput({ value, onSelect, addedNames, trailing }) {
   const [orgs, setOrgs] = useState([]);
   const [selectedOrg, setSelectedOrg] = useState('');
@@ -19,13 +31,13 @@ export default function RepoSearchInput({ value, onSelect, addedNames, trailing 
     async (query) => {
       try {
         const res = await reposService.findRemote({ org: selectedOrg, query });
-        return res.repos;
+        return sortRemoteReposForPicker(res.repos, addedNames);
       } catch (err) {
         toastError('Failed to load repositories', err);
         return [];
       }
     },
-    [selectedOrg]
+    [selectedOrg, addedNames]
   );
 
   // Accounts come from GitHub App installations — keep the current selection if it is still
