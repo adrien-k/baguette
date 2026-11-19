@@ -4,12 +4,12 @@ import { useGetSessionPlans } from '../../hooks/useGetSessionPlans.js';
 import { useFilterRoutes } from '../../hooks/useFilterRoutes.js';
 
 export default function ChatSessionPlanLinks({ sessionId }: { sessionId?: number | null }) {
-  const { short_id } = useParams();
+  const { id: sessionRouteId } = useParams();
   const { sessionUrl } = useFilterRoutes();
   const { plans, loading } = useGetSessionPlans(sessionId, { enabled: sessionId != null });
 
   const openPlans = plans.filter((p) => p.status !== 'completed');
-  if (loading || openPlans.length === 0 || short_id == null) return null;
+  if (loading || openPlans.length === 0 || sessionRouteId == null) return null;
 
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-xs text-faint">
@@ -21,7 +21,7 @@ export default function ChatSessionPlanLinks({ sessionId }: { sessionId?: number
         const ref = plan.ref;
         const label = ref != null ? `Plan #${ref}` : 'Plan';
         const hash = ref != null ? `#plan-${ref}` : '';
-        const to = `${sessionUrl(short_id)}?view=plan${hash}`;
+        const to = `${sessionUrl(sessionRouteId)}?view=plan${hash}`;
         return (
           <Link key={plan.id ?? ref ?? label} to={to} className="text-accent hover:underline">
             {label}
