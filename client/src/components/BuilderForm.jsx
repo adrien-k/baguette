@@ -104,6 +104,7 @@ export default function BuilderForm({
   // exist through hasPromptText, so their sdk/model/params picks are intentional and should not
   // be re-seeded from agent defaults or the last session.
   const hasPersistedPromptRef = useRef(Boolean(persistKey && hasPromptText(persistentState.store)));
+  const seededDefaultSkillsRef = useRef(false);
   /** Last repo/global scope we applied lastUsed() for — avoids clobbering manual picks on user/config refetches. */
   const lastSeededScopeRef = useRef(null);
   const { repos, loading: loadingRepos } = useRepoContext();
@@ -352,6 +353,7 @@ export default function BuilderForm({
   useEffect(() => {
     let cancelled = false;
     const repoId = isGlobal ? null : selectedRepo?.id;
+    const defaultLabels = userSettings?.default_auto_load_skills ?? [];
     skillsService
       .listCatalog({ repo_id: repoId ?? undefined })
       .then((res) => {
@@ -359,7 +361,17 @@ export default function BuilderForm({
         const rows = res?.skills ?? [];
         setSkillCatalog(rows);
         const labels = new Set(rows.map((s) => s.label));
-        setSelectedAutoLoadSkills((prev) => prev.filter((label) => labels.has(label)));
+        setSelectedAutoLoadSkills((prev) => {
+          const kept = prev.filter((item) => labels.has(item));
+          if (kept.length) return kept;
+          if (editingLoop || seededDefaultSkillsRef.current) return kept;
+          if (persistKey && 'autoLoadSkills' in persistentState.store) {
+            seededDefaultSkillsRef.current = true;
+            return kept;
+          }
+          seededDefaultSkillsRef.current = true;
+          return defaultLabels.filter((item) => labels.has(item));
+        });
       })
       .catch((err) => {
         if (!cancelled) toastError('Failed to load skills', err);
@@ -367,7 +379,15 @@ export default function BuilderForm({
     return () => {
       cancelled = true;
     };
-  }, [isGlobal, selectedRepo?.id, setSelectedAutoLoadSkills]);
+  }, [
+    isGlobal,
+    selectedRepo?.id,
+    setSelectedAutoLoadSkills,
+    editingLoop,
+    persistKey,
+    persistentState.store,
+    userSettings?.default_auto_load_skills,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
