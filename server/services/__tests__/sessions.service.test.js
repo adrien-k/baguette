@@ -2278,6 +2278,55 @@ describe('Sessions service - find, get, create', () => {
       expect(patched.mcp_servers[String(offId)]).toBe(true);
     });
 
+    it('applies user default_auto_load_skills when auto_load_skills is omitted', async () => {
+      await db('users')
+        .where({ id: userId1 })
+        .update({ default_auto_load_skills: JSON.stringify(['Default A', 'Default B']) });
+      const session = await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
+      expect(session.auto_load_skills).toEqual(['Default A', 'Default B']);
+    });
+
+    it('respects explicit auto_load_skills over user defaults', async () => {
+      await db('users')
+        .where({ id: userId1 })
+        .update({ default_auto_load_skills: JSON.stringify(['Default A']) });
+      const session = await app
+        .service('sessions')
+        .create(
+          sessionData({ repo_id: repoId, auto_load_skills: ['Chosen only'] }),
+          params({ id: userId1 })
+        );
+      expect(session.auto_load_skills).toEqual(['Chosen only']);
+    });
+
+    it('does not apply user defaults to sessions spawned with loop_id', async () => {
+      await db('users')
+        .where({ id: userId1 })
+        .update({ default_auto_load_skills: JSON.stringify(['Default A']) });
+      const now = new Date().toISOString();
+      const [loopId] = await db('loops').insert({
+        user_id: userId1,
+        repo_id: repoId,
+        repo_full_name: 'test/repo',
+        base_branch: 'main',
+        prompt: 'loop run',
+        schedule_type: 'interval',
+        interval_minutes: 60,
+        enabled: 1,
+        create_new_branch: 1,
+        auto_push: 1,
+        timezone: 'UTC',
+        created_at: now,
+        updated_at: now,
+      });
+      const session = await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId, loop_id: loopId }), params({ id: userId1 }));
+      expect(session.auto_load_skills).toEqual([]);
+    });
+
     it('persists builder agent sdk and model at create', async () => {
       const { insertTestAgentConfig } = await import('../../test-utils/agent-configs.js');
       const cursorConfigId = await insertTestAgentConfig(db, userId1, {

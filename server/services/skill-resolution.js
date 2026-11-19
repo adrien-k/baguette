@@ -30,6 +30,26 @@ export function serializeAutoLoadSkillLabels(labels) {
   return JSON.stringify(list);
 }
 
+/**
+ * Before serializeAutoLoadSkills on create: fill missing auto_load_skills from the user row.
+ * Loop-spawned sessions (`loop_id` set) skip this — they only use skills stored on the loop.
+ */
+export async function applyUserDefaultAutoLoadSkillsOnCreate(context) {
+  if (context.method !== 'create') return context;
+  if (context.data.loop_id != null) return context;
+  if ('auto_load_skills' in context.data) return context;
+  const userId = context.params?.user?.id ?? context.data?.user_id;
+  if (userId == null) return context;
+  const row = await context.app
+    .get('db')('users')
+    .where({ id: userId })
+    .select('default_auto_load_skills')
+    .first();
+  const labels = parseAutoLoadSkillLabels(row?.default_auto_load_skills);
+  if (labels.length) context.data.auto_load_skills = labels;
+  return context;
+}
+
 async function skillsForUser(app, userId) {
   const rows = await app.service('skills').find({
     user: { id: userId },

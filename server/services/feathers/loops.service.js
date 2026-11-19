@@ -20,7 +20,11 @@ import { isLocalRepo } from '../../../shared/repo-origin.js';
 import { resolveSessionPrStatus } from '../session-pr-status.js';
 import { parseMcpServersMap } from '../mcp-server-config.js';
 import { sessionMcpServersColumn } from '../mcp-server-snapshot.js';
-import { parseAutoLoadSkillLabels, serializeAutoLoadSkillLabels } from '../skill-resolution.js';
+import {
+  applyUserDefaultAutoLoadSkillsOnCreate,
+  parseAutoLoadSkillLabels,
+  serializeAutoLoadSkillLabels,
+} from '../skill-resolution.js';
 
 /** Fields a client may set. Everything else (bookkeeping, user_id) is server-owned. */
 const WRITABLE_FIELDS = [
@@ -667,6 +671,7 @@ const loopsHooks = {
       resolveTiedSession,
       resolveRepo,
       serializePlugins,
+      applyUserDefaultAutoLoadSkillsOnCreate,
       serializeAutoLoadSkills,
       snapshotMcpServers,
       normalizeAgentConfigOnLoopWrite,

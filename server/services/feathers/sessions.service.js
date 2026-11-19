@@ -118,7 +118,11 @@ import {
 import { getGithubToken } from '../agent-settings.js';
 import { resolveSessionPrStatus, storedPrStatusSkipsGithubRefresh } from '../session-pr-status.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
-import { parseAutoLoadSkillLabels, serializeAutoLoadSkillLabels } from '../skill-resolution.js';
+import {
+  applyUserDefaultAutoLoadSkillsOnCreate,
+  parseAutoLoadSkillLabels,
+  serializeAutoLoadSkillLabels,
+} from '../skill-resolution.js';
 import { getAgentById } from '../agents-db.js';
 import { normalizeUsageAgentType } from '../../../shared/usage-agent-type.js';
 import { getCodeserverUrl } from '../codeserver-handler.js';
@@ -2951,6 +2955,7 @@ const sessionsHooks = {
       validateSessionCreate,
       assertAgentConfigOnCreate,
       serializePlugins,
+      applyUserDefaultAutoLoadSkillsOnCreate,
       serializeAutoLoadSkills,
       snapshotMcpServers,
       extractInitialFiles,

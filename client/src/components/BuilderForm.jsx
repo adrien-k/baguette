@@ -523,10 +523,10 @@ export default function BuilderForm({
         model: payload.model ?? null,
         model_params: payload.modelParams ?? null,
         plugins: payload.plugins ?? [],
-        auto_load_skills: payload.autoLoadSkills ?? [],
         mcp_servers: payload.mcpServers ?? {},
         is_shared: payload.isShared,
         ...schedulePayload(schedule),
+        ...(payload.autoLoadSkills?.length ? { auto_load_skills: payload.autoLoadSkills } : {}),
       };
     }
     return {
@@ -541,8 +541,8 @@ export default function BuilderForm({
       model: payload.model ?? null,
       model_params: payload.modelParams ?? null,
       plugins: payload.plugins ?? [],
-      auto_load_skills: payload.autoLoadSkills ?? [],
       mcp_servers: payload.mcpServers ?? {},
+      ...(payload.autoLoadSkills?.length ? { auto_load_skills: payload.autoLoadSkills } : {}),
       is_shared: payload.isShared,
       ...schedulePayload(schedule),
     };

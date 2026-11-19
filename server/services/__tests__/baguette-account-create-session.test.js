@@ -98,6 +98,26 @@ describe('CreateSession MCP model defaults', () => {
     await db('user_repos').insert({ user_id: user.id, repo_id: 1 });
   });
 
+  it('does not send auto_load_skills so sessions.create can apply user defaults', async () => {
+    await db('users')
+      .where({ id: user.id })
+      .update({
+        agent_default_config_id: claudeConfigId,
+        agent_default_model: JSON.stringify({ model: 'sonnet', model_params: null }),
+        default_auto_load_skills: JSON.stringify(['MCP default skill']),
+      });
+
+    const tools = buildBaguetteAccountToolList({ id: user.id }, app);
+    const createSession = tools.find((t) => t.name === 'CreateSession');
+    await createSession.handler({
+      repo_id: 1,
+      base_branch: 'main',
+      initial_prompt: 'hello',
+    });
+    const payload = createSpy.mock.calls[0][0];
+    expect(payload).not.toHaveProperty('auto_load_skills');
+  });
+
   it('uses stored user agent_default_config_id when omitted', async () => {
     await db('users')
       .where({ id: user.id })
