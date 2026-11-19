@@ -176,6 +176,78 @@ const mapRepo = (r) => ({
   default_branch: r.default_branch,
 });
 
+const GITHUB_REPO_FULL_NAME_RE = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
+
+async function githubJsonOrThrow(res, context) {
+  if (res.ok) return res.json();
+  const text = await res.text();
+  throw new Error(`${context}: ${res.status} ${text}`);
+}
+
+/** Resolve a public GitHub repo by exact `owner/repo` (null when private or missing). */
+export async function fetchPublicRepoByFullName(token, fullName) {
+  const res = await githubFetch(`https://api.github.com/repos/${fullName}`, { token });
+  if (res.status === 404) return null;
+  const data = await githubJsonOrThrow(res, `GitHub repos/${fullName}`);
+  if (data.private) return null;
+  return mapRepo(data);
+}
+
+/** Search public repositories on GitHub by name fragment (requires a non-empty query). */
+export async function searchPublicRepositories(token, query) {
+  const q = query.trim();
+  if (!q || q.length < 2) return [];
+  const res = await githubFetch(
+    `https://api.github.com/search/repositories?${new URLSearchParams({
+      q: `${q} in:name`,
+      sort: 'stars',
+      per_page: '20',
+    })}`,
+    { token }
+  );
+  if (res.status === 422) return [];
+  const data = await githubJsonOrThrow(res, 'GitHub search/repositories');
+  return (data.items ?? []).filter((r) => !r.private).map(mapRepo);
+}
+
+/**
+ * Augment installation/PAT picker results with public repos that match the query
+ * but are not granted to the GitHub App installation.
+ */
+export async function supplementRemotePickerWithPublicRepos(
+  token,
+  repos,
+  { org = '', query = '' } = {}
+) {
+  const q = query.trim();
+  if (!q || !token) return repos;
+
+  const orgPrefix = org ? `${org.toLowerCase()}/` : '';
+  const seen = new Set(repos.map((r) => r.full_name.toLowerCase()));
+  const extras = [];
+
+  const maybeAdd = (repo) => {
+    if (!repo || repo.private) return;
+    const key = repo.full_name.toLowerCase();
+    if (seen.has(key)) return;
+    if (orgPrefix && !key.startsWith(orgPrefix)) return;
+    seen.add(key);
+    extras.push(repo);
+  };
+
+  if (GITHUB_REPO_FULL_NAME_RE.test(q)) {
+    const exact = await fetchPublicRepoByFullName(token, q);
+    maybeAdd(exact);
+  }
+
+  if (q.length >= 2) {
+    const results = await searchPublicRepositories(token, q);
+    for (const repo of results) maybeAdd(repo);
+  }
+
+  return extras.length === 0 ? repos : [...repos, ...extras];
+}
+
 // Refreshing installation and repo lists is manual, so we can cache them indefinitely
 const REPOS_CACHE_TTL = Infinity;
 

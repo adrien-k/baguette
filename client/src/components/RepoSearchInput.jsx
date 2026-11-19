@@ -165,9 +165,9 @@ export default function RepoSearchInput({ value, onSelect, addedNames, trailing 
       </div>
       <p className="text-xs text-faint mt-2 max-w-xl leading-relaxed">
         Lists up to <span className="text-fg-muted">20</span> repos per load. Empty field shows the
-        20 most recently updated you can access; type a fragment of{' '}
-        <span className="font-mono text-fg-muted">owner/repo</span> to search the full list. Only
-        repositories you granted the Baguette GitHub App are listed.{' '}
+        20 most recently updated you can access via the App; type a fragment of{' '}
+        <span className="font-mono text-fg-muted">owner/repo</span> to search that list and public
+        repositories on GitHub.{' '}
         <a href={installHref()} className="text-accent hover:text-accent">
           Manage repository access ↗
         </a>

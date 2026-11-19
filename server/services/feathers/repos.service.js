@@ -21,6 +21,7 @@ import {
   initLocalRepo,
   ensureLocalClone,
   toStrippedName,
+  supplementRemotePickerWithPublicRepos,
 } from '../github.js';
 import { loadBaguetteConfig } from '../baguette-config.js';
 import { requireUser, requireAdmin } from './hooks.js';
@@ -384,7 +385,10 @@ class ReposService extends KnexService {
         ? allRepos.filter((r) => r.full_name.toLowerCase().startsWith(orgPrefix))
         : allRepos;
       const filtered = q ? scoped.filter((r) => r.full_name.toLowerCase().includes(q)) : scoped;
-      return { repos: filtered.slice(0, 20), hasMore: filtered.length > 20 };
+      const withPublic = q
+        ? await supplementRemotePickerWithPublicRepos(token, filtered, { org, query: q })
+        : filtered;
+      return { repos: withPublic.slice(0, 20), hasMore: withPublic.length > 20 };
     }
 
     // `org` is the installation account login; resolve it to an installation id. The
@@ -393,7 +397,10 @@ class ReposService extends KnexService {
     const installation = installations.find((i) => i.login === org);
     const allRepos = installation ? await listInstallationRepos(token, scope, installation.id) : [];
     const filtered = q ? allRepos.filter((r) => r.full_name.toLowerCase().includes(q)) : allRepos;
-    return { repos: filtered.slice(0, 20), hasMore: filtered.length > 20 };
+    const withPublic = q
+      ? await supplementRemotePickerWithPublicRepos(token, filtered, { org, query: q })
+      : filtered;
+    return { repos: withPublic.slice(0, 20), hasMore: withPublic.length > 20 };
   }
 
   async refresh(data, params) {

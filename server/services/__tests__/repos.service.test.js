@@ -45,6 +45,7 @@ vi.mock('../github.js', async (importOriginal) => {
           .replace(/-+/g, '-')
           .replace(/^-|-$/g, '') || 'repo'
     ),
+    supplementRemotePickerWithPublicRepos: vi.fn(async (_token, repos) => repos),
   };
 });
 
@@ -59,6 +60,7 @@ import {
   listBranches,
   ensureMainClone,
   initLocalRepo,
+  supplementRemotePickerWithPublicRepos,
 } from '../github.js';
 
 const db = createTestDb();
@@ -322,7 +324,30 @@ describe('Repos service - findRemote', () => {
       .service('repos')
       .findRemote({ org: 'myorg', query: 'alp' }, params(regularUser));
 
+    expect(supplementRemotePickerWithPublicRepos).toHaveBeenCalledWith(
+      'gh_token_user',
+      [{ full_name: 'myorg/alpha', private: false }],
+      { org: 'myorg', query: 'alp' }
+    );
     expect(result.repos).toEqual([{ full_name: 'myorg/alpha', private: false }]);
+  });
+
+  it('merges public GitHub repos when supplement returns matches', async () => {
+    listUserInstallations.mockResolvedValue([{ id: 42, login: 'myorg' }]);
+    listInstallationRepos.mockResolvedValue([]);
+    supplementRemotePickerWithPublicRepos.mockResolvedValueOnce([
+      { full_name: 'torvalds/linux', private: false },
+    ]);
+
+    const result = await app
+      .service('repos')
+      .findRemote({ org: 'myorg', query: 'linux' }, params(regularUser));
+
+    expect(supplementRemotePickerWithPublicRepos).toHaveBeenCalledWith('gh_token_user', [], {
+      org: 'myorg',
+      query: 'linux',
+    });
+    expect(result.repos).toEqual([{ full_name: 'torvalds/linux', private: false }]);
   });
 
   it('unauthenticated findRemote is rejected', async () => {
