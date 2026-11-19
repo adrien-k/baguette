@@ -51,6 +51,7 @@ import {
   rejectTurnMismatch,
 } from '../../services/agent-message-dispatch.js';
 import { createMessageStreamWriter } from '../../services/message-writer-factory.ts';
+import { prepareAgentTurnCompaction } from '../../services/agent-turn-compaction.js';
 import { sessionMessageIdentity } from '../../services/feathers/message-create-fields.js';
 import type { MessageStreamWriter } from '../../../shared/message-stream-writer.ts';
 import type { SystemMessagePayload } from '../../../shared/session-messages.ts';
@@ -695,6 +696,7 @@ ${body}`,
         requiresModelParamsOnTurn: getSdkPlugin('cursor')?.requiresModelParamsOnTurn === true,
       });
       const turnAgentConfigId = requireAgentConfigId(row.agent_config_id);
+      await prepareAgentTurnCompaction(this.app, session);
       const writer =
         turnId != null
           ? createMessageStreamWriter(this.app, {

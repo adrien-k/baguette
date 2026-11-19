@@ -165,7 +165,7 @@ export function formatPrFooterUsageLines(rows, agents = []) {
     .sort((a, b) => b.totalCost - a.totalCost);
 
   const totalCost = rows.reduce((sum, row) => sum + row.cost_usd, 0);
-  const lines = ['LLM Usage:'];
+  const lines = ['Agents breakdown:'];
   for (const { label, modelRows } of agentGroups) {
     const segments = modelRows.map((row) => formatPrFooterModelSegment(row));
     lines.push(`- ${label} - ${segments.join(', ')}`);

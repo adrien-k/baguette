@@ -130,7 +130,7 @@ describe('PiAgentService user MCP servers', () => {
     const loaderOptions = resourceLoaderArgs.at(-1);
     expect(loaderOptions).toBeTruthy();
     const factories = loaderOptions.extensionFactories;
-    expect(factories).toHaveLength(1);
+    expect(factories).toHaveLength(2);
     expect(factories[0].__mcpExtension).toBe(true);
     // The extension's default loadConfig reads only the global pi agent dir,
     // so the factory must be given the session's agent dir.

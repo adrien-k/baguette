@@ -155,7 +155,7 @@ describe('formatPrFooterUsageLines', () => {
       ]),
       [builderAgent, reviewerAgent]
     );
-    expect(lines[0]).toBe('LLM Usage:');
+    expect(lines[0]).toBe('Agents breakdown:');
     expect(lines).toContainEqual(`- #${GITHUB_REF_WORD_JOINER}1 Builder - opus $0.10 / 100 tokens`);
     expect(lines).toContainEqual(`- #${GITHUB_REF_WORD_JOINER}2 Reviewer - opus $0.05 / 50 tokens`);
     expect(lines[lines.length - 1]).toBe('Total: $0.15');
