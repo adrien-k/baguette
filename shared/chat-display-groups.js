@@ -1,5 +1,40 @@
 import { isTurnStartingUserMessage } from './turn-model.js';
 
+/**
+ * First user (or Baguette/loop/MCP) message per `turn_id` starts a Worked span; later
+ * rows with the same `turn_id` are steering or in-turn follow-ups and fold into Worked.
+ */
+function computeTurnInitiatingUserFlags(messages) {
+  const flags = new Array(messages.length).fill(false);
+  const seenTurnIds = new Set();
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    if (!isTurnStartingUserMessage(msg)) continue;
+    const turnId = msg.turn_id;
+    if (turnId == null) {
+      flags[i] = true;
+      continue;
+    }
+    if (!seenTurnIds.has(turnId)) {
+      seenTurnIds.add(turnId);
+      flags[i] = true;
+    }
+  }
+  return flags;
+}
+
+function turnInitiatesWorkedSpan(context) {
+  if (!context?.turnInitiatingUser || context.index == null) return true;
+  return context.turnInitiatingUser[context.index] === true;
+}
+
+/** Turn delimiter shown after Worked (Completed line, legacy result, stop status). */
+function isTurnEndChatMessage(msg) {
+  if (msg?.type === 'turn_result' || msg?.type === 'result') return true;
+  if (msg?.type === 'system' && msg.subtype === 'status') return true;
+  return false;
+}
+
 function toolUseNameIs(name, shortName) {
   if (!name) return false;
   if (name === shortName) return true;
@@ -81,7 +116,7 @@ export function isChatAnchorMessage(msg) {
  * Turns start at turn-starting user messages and end at the next user message
  * or turn result; `-1` means the index has no later assistant anchor in its turn.
  */
-function computeTurnLastAnchorIndices(messages) {
+function computeTurnLastAnchorIndices(messages, turnInitiatingUser) {
   const result = new Array(messages.length).fill(-1);
   let lastAnchor = -1;
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -89,7 +124,7 @@ function computeTurnLastAnchorIndices(messages) {
     result[i] = lastAnchor;
     if (msg.type === 'assistant' && isChatAnchorMessage(msg)) lastAnchor = i;
     else if (
-      isTurnStartingUserMessage(msg) ||
+      (msg.type === 'user' && turnInitiatingUser[i]) ||
       msg.type === 'turn_result' ||
       msg.type === 'result'
     ) {
@@ -116,8 +151,8 @@ function assistantIsMidTurn(msg, context) {
   const { messages, index } = context;
   for (let i = index + 1; i < messages.length; i++) {
     const m = messages[i];
-    if (isTurnStartingUserMessage(m)) break;
-    if (m.type === 'turn_result' || m.type === 'result') continue;
+    if (m.type === 'user' && context.turnInitiatingUser?.[i]) break;
+    if (isTurnEndChatMessage(m)) continue;
     return true;
   }
   return false;
@@ -128,6 +163,10 @@ function assistantIsMidTurn(msg, context) {
  * Mid-turn assistant messages fold into the Worked run instead of splitting it.
  */
 export function isChatGroupBoundary(msg, context) {
+  if (isTurnEndChatMessage(msg)) return true;
+  if (msg?.type === 'user') {
+    return isTurnStartingUserMessage(msg) && turnInitiatesWorkedSpan(context);
+  }
   return isChatAnchorMessage(msg) && !assistantIsMidTurn(msg, context);
 }
 
@@ -137,9 +176,12 @@ export function isChatGroupBoundary(msg, context) {
  */
 export function isChatWorkMessage(msg, context) {
   if (!msg) return false;
-  if (msg.type === 'result' || msg.type === 'turn_result') return true;
+  if (isTurnEndChatMessage(msg)) return false;
+  if (msg.type === 'user') {
+    return isTurnStartingUserMessage(msg) && !turnInitiatesWorkedSpan(context);
+  }
   if (msg.type === 'tool_call') return true;
-  if (msg.type === 'system') return msg.subtype !== 'prompt';
+  if (msg.type === 'system') return msg.subtype !== 'prompt' && msg.subtype !== 'status';
   if (msg.type === 'assistant') {
     return !isChatAnchorMessage(msg) || assistantIsMidTurn(msg, context);
   }
@@ -209,11 +251,15 @@ function pushWorkRun(items, run, startIndex, { flat } = {}) {
  */
 export function groupChatDisplayMessages(messages, opts = {}) {
   const flatWorkRuns = opts.foldMidTurnAssistants === false;
-  const turnLastAnchors = flatWorkRuns ? null : computeTurnLastAnchorIndices(messages);
+  const turnInitiatingUser = computeTurnInitiatingUserFlags(messages);
+  const turnLastAnchors = flatWorkRuns
+    ? null
+    : computeTurnLastAnchorIndices(messages, turnInitiatingUser);
   const groupContext = (index) => ({
     messages,
     index,
     turnLastAnchors,
+    turnInitiatingUser,
   });
   const items = [];
   let i = 0;

@@ -192,8 +192,9 @@ describe('chat display grouping', () => {
       },
     ];
     const grouped = groupChatDisplayMessages(messages);
-    expect(grouped.map((g) => g.kind)).toEqual(['message', 'work', 'message']);
+    expect(grouped.map((g) => g.kind)).toEqual(['message', 'work', 'message', 'message']);
     expect(grouped[1].callCount).toBe(1);
+    expect(grouped[2].message.subtype).toBe('success');
   });
 
   it('groups tool work before a final assistant reply', () => {
@@ -472,16 +473,39 @@ describe('chat display grouping', () => {
     expect(grouped[1].callCount).toBe(2);
   });
 
-  it('folds work before an errored turn result into the Worked group', () => {
+  it('keeps turn_result (Completed) outside the Worked group', () => {
     const messages = [
       { type: 'user', message: { content: 'go' } },
       { type: 'assistant', message: { content: [{ type: 'text', text: 'Investigating…' }] } },
       toolCallRow(1),
-      { type: 'turn_result', status: 'error', error_message: 'boom', total_cost_usd: null },
+      { type: 'assistant', turn_reply: true, blocks: [{ type: 'text', text: 'Done' }] },
+      { type: 'turn_result', status: 'ok', total_cost_usd: 0.01 },
     ];
     const grouped = groupChatDisplayMessages(messages);
-    expect(grouped.map((g) => g.kind)).toEqual(['message', 'work']);
+    expect(grouped.map((g) => g.kind)).toEqual(['message', 'work', 'message', 'message']);
     expect(grouped[1].callCount).toBe(1);
+    expect(grouped[3].message.type).toBe('turn_result');
+  });
+
+  it('folds steering user messages into the same Worked span (shared turn_id)', () => {
+    const messages = [
+      { type: 'user', message: { content: 'go' }, turn_id: 10 },
+      toolCallRow(1),
+      { type: 'user', message: { content: 'also check tests' }, turn_id: 10 },
+      toolCallRow(2),
+      { type: 'assistant', turn_reply: true, blocks: [{ type: 'text', text: 'Done' }] },
+      { type: 'turn_result', status: 'ok', total_cost_usd: null },
+    ];
+    const grouped = groupChatDisplayMessages(messages);
+    expect(grouped.map((g) => g.kind)).toEqual(['message', 'work', 'message', 'message']);
+    expect(grouped[1].callCount).toBe(2);
+    expect(grouped[1].messages.some((m) => m.type === 'user')).toBe(true);
+  });
+
+  it('treats turn_result as a boundary, not work', () => {
+    const done = { type: 'turn_result', status: 'ok', total_cost_usd: null };
+    expect(isChatWorkMessage(done)).toBe(false);
+    expect(isChatGroupBoundary(done)).toBe(true);
   });
 
   it('folds mid-turn assistants independently per turn', () => {
