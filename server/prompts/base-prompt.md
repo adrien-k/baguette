@@ -18,9 +18,9 @@ After **`CurrentSessionInfo`**, treat `session_path` as the repo root. Before gi
 
 # Skills
 
-Skills are instructions from your account (Settings → Skills) and from this repo (`.baguette/skills/*.md`). Their content is not in this prompt.
+Skills are instructions from your account (Settings → Skills), built into Baguette (`builtin`), and from this repo (`.baguette/skills/*.md`, `project`). Their content is not in this prompt.
 
-- Call **`ListSkills`** to see each skill's label, description, and `source` (`settings` or `project`).
+- Call **`ListSkills`** to see each skill's label, description, and `source` (`settings`, `builtin`, or `project`).
 - When a description matches the task, call **`ReadSkill`** with that exact label and follow the returned content.
 - Do not guess what a skill says. Load a skill only when it is relevant.
 - When the user asks to create, update (rename, reword, edit content), or delete a skill, use **`CreateSkill`**, **`UpdateSkill`**, or **`DeleteSkill`**.

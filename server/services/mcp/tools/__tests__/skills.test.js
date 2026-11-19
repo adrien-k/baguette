@@ -62,15 +62,24 @@ describe('skill MCP tools', () => {
     const result = await createListSkillsTool({ app, userId: alice.id }).handler();
     const body = payload(result);
     expect(body.ok).toBe(true);
-    expect(body.skills).toEqual([
-      {
-        id: expect.any(Number),
-        label: 'Review checklist',
-        description: 'Use when reviewing a pull request',
-        source: 'settings',
-      },
-    ]);
+    expect(body.skills).toEqual(
+      expect.arrayContaining([
+        {
+          id: expect.any(Number),
+          label: 'Review checklist',
+          description: 'Use when reviewing a pull request',
+          source: 'settings',
+        },
+        {
+          label: 'Delegation and orchestration',
+          description: expect.any(String),
+          source: 'builtin',
+          builtin_id: 'delegation',
+        },
+      ])
+    );
     expect(JSON.stringify(body)).not.toContain('Look for missing tests');
+    expect(JSON.stringify(body)).not.toContain('StartSubagent');
     expect(JSON.stringify(body)).not.toContain('Bob secret');
   });
 
@@ -99,7 +108,9 @@ describe('skill MCP tools', () => {
     });
 
     const listed = payload(await createListSkillsTool({ app, userId: bob.id }).handler());
-    expect(listed.skills.map((s) => s.label)).toEqual(['Bob secret']);
+    expect(listed.skills.filter((s) => s.source === 'settings').map((s) => s.label)).toEqual([
+      'Bob secret',
+    ]);
   });
 
   it('rejects duplicate labels and missing fields on create', async () => {
@@ -165,6 +176,25 @@ describe('skill MCP tools', () => {
     });
     expect(payload(noIdentifier)).toMatchObject({
       ok: false,
+    });
+  });
+
+  it('lists and reads built-in skills', async () => {
+    const result = await createListSkillsTool({ app, userId: alice.id }).handler();
+    const body = payload(result);
+    const builtin = body.skills.find((s) => s.source === 'builtin');
+    expect(builtin).toMatchObject({
+      label: 'Delegation and orchestration',
+      builtin_id: 'delegation',
+    });
+
+    const loaded = await createReadSkillTool({ app, userId: alice.id }).handler({
+      label: 'Delegation and orchestration',
+    });
+    expect(payload(loaded).skill).toMatchObject({
+      source: 'builtin',
+      builtin_id: 'delegation',
+      content: expect.stringContaining('ContinueReview'),
     });
   });
 

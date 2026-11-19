@@ -1,10 +1,11 @@
 import { z } from 'zod';
 import { resolveDataDirRelativePath } from '../../../config.js';
+import { loadBuiltinSkills } from '../../builtin-skills.js';
 import { loadProjectSkills } from '../../project-skills.js';
 import { fail, ok } from '../lib/result.js';
 
 const LIST_DESCRIPTION =
-  'List skills available in this session: account skills from Settings → Skills and repo skills from `.baguette/skills/*.md`. Returns id (settings only), label, description, and source (`settings` or `project`). Call ReadSkill with the label to load the content. Skill bodies are not included in the prompt.';
+  'List skills available: Settings → Skills (`settings`), repo `.baguette/skills/*.md` (`project`), and Baguette built-ins (`builtin`). Returns id (settings only), label, description, and source. Call ReadSkill with the label to load the content. Skill bodies are not included in the prompt.';
 
 const READ_DESCRIPTION =
   'Load one skill by the exact label from ListSkills. Returns label, description, source, and full content. Use this when a skill description matches the task, then follow that content.';
@@ -65,6 +66,16 @@ function projectSkillToApi(skill) {
   };
 }
 
+function builtinSkillToApi(skill) {
+  return {
+    label: skill.label,
+    description: skill.description,
+    content: skill.content,
+    source: 'builtin',
+    builtin_id: skill.builtin_id,
+  };
+}
+
 async function findOwnSkill(app, userId, { skillId, label }) {
   if (skillId != null) {
     try {
@@ -104,6 +115,15 @@ function listEntryFromProject(skill) {
   };
 }
 
+function listEntryFromBuiltin(skill) {
+  return {
+    label: skill.label,
+    description: skill.description,
+    source: 'builtin',
+    builtin_id: skill.builtin_id,
+  };
+}
+
 export function createListSkillsTool(ctx) {
   const { app, userId, callerSession } = ctx;
   return {
@@ -113,12 +133,20 @@ export function createListSkillsTool(ctx) {
     handler: async () => {
       const rows = await skillsForUser(app, userId);
       const settingsEntries = rows.map(listEntryFromSettings);
-      const projectRows = await projectSkillsForSession(callerSession);
       const settingsLabels = new Set(settingsEntries.map((s) => s.label));
+
+      const projectRows = await projectSkillsForSession(callerSession);
       const projectEntries = projectRows
         .filter((skill) => !settingsLabels.has(skill.label))
         .map(listEntryFromProject);
-      const skills = [...settingsEntries, ...projectEntries].sort((a, b) =>
+      const coveredLabels = new Set([...settingsLabels, ...projectEntries.map((s) => s.label)]);
+
+      const builtinRows = await loadBuiltinSkills();
+      const builtinEntries = builtinRows
+        .filter((skill) => !coveredLabels.has(skill.label))
+        .map(listEntryFromBuiltin);
+
+      const skills = [...settingsEntries, ...projectEntries, ...builtinEntries].sort((a, b) =>
         a.label.localeCompare(b.label)
       );
       return ok({ skills });
@@ -146,8 +174,14 @@ export function createReadSkillTool(ctx) {
 
       const projectRows = await projectSkillsForSession(callerSession);
       const projectSkill = projectRows.find((row) => row.label === wanted);
-      if (!projectSkill) return fail(`Skill "${wanted}" was not found`);
-      return ok({ skill: projectSkillToApi(projectSkill) });
+      if (projectSkill) {
+        return ok({ skill: projectSkillToApi(projectSkill) });
+      }
+
+      const builtinRows = await loadBuiltinSkills();
+      const builtinSkill = builtinRows.find((row) => row.label === wanted);
+      if (!builtinSkill) return fail(`Skill "${wanted}" was not found`);
+      return ok({ skill: builtinSkillToApi(builtinSkill) });
     },
   };
 }
