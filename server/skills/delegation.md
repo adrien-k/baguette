@@ -52,7 +52,23 @@ Guards (both tools):
 
 Reviewer model comes from **Settings → Agent → Reviewer default** — do not pass model args.
 
-After review finishes, **`ListIssues`** (no filter or per-status) and triage:
+### Review cycles (hard limit: 3)
+
+Count one **review cycle** each time you successfully run **`StartReview`** or **`ContinueReview`** and the reviewer turn finishes (any outcome).
+
+| Cycle                                      | Tool                                                                                    |
+| ------------------------------------------ | --------------------------------------------------------------------------------------- |
+| 1 (first review on this orchestration arc) | **`StartReview`** only — never use **`ContinueReview`** before the first review has run |
+| 2–3                                        | **`ContinueReview`** only — after new builder/subagent commits                          |
+
+**Hard limit — 3 review cycles total.** After the third completed review:
+
+- Do **not** call **`StartReview`** or **`ContinueReview`** again in the same orchestration arc unless the user explicitly asks for another review (or you use **`StartReview`** with **`clear_previous_review: true`** because they want a full restart).
+- **`ListIssues`**, report what is still **opened** / **submitted** / **needs_decision**, and use **`AskUserQuestions`** if the user must choose whether to keep fixing or ship the PR as-is.
+
+Track the count yourself across turns (e.g. in the plan or a todo); Baguette does not enforce this in the tools — **you** must stop at 3.
+
+After each review finishes, **`ListIssues`** (no filter or per-status) and triage:
 
 - **`needs_decision`** — wait for the user; do not fix or submit.
 - **`opened`** — valid findings; ready to assign.
@@ -93,10 +109,13 @@ flowchart TD
   plan[CreatePlan + StartPlan] --> todos[CreateTodo per workstream]
   todos --> build[Builder or StartSubagent]
   build --> ship[Commit + UpdateSession]
-  ship --> review[StartReview or ContinueReview]
-  review --> issues[ListIssues opened]
-  issues --> dispatch[StartSubagent per issue or fix submitted]
-  dispatch --> review
+  ship --> firstReview[StartReview — cycle 1 only]
+  firstReview --> issues[ListIssues + triage]
+  issues --> dispatch[Fix or StartSubagent per issue]
+  dispatch --> ship
+  ship --> moreReview[ContinueReview — cycles 2–3]
+  moreReview --> issues
+  issues --> stopAt3[After 3 review cycles: stop reviewing; ask user]
 ```
 
 Typical turn boundaries:
