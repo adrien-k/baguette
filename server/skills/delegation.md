@@ -77,12 +77,12 @@ For each **`opened`** issue you want off your plate (skip `needs_decision`):
    - Fix session review issue `#<ref>`.
    - Call **`ReadIssue`** with that ref and `session_id`.
    - Implement the fix in the worktree; run targeted tests.
-   - Call **`UpdateIssueStatus`** with `status: "resolved"` when done.
    - Commit with a message that references the issue ref.
+   - Do **not** call **`UpdateIssueStatus`** to mark the issue **`resolved`** — the next **`ContinueReview`** pass verifies fixes and closes issues.
 
 3. Use `attach: false` and parallel starts only when issues are independent; otherwise serialize or use one subagent with an ordered list.
 
-4. After subagents complete, reconcile: ensure issues are **`resolved`**, run full tests, single builder commit if needed for integration.
+4. After subagents complete, run full tests, add a single builder integration commit if needed, then call **`ContinueReview`**. The reviewer reconciles **`submitted`** issues against the diff, moves acceptable fixes to **`resolved`**, and **`CloseIssue`** (or opens a new finding if something is still wrong). Do not pre-mark issues **`resolved`** from the orchestrator turn.
 
 Until dedicated submit MCP tools exist, move issues to **`submitted`** yourself only when you are about to fix them (builder or subagent). Do not mark submitted without an agent assigned to fix.
 
