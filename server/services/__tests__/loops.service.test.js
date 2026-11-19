@@ -265,6 +265,36 @@ describe('Loops service', () => {
       expect(loop.enabled).toBe(false);
       expect(loop.next_run_at).toBeNull();
     });
+
+    it('creates a manual loop with no next_run_at', async () => {
+      const loop = await app
+        .service('loops')
+        .create(loopData({ schedule_type: 'manual' }), params(aliceId));
+      expect(loop.schedule_type).toBe('manual');
+      expect(loop.next_run_at).toBeNull();
+      expect(loop.interval_minutes).toBeNull();
+    });
+  });
+
+  describe('runNow', () => {
+    it('runs an enabled loop on demand', async () => {
+      const loop = await app
+        .service('loops')
+        .create(loopData({ schedule_type: 'manual' }), params(aliceId));
+      sessionsCreate.mockClear();
+      const result = await app.service('loops').runNow(loop.id, params(aliceId));
+      expect(result.session_id).toBe(77);
+      expect(sessionsCreate).toHaveBeenCalled();
+    });
+
+    it('rejects when the loop is paused', async () => {
+      const loop = await app
+        .service('loops')
+        .create(loopData({ schedule_type: 'manual', enabled: false }), params(aliceId));
+      await expect(app.service('loops').runNow(loop.id, params(aliceId))).rejects.toBeInstanceOf(
+        BadRequest
+      );
+    });
   });
 
   describe('find / scoping', () => {

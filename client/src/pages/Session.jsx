@@ -121,7 +121,7 @@ export default function Session() {
     isNewLoopRoute: isLoopsView && isNewLoopRoute,
     loops,
   });
-  const loopTabActive = isNewLoopRoute ? 'edit' : loopWorkspace.activeTab;
+  const loopTabActive = isNewLoopRoute ? 'edit' : loopWorkspace.activeTab || 'overview';
   const {
     session: sessionFromHook,
     loading: sessionLoading,
@@ -1280,10 +1280,13 @@ export default function Session() {
                 builderAllowRepoChoice={loopWorkspace.builderAllowRepoChoice}
                 onCreateLoop={loopWorkspace.handleCreateLoop}
                 onUpdateLoop={loopWorkspace.handleUpdateLoop}
+                onCancelLoopEdit={loopWorkspace.handleCancelLoopEdit}
                 onDeleteLoop={() => loopWorkspace.handleDeleteLoop()}
                 runSessions={loopWorkspace.runSessions}
                 runsLoading={loopWorkspace.runsLoading}
                 runsLoaded={loopWorkspace.runsLoaded}
+                onRunLoop={loopWorkspace.handleRunLoop}
+                runningLoop={loopWorkspace.runningLoop}
               />
             )}
             {!isLoopsView && isNewSessionRoute && (

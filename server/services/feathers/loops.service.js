@@ -88,6 +88,13 @@ class LoopsService extends KnexService {
    * Fire one loop: re-arm it, then create the session. Re-arming first means a loop whose
    * session creation fails waits for its next slot instead of retrying on every tick.
    */
+  /** Trigger one run on demand (owner only). The loop must be enabled. */
+  async runNow(id, params) {
+    const loop = await this.get(id, params);
+    if (!loop.enabled) throw new BadRequest('Enable the loop before running it');
+    return this.runLoop(loop);
+  }
+
   async runLoop(loop, nowMs = Date.now()) {
     const service = this.app.service('loops');
     const params = { user: { id: loop.user_id } };
@@ -444,10 +451,15 @@ function normalizeCreate(context) {
  */
 async function requireOwnLoop(context) {
   const userId = context.params.user?.id;
-  if (context.id == null) throw new BadRequest('Loop id is required');
+  let loopId = context.id;
+  if (loopId == null && (typeof context.data === 'number' || typeof context.data === 'string')) {
+    loopId = context.data;
+    context.id = loopId;
+  }
+  if (loopId == null) throw new BadRequest('Loop id is required');
   const loop = await context.app
     .get('db')('loops')
-    .where(userId ? { id: context.id, user_id: userId } : { id: context.id })
+    .where(userId ? { id: loopId, user_id: userId } : { id: loopId })
     .first();
   if (!loop) throw new NotFound('Loop not found');
   context.params.existingLoop = loop;
@@ -659,6 +671,7 @@ const loopsHooks = {
       normalizePatch,
     ],
     remove: [requireOwnLoop, clearSessionLoopReferences],
+    runNow: [requireOwnLoop],
   },
   after: {
     find: [formatResult, attachTiedSessions, attachOwners],
@@ -677,7 +690,7 @@ export function registerLoopsService(app, path = 'loops') {
     paginate: DEFAULT_PAGINATE,
   };
   app.use(path, new LoopsService(options), {
-    methods: ['find', 'get', 'create', 'patch', 'remove'],
+    methods: ['find', 'get', 'create', 'patch', 'remove', 'runNow'],
   });
   app.service(path).hooks(loopsHooks);
 }
