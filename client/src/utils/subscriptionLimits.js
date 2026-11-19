@@ -33,7 +33,8 @@ export function formatLimitReset(iso, now = Date.now()) {
 
 /** Detail line under a bar: "$1.60 of $20 · resets in 17d (Dec 6, 1:00 AM UTC+1)". */
 export function limitDetail(limit, now = Date.now()) {
-  if (limit.note) return limit.note;
+  // A note on a row without a value replaces the detail; on a row with one it is appended.
+  if (limit.note && limit.percent == null && limit.used_usd == null) return limit.note;
   const parts = [];
   // The overage row already shows "$used / $limit" on the right; only the reset is left here.
   if (limit.id !== 'overage' && limit.used_usd != null && limit.limit_usd != null) {
@@ -41,6 +42,7 @@ export function limitDetail(limit, now = Date.now()) {
   }
   const reset = formatLimitReset(limit.resets_at, now);
   if (reset) parts.push(reset);
+  if (limit.note) parts.push(limit.note);
   return parts.join(' · ');
 }
 

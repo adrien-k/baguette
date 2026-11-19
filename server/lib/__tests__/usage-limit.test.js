@@ -11,6 +11,7 @@ import {
   RESUME_MARGIN_MIN_MS,
   usageLimitFieldsError,
   usageLimitStatusText,
+  blockingLimitWindow,
 } from '../usage-limit.js';
 
 const NOW = Date.parse('2026-11-18T12:00:00Z');
@@ -70,8 +71,11 @@ describe('usage limit action + copy', () => {
       resetAtMs: NOW + 1000,
     };
     expect(usageLimitStatusText({ ...base, action: 'stop' })).toContain('Session stopped');
-    expect(usageLimitStatusText({ ...base, action: 'wait' })).toBe(
-      'Claude usage limit reached. Waiting for reset.'
+    expect(usageLimitStatusText({ ...base, action: 'wait' })).toMatch(
+      /^Claude usage limit reached\. Waiting for reset\. .*"Continue"\.$/
+    );
+    expect(usageLimitStatusText({ ...base, action: 'stop' })).toContain(
+      'change "Details > When a usage limit'
     );
     expect(usageLimitStatusText({ ...base, action: 'stop', reason: 'usage_limit' })).toContain(
       'session usage limit reached'
@@ -149,5 +153,40 @@ describe('usageLimitFieldsError null action', () => {
     const data = { usage_limit_action: null };
     expect(usageLimitFieldsError(data)).toBeNull();
     expect('usage_limit_action' in data).toBe(false);
+  });
+});
+
+describe('blockingLimitWindow', () => {
+  const limit = (id, percent, resetsInMs) => ({
+    id,
+    label: id,
+    percent,
+    resets_at: resetsInMs == null ? null : new Date(NOW + resetsInMs).toISOString(),
+  });
+
+  it('is null when every window has room, the overage row is ignored', () => {
+    const result = { status: 'ok', limits: [limit('session', 40, 1000), limit('overage', 100, 5)] };
+    expect(blockingLimitWindow(result, NOW)).toBeNull();
+  });
+
+  it('blocks on a full window and reports when the last full window reopens', () => {
+    const result = {
+      status: 'ok',
+      limits: [limit('session', 100, 3_600_000), limit('weekly', 100, 86_400_000)],
+    };
+    expect(blockingLimitWindow(result, NOW)).toEqual({
+      label: 'session + weekly',
+      resetAtMs: NOW + 86_400_000,
+    });
+  });
+
+  it('ignores a full window whose reset already passed (stale reading)', () => {
+    const result = { status: 'ok', limits: [limit('session', 100, -1000)] };
+    expect(blockingLimitWindow(result, NOW)).toBeNull();
+  });
+
+  it('fails open when limits could not be read', () => {
+    expect(blockingLimitWindow({ status: 'error', limits: [] }, NOW)).toBeNull();
+    expect(blockingLimitWindow(null, NOW)).toBeNull();
   });
 });

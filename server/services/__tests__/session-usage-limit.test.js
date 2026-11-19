@@ -10,7 +10,17 @@ import { registerSessionsService } from '../feathers/sessions.service.js';
 import { registerAgentsService } from '../feathers/agents.service.js';
 import { registerQueuedMessagesService } from '../feathers/queued-messages.service.js';
 import { useClaudeAgentStub } from '../../test-utils/agent-sdks.js';
+import { registerSdkPlugin } from '../../agent-sdks/registry.js';
 import { RESUME_MARGIN_MAX_MS, RESUME_MARGIN_MIN_MS } from '../../lib/usage-limit.js';
+
+const limitsMock = vi.hoisted(() => ({ result: null, calls: [] }));
+vi.mock('../../lib/subscription-limits.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  getCachedSubscriptionLimits: vi.fn(async (_key, _fetcher, opts) => {
+    limitsMock.calls.push(opts?.refresh === true);
+    return limitsMock.result;
+  }),
+}));
 
 vi.mock('../baguette-config.js', async (importOriginal) => ({
   ...(await importOriginal()),
@@ -38,6 +48,8 @@ const hit = (resetInMs = 3_600_000) => ({
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  limitsMock.calls = [];
+  limitsMock.result = { status: 'ok', limits: [] };
   await db('users').insert({ github_id: 101, username: 'alice', status: 'approved' });
   userId = (await db('users').where({ username: 'alice' }).first()).id;
   await db('repos').insert({ full_name: 'test/repo', repo_path: '/tmp/repo' });
@@ -57,6 +69,13 @@ beforeEach(async () => {
   app.set('db', db);
   registerSessionsService(app);
   registerAgentsService(app);
+  // The (mocked) cache decides the result; the plugin only needs to be able to report limits.
+  registerSdkPlugin({
+    key: 'claude',
+    label: 'Claude',
+    servicePath: 'claude-agent',
+    fetchSubscriptionLimits: vi.fn(),
+  });
   useClaudeAgentStub(app, { onMessageCreated }, ['onMessageCreated']);
   registerQueuedMessagesService(app);
   registerMessagesService(app);
@@ -297,5 +316,104 @@ describe('session usage_limit_action field', () => {
     await expect(
       app.service('sessions').patch(sessionId, { usage_limit: -5 }, params)
     ).rejects.toThrow(/usage_limit/);
+  });
+});
+
+describe('sessions.checkUsageLimitGate', () => {
+  const inHours = (h) => new Date(Date.now() + h * 3_600_000).toISOString();
+  const windows = (session, weekly = 10) => ({
+    status: 'ok',
+    limits: [
+      { id: 'session', label: 'Session (5h)', percent: session, resets_at: inHours(2) },
+      { id: 'weekly', label: 'Weekly', percent: weekly, resets_at: inHours(72) },
+      // Overage is never a reason to block: it is exactly what the gate protects.
+      { id: 'overage', label: 'Overage Usage limit', percent: 100, resets_at: inHours(500) },
+    ],
+  });
+  const gate = (options) =>
+    app.service('sessions').checkUsageLimitGate(sessionId, agentId, options);
+
+  it('blocks stop and wait sessions while the session window is full', async () => {
+    limitsMock.result = windows(100);
+    for (const usage_limit_action of ['stop', 'wait']) {
+      await setPolicy({ usage_limit_action });
+      const blocked = await gate();
+      expect(blocked).toMatchObject({ sdk: 'claude', reason: 'rejected' });
+      expect(blocked.reset_at_ms).toBeGreaterThan(Date.now());
+    }
+  });
+
+  it('blocks on a full weekly window too, and waits for the weekly reset', async () => {
+    limitsMock.result = windows(20, 100);
+    const blocked = await gate();
+    expect(blocked.reset_at_ms).toBeGreaterThan(Date.now() + 71 * 3_600_000);
+  });
+
+  it('never blocks continue sessions (their dollar cap is enforced by the guard)', async () => {
+    limitsMock.result = windows(100);
+    await setPolicy({ usage_limit_action: 'continue' });
+    expect(await gate()).toBeNull();
+  });
+
+  describe('continue: overage notice', () => {
+    const notices = async () =>
+      (
+        await db('session_messages').where({
+          session_id: sessionId,
+          type: 'system',
+          subtype: 'status',
+        })
+      ).filter((m) => m.message_json.includes('continuing using overage credits'));
+
+    beforeEach(() => setPolicy({ usage_limit_action: 'continue' }));
+
+    it('says so once, when the plan crosses its limit during the session', async () => {
+      limitsMock.result = windows(60);
+      await gate();
+      expect(await notices()).toHaveLength(0);
+      limitsMock.result = windows(100);
+      await gate();
+      await gate();
+      const sent = await notices();
+      expect(sent).toHaveLength(1);
+      expect(sent[0].message_json).toContain(
+        'Claude usage limit reached, continuing using overage'
+      );
+    });
+
+    it('stays quiet for a session that starts out over the limit', async () => {
+      limitsMock.result = windows(100);
+      await gate();
+      await gate();
+      expect(await notices()).toHaveLength(0);
+    });
+
+    it('announces again after the limit reset and was crossed anew', async () => {
+      for (const percent of [50, 100, 20, 100]) {
+        limitsMock.result = windows(percent);
+        await gate();
+      }
+      expect(await notices()).toHaveLength(2);
+    });
+  });
+
+  it('lets the agent run while every window has room', async () => {
+    limitsMock.result = windows(60, 40);
+    expect(await gate()).toBeNull();
+  });
+
+  it('fails open when the limits cannot be read', async () => {
+    limitsMock.result = { status: 'error', message: 'boom', limits: [] };
+    expect(await gate()).toBeNull();
+  });
+
+  it('re-reads a nearly full cached reading before trusting it, but not a low one', async () => {
+    limitsMock.result = windows(30);
+    await gate();
+    expect(limitsMock.calls).toEqual([false]);
+    limitsMock.calls = [];
+    limitsMock.result = windows(85);
+    await gate();
+    expect(limitsMock.calls).toEqual([false, true]);
   });
 });

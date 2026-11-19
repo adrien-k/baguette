@@ -36,7 +36,7 @@ describe('normalizeClaudeUsage', () => {
     expect(out.limits.map((l) => [l.id, l.label, l.percent])).toEqual([
       ['session', 'Session (5h)', 10],
       ['weekly', 'Weekly', 41],
-      ['overage', 'Overage', 1.7],
+      ['overage', 'Overage Usage limit', 1.7],
     ]);
     // Overage: dollars of paid extra usage this month against the monthly spend limit.
     expect(out.limits[2]).toMatchObject({
@@ -59,7 +59,7 @@ describe('normalizeClaudeUsage', () => {
     expect(out.limits).toEqual([
       {
         id: 'overage',
-        label: 'Overage',
+        label: 'Overage Usage limit',
         percent: null,
         resets_at: '2026-12-01T00:00:00.000Z',
         used_usd: 0,
@@ -124,11 +124,11 @@ describe('normalizeClaudeRateLimitHeaders', () => {
     ]);
   });
 
-  it('explains why email and plan are missing for a setup token', () => {
+  it('has no account details for a setup token', () => {
     const out = normalizeClaudeRateLimitHeaders(
       headersOf({ 'anthropic-ratelimit-unified-5h-utilization': '0.02' })
     );
-    expect(out.account.note).toMatch(/full Claude login/);
+    expect(out.account).toBeNull();
   });
 
   it('adds an Overage row explaining why spend is unavailable for this login', () => {
@@ -145,13 +145,27 @@ describe('normalizeClaudeRateLimitHeaders', () => {
     );
     expect(rejected.limits.at(-1)).toMatchObject({
       id: 'overage',
-      label: 'Overage',
+      label: 'Overage Usage limit',
       note: 'Not available — disabled',
     });
     const allowed = normalizeClaudeRateLimitHeaders(
       headersOf({ ...base, 'anthropic-ratelimit-unified-overage-status': 'allowed' })
     );
-    expect(allowed.limits.at(-1).note).toBe('Spend not available for this login');
+    expect(allowed.limits.at(-1).note).toBe('Enabled — spend needs a full Claude login');
+    const inUse = normalizeClaudeRateLimitHeaders(
+      headersOf({
+        ...base,
+        'anthropic-ratelimit-unified-overage-status': 'allowed',
+        'anthropic-ratelimit-unified-overage-utilization': '0.04',
+        'anthropic-ratelimit-unified-overage-reset': '1796083200',
+      })
+    );
+    expect(inUse.limits.at(-1)).toMatchObject({
+      id: 'overage',
+      percent: 4,
+      resets_at: '2026-12-01T00:00:00.000Z',
+      note: 'Requires a full Claude login to show the limit in $',
+    });
   });
 
   it('is unavailable without any unified headers (API key / gateway)', () => {

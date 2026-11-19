@@ -16,6 +16,10 @@ function resultLimitText(message) {
   return isUsageLimitText(text) ? text : null;
 }
 
+/** Re-read the plan limits after this many tool calls or this much estimated spend. */
+const CHECKPOINT_TOOL_CALLS = 10;
+const CHECKPOINT_COST_USD = 1;
+
 function assistantCostUsd(message) {
   const usage = message.message?.usage;
   if (!usage) return 0;
@@ -63,6 +67,40 @@ export class ClaudeUsageLimitGuard {
     this.resetAtMs = null;
     this.seenAssistantIds = new Set();
     this.warned = false;
+    /** Tool calls / estimated spend since the last plan-limit checkpoint (see `checkpointDue`). */
+    this.checkpointTools = 0;
+    this.checkpointCostUsd = 0;
+    this.checkpointIds = new Set();
+  }
+
+  /**
+   * True every 10 tool calls or ~$1 of estimated spend, whichever comes first, so the
+   * caller re-reads the plan's limits during a long turn. Counts every assistant message,
+   * subagents included, whether or not overage has started.
+   */
+  checkpointDue() {
+    if (
+      this.checkpointTools < CHECKPOINT_TOOL_CALLS &&
+      this.checkpointCostUsd < CHECKPOINT_COST_USD
+    ) {
+      return false;
+    }
+    this.checkpointTools = 0;
+    this.checkpointCostUsd = 0;
+    return true;
+  }
+
+  #countForCheckpoint(message) {
+    const id = message.message?.id;
+    // One assistant message arrives per content block with identical usage: price it once.
+    if (id && !this.checkpointIds.has(id)) {
+      this.checkpointIds.add(id);
+      this.checkpointCostUsd += assistantCostUsd(message);
+    }
+    const content = message.message?.content;
+    if (Array.isArray(content)) {
+      this.checkpointTools += content.filter((block) => block?.type === 'tool_use').length;
+    }
   }
 
   /**
@@ -73,6 +111,7 @@ export class ClaudeUsageLimitGuard {
     try {
       if (message.type === 'rate_limit_event') return this.#onRateLimit(message.rate_limit_info);
       if (message.type === 'assistant') {
+        this.#countForCheckpoint(message);
         const m = message.message;
         if (m?.usage && m.model) this.sinceResult.set(m.id ?? this.sinceResult.size, m);
         return this.#onAssistant(message);

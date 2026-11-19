@@ -21,7 +21,7 @@ import McpAgentBlock from './chat/McpAgentBlock.tsx';
 import MessageTimestamp from './chat/MessageTimestamp.tsx';
 import MessageTurnModelBadge from './chat/MessageTurnModelBadge.jsx';
 import TurnErrorMessage from './chat/TurnErrorMessage.tsx';
-import UsageLimitNotice from './chat/UsageLimitNotice.tsx';
+import UsageLimitNotice, { isUsageLimitStatus } from './chat/UsageLimitNotice.tsx';
 import { useCurrentUser } from '../context/CurrentUserContext.jsx';
 import UserAvatar from './UserAvatar.jsx';
 
@@ -194,6 +194,10 @@ function SystemMessage({ message }: { message: TypedMessageView & { type: 'syste
 
   if (message.subtype === 'status' && message.status && message.usage_limit_resume_at) {
     return <UsageLimitNotice status={message.status} resumeAt={message.usage_limit_resume_at} />;
+  }
+
+  if (message.subtype === 'status' && message.status && isUsageLimitStatus(message.status)) {
+    return <UsageLimitNotice status={message.status} />;
   }
 
   if (message.subtype === 'status' && message.status) {

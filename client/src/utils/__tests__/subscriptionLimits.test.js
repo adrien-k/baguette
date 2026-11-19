@@ -62,6 +62,17 @@ describe('limitDetail', () => {
       )
     ).toMatch(/^resets in 20d /);
     expect(limitDetail({ id: 'overage', note: 'Not enabled' }, NOW)).toBe('Not enabled');
+    expect(
+      limitDetail(
+        {
+          id: 'overage',
+          percent: 4,
+          resets_at: new Date(NOW + 2 * 3600_000).toISOString(),
+          note: 'Requires a full Claude login to show the limit in $',
+        },
+        NOW
+      )
+    ).toMatch(/^resets in 2h .* · Requires a full Claude login to show the limit in \$$/);
   });
 
   it('is just the reset for percent-only windows', () => {

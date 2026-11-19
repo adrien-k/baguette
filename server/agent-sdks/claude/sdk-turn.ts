@@ -68,7 +68,16 @@ export type ClaudeUsageLimitHit = { reason: string; resetAtMs: number | null };
 export type ProcessClaudeQueryStreamOptions = {
   writer?: MessageStreamWriter | null;
   /** Inspects each persisted message; a returned hit stops the stream. */
-  usageGuard?: { observe(message: SDKMessage): ClaudeUsageLimitHit | null } | null;
+  usageGuard?: {
+    observe(message: SDKMessage): ClaudeUsageLimitHit | null;
+    checkpointDue?(): boolean;
+  } | null;
+  /**
+   * Re-reads the plan's limits; a returned hit stops the turn. Run whenever the guard says a
+   * checkpoint is due (every 10 tool calls / ~$1), so a window that fills mid-turn cannot
+   * quietly roll into paid overage.
+   */
+  usageCheck?: (() => Promise<ClaudeUsageLimitHit | null>) | null;
   abortSignal?: AbortSignal;
 } & ClaudeStreamCallbacks;
 
@@ -133,6 +142,7 @@ export async function processClaudeQueryStream(
     persistMessage,
     trackBackgroundTasks = false,
     usageGuard,
+    usageCheck,
   } = options;
   let usageLimit: ClaudeUsageLimitHit | null = null;
 
@@ -256,6 +266,9 @@ export async function processClaudeQueryStream(
       // The guard sees the message first: a tripping rate-limit event is replaced by the
       // session's own limit notice (stop / waiting until reset) instead of the generic row.
       usageLimit = usageGuard?.observe(message) ?? null;
+      if (!usageLimit && usageCheck && usageGuard?.checkpointDue?.()) {
+        usageLimit = await usageCheck().catch(() => null);
+      }
       if (!(usageLimit && message.type === 'rate_limit_event')) {
         await persistSdkMessage(message);
       }

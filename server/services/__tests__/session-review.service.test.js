@@ -342,6 +342,8 @@ beforeEach(async () => {
   app = makeApp(db);
   await app.setup();
   app.service('sessions').getClaudeEnv = async () => ({});
+  // Plan limits are covered in session-usage-limit tests; keep the SDK mock to the review turn.
+  app.service('sessions').checkUsageLimitGate = async () => null;
 });
 
 describe('session-review service', () => {

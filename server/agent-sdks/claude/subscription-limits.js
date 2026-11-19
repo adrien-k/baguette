@@ -53,7 +53,7 @@ export function normalizeClaudeUsage(usage, now = new Date()) {
     limits.push(
       subscriptionLimit({
         id: 'overage',
-        label: 'Overage',
+        label: 'Overage Usage limit',
         percent,
         resetsAt: firstOfNextMonthIso(now),
         usedUsd,
@@ -61,7 +61,9 @@ export function normalizeClaudeUsage(usage, now = new Date()) {
       })
     );
   } else if (extra) {
-    limits.push(subscriptionLimit({ id: 'overage', label: 'Overage', note: 'Not enabled' }));
+    limits.push(
+      subscriptionLimit({ id: 'overage', label: 'Overage Usage limit', note: 'Not enabled' })
+    );
   }
   return subscriptionResult('ok', {
     limits,
@@ -131,8 +133,6 @@ export function normalizeClaudeRateLimitHeaders(headers) {
   limits.push(overageLimitFromHeaders(headers));
   return subscriptionResult('ok', {
     limits,
-    // Setup tokens can run requests but not read the profile (no `user:profile` scope).
-    account: { note: 'Email and plan need a full Claude login, not a setup token' },
   });
 }
 
@@ -145,19 +145,41 @@ const OVERAGE_DISABLED_REASONS = {
 };
 
 /**
- * Overage row for the header path. The headers say whether overage is available but not how
- * many dollars were spent (that needs the SDK's profile-scoped `/usage`), so the row carries
- * a note instead of an amount.
+ * Overage row for the header path. The headers give the share of the monthly overage cap used
+ * (and its reset) but not the dollar amounts (that needs the SDK's profile-scoped `/usage`),
+ * so an allowed row shows a percentage bar instead of "$x / $y".
  */
 function overageLimitFromHeaders(headers) {
   const status = headers.get('anthropic-ratelimit-unified-overage-status');
   const reason = headers.get('anthropic-ratelimit-unified-overage-disabled-reason');
-  let note = 'Spend not available for this login';
   if (status === 'rejected') {
     const why = OVERAGE_DISABLED_REASONS[reason] ?? reason?.replace(/_/g, ' ');
-    note = why ? `Not available — ${why}` : 'Not available';
+    return subscriptionLimit({
+      id: 'overage',
+      label: 'Overage Usage limit',
+      note: why ? `Not available — ${why}` : 'Not available',
+    });
   }
-  return subscriptionLimit({ id: 'overage', label: 'Overage', note });
+  const percent = utilizationHeaderPercent(
+    headers,
+    'anthropic-ratelimit-unified-overage-utilization'
+  );
+  if (percent == null) {
+    return subscriptionLimit({
+      id: 'overage',
+      label: 'Overage Usage limit',
+      note: status
+        ? 'Enabled — spend needs a full Claude login'
+        : 'Status not available for this login',
+    });
+  }
+  return subscriptionLimit({
+    id: 'overage',
+    label: 'Overage Usage limit',
+    percent,
+    resetsAt: resetHeaderIso(headers, 'anthropic-ratelimit-unified-overage-reset'),
+    note: 'Requires a full Claude login to show the limit in $',
+  });
 }
 
 /**

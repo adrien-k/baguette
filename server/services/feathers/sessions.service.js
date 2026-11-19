@@ -100,7 +100,7 @@ import {
 import { patchAgentInternal } from './agents.service.js';
 import { setAgentTurnTerminal } from '../agent-turn-patch.js';
 import { getReviewAgentTurn } from '../review-agent-turn.js';
-import { listSdkPlugins, storedSessionIdColumns } from '../../agent-sdks/registry.js';
+import { getSdkPlugin, listSdkPlugins, storedSessionIdColumns } from '../../agent-sdks/registry.js';
 import {
   getPreviewServiceDefinitions,
   getSessionPreviewUrl,
@@ -130,7 +130,11 @@ import {
   computeResumeAtMs,
   MAX_UNKNOWN_RESET_RETRIES,
   usageLimitStatusText,
+  allowsOverage,
+  blockingLimitWindow,
+  nearlyFull,
 } from '../../lib/usage-limit.js';
+import { getCachedSubscriptionLimits } from '../../lib/subscription-limits.js';
 import { normalizeUsageAgentType } from '../../../shared/usage-agent-type.js';
 import { getCodeserverUrl } from '../codeserver-handler.js';
 import { removeSessionDockerResources } from '../docker-session.js';
@@ -179,6 +183,11 @@ export class SessionsService extends KnexService {
     this._sessionActivityLastBumpMs = Object.create(null);
     /** Consecutive limit hits with no reset time per session id (see `onUsageLimit`). */
     this.usageLimitRetries = new Map();
+    /**
+     * Per `continue` session: whether the plan was seen under its limit (`sawBelow`) and
+     * whether the crossing was already announced (`notified`). See `noteOverageCrossing`.
+     */
+    this.overageCrossings = new Map();
   }
 
   setup(app) {
@@ -1928,6 +1937,97 @@ export class SessionsService extends KnexService {
     } catch (err) {
       logger.warn({ sessionId, err: err?.message }, 'sessions: usage limit handling failed');
       return null;
+    }
+  }
+
+  /**
+   * Is the plan's session/weekly window used up for a session that must not spend paid
+   * overage (`stop` / `wait`)? Providers keep serving requests on overage once a window is
+   * full, so this check — before a turn starts and periodically during one — is what keeps
+   * those sessions from silently spending credits. `continue` sessions are never blocked
+   * here (their dollar cap is enforced by the agent's usage guard).
+   *
+   * Fails open: an unreadable limits lookup returns null rather than blocking the agent.
+   * Not an API method (it is not listed in `methods`).
+   *
+   * @param {{agentConfigId?: number | null, fresh?: boolean}} [options]
+   *   `fresh` always re-reads, bypassing the ~55s limits cache.
+   * @returns {Promise<{label: string, sdk: string, reason: string, reset_at_ms: number | null} | null>}
+   */
+  async checkUsageLimitGate(sessionId, agentId, { agentConfigId = null, fresh = false } = {}) {
+    try {
+      const db = this.app.get('db');
+      const session = await db('sessions').where({ id: sessionId }).first();
+      if (!session) return null;
+      const agent = agentId != null ? await getAgentById(db, agentId) : null;
+      const sdk = agent?.agent_sdk;
+      const plugin = sdk ? getSdkPlugin(sdk) : null;
+      if (typeof plugin?.fetchSubscriptionLimits !== 'function') return null;
+      const configId = agentConfigId ?? session.agent_config_id ?? null;
+      const key = `${session.user_id}:${sdk}:${configId ?? ''}`;
+      const fetcher = () =>
+        plugin.fetchSubscriptionLimits({
+          app: this.app,
+          userId: session.user_id,
+          agentConfigId: configId,
+        });
+      // Reads are cached (~55s) because a read can spawn a CLI process. A reading that is
+      // close to full is re-read before it is trusted — in either direction.
+      let result = await getCachedSubscriptionLimits(key, fetcher, { refresh: fresh });
+      if (!fresh && nearlyFull(result)) {
+        result = await getCachedSubscriptionLimits(key, fetcher, { refresh: true });
+      }
+      const blocking = blockingLimitWindow(result);
+      if (allowsOverage(session.usage_limit_action)) {
+        await this.noteOverageCrossing(session, agent, plugin.label ?? sdk, Boolean(blocking));
+        return null;
+      }
+      if (!blocking) return null;
+      return {
+        label: plugin.label ?? sdk,
+        sdk,
+        reason: 'rejected',
+        reset_at_ms: blocking.resetAtMs,
+      };
+    } catch (err) {
+      logger.warn({ sessionId, err: err?.message }, 'sessions: usage limit check failed');
+      return null;
+    }
+  }
+
+  /**
+   * `continue` sessions keep running past a full plan window on overage credits. Say so once,
+   * when the plan is seen going from under its limit to over it while the session is live —
+   * not on every check, and not for a session that starts out already over the limit.
+   * In-memory (a server restart just forgets), and never throws.
+   */
+  async noteOverageCrossing(session, agent, label, overLimit) {
+    try {
+      const state = this.overageCrossings.get(session.id) ?? { sawBelow: false, notified: false };
+      this.overageCrossings.set(session.id, state);
+      if (!overLimit) {
+        state.sawBelow = true;
+        state.notified = false;
+        return;
+      }
+      if (!state.sawBelow || state.notified) return;
+      state.notified = true;
+      await this.app.service('messages').create(
+        {
+          session_id: session.id,
+          type: 'system',
+          subtype: 'status',
+          message_json: JSON.stringify({
+            type: 'system',
+            subtype: 'status',
+            status: `${label} usage limit reached, continuing using overage credits.`,
+          }),
+          ...sessionMessageIdentity(agent, { agent_sdk: agent.agent_sdk }),
+        },
+        { provider: undefined, user: { id: session.user_id } }
+      );
+    } catch (err) {
+      logger.warn({ sessionId: session.id, err: err?.message }, 'sessions: overage notice failed');
     }
   }
 

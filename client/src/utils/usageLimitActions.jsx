@@ -15,13 +15,13 @@ export const USAGE_LIMIT_ACTION_OPTIONS = [
   {
     value: 'wait',
     label: 'Wait',
-    description: 'Waits for the session/weekly/monthly limit to reset, then continues',
+    description: 'Waits for the session/weekly/monthly limit to reset, then resumes the work',
     icon: <Moon className={ICON_CLASS} aria-hidden />,
   },
   {
     value: 'continue',
     label: 'Continue',
-    description: 'Ignores the session/weekly/monthly limit and continues using credits',
+    description: 'Ignores the session/weekly/monthly limit and continues using overage credits',
     icon: <DollarSign className={ICON_CLASS} aria-hidden />,
   },
 ];

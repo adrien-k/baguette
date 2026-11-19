@@ -452,7 +452,6 @@ export default function BuilderForm({
   const isLoop = mode === 'loop';
   const hasMcpOrPlugins = mcpCatalog.length > 0 || availablePlugins.length > 0;
   const showBranchNameField = !isLoop && !isGlobal && sessionStartMode !== 'same-branch';
-  const hasFormOptions = skillCatalog.length > 0 || showBranchNameField;
   const skillPreloadBlock =
     skillCatalog.length > 0 ? (
       <div>
@@ -929,6 +928,7 @@ export default function BuilderForm({
       )}
 
       <div className="space-y-4">
+        <div className="text-sm font-medium text-heading">Options</div>
         <div>
           <label className="block text-sm font-medium text-secondary mb-1">
             When a usage limit is reached
@@ -939,7 +939,7 @@ export default function BuilderForm({
         {usageLimitAction === 'continue' && (
           <div>
             <label className="block text-sm font-medium text-secondary mb-1">
-              Usage limit{' '}
+              Overage Usage limit{' '}
               <span className="text-faint font-normal">
                 (USD of credits this session may spend — empty for unlimited)
               </span>
@@ -947,29 +947,23 @@ export default function BuilderForm({
             <UsageLimitInput value={usageLimitText} onChange={setUsageLimitText} />
           </div>
         )}
+        {skillPreloadBlock}
+        {showBranchNameField && (
+          <div>
+            <label className="block text-sm font-medium text-secondary mb-1">
+              New branch name{' '}
+              <span className="text-faint font-normal">(optional, auto-generated if empty)</span>
+            </label>
+            <input
+              type="text"
+              value={branchName}
+              onChange={(e) => setBranchName(e.target.value)}
+              placeholder="my-feature-branch"
+              className={`${INPUT_CLASS} focus:border-transparent`}
+            />
+          </div>
+        )}
       </div>
-
-      {hasFormOptions && (
-        <div className="space-y-4">
-          <div className="text-sm font-medium text-heading">Options</div>
-          {skillPreloadBlock}
-          {showBranchNameField && (
-            <div>
-              <label className="block text-sm font-medium text-secondary mb-1">
-                New branch name{' '}
-                <span className="text-faint font-normal">(optional, auto-generated if empty)</span>
-              </label>
-              <input
-                type="text"
-                value={branchName}
-                onChange={(e) => setBranchName(e.target.value)}
-                placeholder="my-feature-branch"
-                className={`${INPUT_CLASS} focus:border-transparent`}
-              />
-            </div>
-          )}
-        </div>
-      )}
 
       {hasMcpOrPlugins && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">

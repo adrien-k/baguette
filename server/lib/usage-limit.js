@@ -138,11 +138,46 @@ const USAGE_LIMIT_REASON_TEXT = {
   usage_limit: 'session usage limit reached',
 };
 
+const CONTINUE_HINT =
+  'To keep going now on paid overage credits, change "Details > When a usage limit is reached" to "Continue".';
+
 export function usageLimitStatusText({ label, reason, action, resetAtMs }) {
   const why = USAGE_LIMIT_REASON_TEXT[reason] ?? USAGE_LIMIT_REASON_TEXT.rejected;
   if (action === 'wait') {
-    return `${label} ${why}. Waiting for reset.`;
+    return `${label} ${why}. Waiting for reset. ${CONTINUE_HINT}`;
   }
   const reset = resetAtMs ? ` Limit resets ${new Date(resetAtMs).toISOString()}.` : '';
-  return `${label} ${why}. Session stopped; send a message to continue.${reset}`;
+  return `${label} ${why}. Session stopped.${reset} ${CONTINUE_HINT}`;
+}
+
+/** A window at (or past) 100% rejects requests; just under it still has room. */
+const WINDOW_FULL_PERCENT = 99.5;
+
+/** True when any plan window is at 80%+, so a cached reading is worth re-checking. */
+export function nearlyFull(result) {
+  if (result?.status !== 'ok') return false;
+  return (result.limits ?? []).some((l) => l.id !== 'overage' && (l.percent ?? 0) >= 80);
+}
+
+/**
+ * The plan windows (session / weekly, never the paid-overage row) that are used up, from a
+ * subscription-limits result. Returns `{ label, resetAtMs }` — the reset is when the *last*
+ * full window reopens, since the agent can only run once all of them have — or null when
+ * nothing is blocking (or the limits could not be read: this check fails open).
+ */
+export function blockingLimitWindow(result, nowMs = Date.now()) {
+  if (result?.status !== 'ok') return null;
+  const full = (result.limits ?? []).filter((l) => {
+    if (l.id === 'overage' || l.percent == null || l.percent < WINDOW_FULL_PERCENT) return false;
+    const resetMs = l.resets_at ? Date.parse(l.resets_at) : null;
+    // A reset already in the past means the percentage is stale.
+    return resetMs == null || Number.isNaN(resetMs) || resetMs > nowMs;
+  });
+  if (!full.length) return null;
+  let resetAtMs = null;
+  for (const l of full) {
+    const ms = l.resets_at ? Date.parse(l.resets_at) : NaN;
+    if (!Number.isNaN(ms) && (resetAtMs == null || ms > resetAtMs)) resetAtMs = ms;
+  }
+  return { label: full.map((l) => l.label).join(' + '), resetAtMs };
 }

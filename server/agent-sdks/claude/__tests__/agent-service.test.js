@@ -128,6 +128,7 @@ function makeMockApp(db) {
   const deleteSessionTasks = vi.fn();
   const createTask = vi.fn().mockResolvedValue({});
   const onUsageLimit = vi.fn().mockResolvedValue({ action: 'stop', resume_at: null });
+  const checkUsageLimitGate = vi.fn().mockResolvedValue(null);
   const insertUsageRow = vi.fn().mockResolvedValue(0);
   const reviewAgentTurnStub = {
     onAgentTurnComplete: vi.fn().mockResolvedValue(undefined),
@@ -158,6 +159,7 @@ function makeMockApp(db) {
           onTurnStart: async () => {},
           onTurnComplete: async () => {},
           onUsageLimit,
+          checkUsageLimitGate,
           insertUsageRow,
           get: async (id) => db('sessions').where({ id }).first(),
         };
@@ -175,6 +177,7 @@ function makeMockApp(db) {
     _sessionEmit: sessionEmit,
     _messageCreate: messageCreate,
     _onUsageLimit: onUsageLimit,
+    _checkUsageLimitGate: checkUsageLimitGate,
     _insertUsageRow: insertUsageRow,
   };
 }
@@ -1331,6 +1334,41 @@ describe('ClaudeAgentService', () => {
         })
       ).rejects.toThrow('Agent configuration not found');
 
+      expect(query).not.toHaveBeenCalled();
+    });
+
+    it('does not start a turn on a used-up plan window: stops the agent and applies the policy', async () => {
+      const service = Object.assign(new ClaudeAgentService(), {
+        app: mockApp,
+        _db: mockApp.get('db'),
+      });
+      const configId = BASE_BUILDER.agent_config_id;
+      mockApp._checkUsageLimitGate.mockResolvedValueOnce({
+        label: 'Claude',
+        sdk: 'claude',
+        reason: 'rejected',
+        reset_at_ms: 1793064000_000,
+      });
+      const createAgentSessionSpy = vi.spyOn(service, 'createAgentSession');
+
+      await service.handleMessageCreated({
+        session_id: BASE_SESSION_ID,
+        agent_id: BASE_BUILDER.id,
+        type: 'user',
+        model: 'sonnet',
+        agent_config_id: configId,
+        message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'Hi' } }),
+      });
+
+      expect(mockApp._checkUsageLimitGate).toHaveBeenCalledWith(BASE_SESSION_ID, BASE_BUILDER.id, {
+        agentConfigId: configId,
+      });
+      expect(mockApp._onUsageLimit).toHaveBeenCalledWith(
+        BASE_SESSION_ID,
+        BASE_BUILDER.id,
+        expect.objectContaining({ reason: 'rejected', reset_at_ms: 1793064000_000 })
+      );
+      expect(createAgentSessionSpy).not.toHaveBeenCalled();
       expect(query).not.toHaveBeenCalled();
     });
 

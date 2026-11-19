@@ -12,7 +12,7 @@ import {
 } from '@anthropic-ai/claude-agent-sdk';
 import { ClaudeUsageLimitGuard } from './usage-limit.js';
 import { getLastResultTotals } from './usage-totals.js';
-import { allowsOverage } from '../../lib/usage-limit.js';
+import { allowsOverage, usageLimitStatusText } from '../../lib/usage-limit.js';
 import type { ClaudeUsageLimitHit } from './sdk-turn.ts';
 import logger from '../../logger.js';
 import { disableExternal } from '../../services/feathers/hooks.js';
@@ -498,6 +498,32 @@ export class ClaudeAgentService {
     });
     const { model, modelParams } = turnModel;
     const turnAgentConfigId = requireAgentConfigId(row.agent_config_id);
+
+    // Never start a turn on a used-up plan window: providers would keep serving it on paid
+    // overage. Applies to every agent of the session (builder, subagents, reviewer).
+    const blocked = await this.app
+      .service('sessions')
+      .checkUsageLimitGate(sessionId, agent.id, { agentConfigId: turnAgentConfigId });
+    if (blocked) {
+      if (isReview) {
+        await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'failed', {
+          sdk: 'claude',
+          error_message: usageLimitStatusText({
+            label: 'Claude',
+            reason: blocked.reason,
+            action: 'stop',
+            resetAtMs: blocked.reset_at_ms,
+          }),
+        });
+        return;
+      }
+      await setAgentTurnTerminal(this.app, agent, session.user_id, 'stopped');
+      await this.app.service('sessions').onUsageLimit(sessionId, agent.id, {
+        ...blocked,
+        label: 'Claude',
+      });
+      return;
+    }
     await prepareAgentTurnCompaction(this.app, session);
     const writer =
       row.turn_id != null
@@ -1168,6 +1194,7 @@ export class ClaudeAgentService {
     const result = await processClaudeQueryStream(queryInstance, {
       writer: streamWriter,
       usageGuard,
+      usageCheck: usageGuard ? () => this._checkPlanLimits(sessionState) : null,
       persistMessage,
       onInitSessionId,
       onResult,
@@ -1248,6 +1275,20 @@ export class ClaudeAgentService {
     }
   }
 
+  /**
+   * Re-read the plan limits mid-turn (see `ClaudeUsageLimitGuard.checkpointDue`). A full
+   * session/weekly window ends the turn for `stop` / `wait` sessions — including turns run by
+   * subagents — instead of letting the provider roll it onto paid overage.
+   */
+  async _checkPlanLimits(sessionState: ClaudeAgentState): Promise<ClaudeUsageLimitHit | null> {
+    const blocked = await this.app
+      .service('sessions')
+      .checkUsageLimitGate(sessionState.sessionId, sessionState.agentId, {
+        agentConfigId: sessionState.turnAgentConfigId ?? null,
+      });
+    return blocked ? { reason: blocked.reason, resetAtMs: blocked.reset_at_ms } : null;
+  }
+
   async sendMessage(sessionId: number, content: string): Promise<void> {
     const db = this.app.get('db') as DbLike;
     const sessionRow = (await db('sessions').where({ id: sessionId }).first()) as
@@ -1301,7 +1342,10 @@ export class ClaudeAgentService {
     session?.channel.push(toSdkUserMessage(content));
   }
 
-  syncSessionSettingsFromPatch(sessionId: number, _sessionRow: AgentSessionRow): void {
+  async syncSessionSettingsFromPatch(
+    sessionId: number,
+    _sessionRow: AgentSessionRow
+  ): Promise<void> {
     const session = this.getActiveSession(sessionId);
     if (!session?.queryInstance) return;
     void (async () => {

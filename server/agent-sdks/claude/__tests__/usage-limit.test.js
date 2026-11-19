@@ -171,3 +171,81 @@ describe('processClaudeQueryStream usage guard', () => {
     expect(out.outcome).toBe('completed');
   });
 });
+
+describe('plan-limit checkpoints (every 10 tools / ~$1)', () => {
+  const toolCall = (id) => ({
+    type: 'assistant',
+    // `parent_tool_use_id` marks a subagent's message: it counts the same.
+    parent_tool_use_id: 'sub',
+    message: {
+      id,
+      model: 'claude-sonnet-4-5',
+      content: [{ type: 'tool_use', id: `t-${id}`, name: 'Bash', input: {} }],
+      usage: { input_tokens: 0, output_tokens: 1 },
+    },
+  });
+
+  it('is due after 10 tool calls, subagents included, then starts over', () => {
+    const guard = new ClaudeUsageLimitGuard();
+    for (let i = 0; i < 9; i++) {
+      guard.observe(toolCall(`m${i}`));
+      expect(guard.checkpointDue()).toBe(false);
+    }
+    guard.observe(toolCall('m9'));
+    expect(guard.checkpointDue()).toBe(true);
+    expect(guard.checkpointDue()).toBe(false);
+  });
+
+  it('is due once ~$1 is spent even without tool calls, even before overage starts', () => {
+    const guard = new ClaudeUsageLimitGuard();
+    guard.observe(assistant('big', 100_000)); // ~$1.50 on Sonnet-class output pricing
+    expect(guard.overageActive).toBe(false);
+    expect(guard.checkpointDue()).toBe(true);
+  });
+
+  it('does not price a repeated assistant message twice', () => {
+    const guard = new ClaudeUsageLimitGuard();
+    guard.observe(assistant('same', 20_000)); // ~$0.30
+    guard.observe(assistant('same', 20_000));
+    expect(guard.checkpointDue()).toBe(false);
+  });
+
+  it('ends the stream when the plan-limit check reports a full window', async () => {
+    async function* messages() {
+      for (let i = 0; i < 25; i++) yield toolCall(`m${i}`);
+    }
+    const checks = [];
+    const out = await processClaudeQueryStream(messages(), {
+      usageGuard: new ClaudeUsageLimitGuard({ overage: false }),
+      usageCheck: async () => {
+        checks.push(true);
+        return { reason: 'rejected', resetAtMs: 123 };
+      },
+      persistMessage: async () => {},
+    });
+    expect(checks).toHaveLength(1);
+    expect(out.usageLimit).toEqual({ reason: 'rejected', resetAtMs: 123 });
+    expect(out.outcome).toBe('stopped');
+  });
+
+  it('keeps going when the check passes or throws (fails open)', async () => {
+    async function* messages() {
+      for (let i = 0; i < 25; i++) yield toolCall(`m${i}`);
+      yield { type: 'result', subtype: 'success', is_error: false, num_turns: 1, result: 'ok' };
+    }
+    for (const usageCheck of [
+      async () => null,
+      async () => {
+        throw new Error('limits down');
+      },
+    ]) {
+      const out = await processClaudeQueryStream(messages(), {
+        usageGuard: new ClaudeUsageLimitGuard(),
+        usageCheck,
+        persistMessage: async () => {},
+      });
+      expect(out.usageLimit).toBeNull();
+      expect(out.outcome).toBe('completed');
+    }
+  });
+});

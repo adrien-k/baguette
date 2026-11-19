@@ -76,7 +76,7 @@ function UsageLimitRow({ limit, locked, onCommit }) {
 
   return (
     <div className="flex items-center justify-between gap-3">
-      <span className="shrink-0 text-sm text-secondary">Usage limit</span>
+      <span className="shrink-0 text-sm text-secondary">Overage Usage limit</span>
       {locked ? (
         <span className="text-sm text-fg">{limit == null ? 'Unlimited' : `$${limit}`}</span>
       ) : (
