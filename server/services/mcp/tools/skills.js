@@ -1,11 +1,13 @@
 import { z } from 'zod';
+import { resolveDataDirRelativePath } from '../../../config.js';
+import { loadProjectSkills } from '../../project-skills.js';
 import { fail, ok } from '../lib/result.js';
 
 const LIST_DESCRIPTION =
-  'List skills saved on this account (Settings → Skills). Returns id, label, and description only — call ReadSkill with the label to load the content. Skills are not included in the prompt.';
+  'List skills available in this session: account skills from Settings → Skills and repo skills from `.baguette/skills/*.md`. Returns id (settings only), label, description, and source (`settings` or `project`). Call ReadSkill with the label to load the content. Skill bodies are not included in the prompt.';
 
 const READ_DESCRIPTION =
-  'Load one skill by the exact label from ListSkills. Returns the label, description, and full content. Use this when a skill description matches the task, then follow that content.';
+  'Load one skill by the exact label from ListSkills. Returns label, description, source, and full content. Use this when a skill description matches the task, then follow that content.';
 
 const CREATE_DESCRIPTION =
   'Create a skill saved on this account (Settings → Skills). Label must be unique per account. Agents can later discover it via ListSkills and load it with ReadSkill.';
@@ -30,12 +32,36 @@ async function skillsForUser(app, userId) {
   return Array.isArray(rows) ? rows : (rows?.data ?? []);
 }
 
-function skillToApi(skill) {
+function settingsSkillSessionPath(callerSession) {
+  if (!callerSession) return null;
+  const direct =
+    callerSession.absolute_session_path || resolveDataDirRelativePath(callerSession.session_path);
+  return direct || null;
+}
+
+async function projectSkillsForSession(callerSession) {
+  const sessionPath = settingsSkillSessionPath(callerSession);
+  if (!sessionPath) return [];
+  return loadProjectSkills(sessionPath);
+}
+
+function settingsSkillToApi(skill) {
   return {
     id: skill.id,
     label: skill.label,
     description: skill.description,
     content: skill.content,
+    source: 'settings',
+  };
+}
+
+function projectSkillToApi(skill) {
+  return {
+    label: skill.label,
+    description: skill.description,
+    content: skill.content,
+    source: 'project',
+    rel_path: skill.rel_path,
   };
 }
 
@@ -60,27 +86,48 @@ function identifierError(params) {
   return 'Provide skill_id or label to identify the skill';
 }
 
+function listEntryFromSettings(skill) {
+  return {
+    id: skill.id,
+    label: skill.label,
+    description: skill.description,
+    source: 'settings',
+  };
+}
+
+function listEntryFromProject(skill) {
+  return {
+    label: skill.label,
+    description: skill.description,
+    source: 'project',
+    rel_path: skill.rel_path,
+  };
+}
+
 export function createListSkillsTool(ctx) {
-  const { app, userId } = ctx;
+  const { app, userId, callerSession } = ctx;
   return {
     name: 'ListSkills',
     description: LIST_DESCRIPTION,
     schema: {},
     handler: async () => {
       const rows = await skillsForUser(app, userId);
-      return ok({
-        skills: rows.map((skill) => ({
-          id: skill.id,
-          label: skill.label,
-          description: skill.description,
-        })),
-      });
+      const settingsEntries = rows.map(listEntryFromSettings);
+      const projectRows = await projectSkillsForSession(callerSession);
+      const settingsLabels = new Set(settingsEntries.map((s) => s.label));
+      const projectEntries = projectRows
+        .filter((skill) => !settingsLabels.has(skill.label))
+        .map(listEntryFromProject);
+      const skills = [...settingsEntries, ...projectEntries].sort((a, b) =>
+        a.label.localeCompare(b.label)
+      );
+      return ok({ skills });
     },
   };
 }
 
 export function createReadSkillTool(ctx) {
-  const { app, userId } = ctx;
+  const { app, userId, callerSession } = ctx;
   return {
     name: 'ReadSkill',
     description: READ_DESCRIPTION,
@@ -90,10 +137,17 @@ export function createReadSkillTool(ctx) {
     handler: async ({ label }) => {
       const wanted = String(label ?? '').trim();
       if (!wanted) return fail('label is required');
+
       const rows = await skillsForUser(app, userId);
-      const skill = rows.find((row) => row.label === wanted);
-      if (!skill) return fail(`Skill "${wanted}" was not found`);
-      return ok({ skill: skillToApi(skill) });
+      const settingsSkill = rows.find((row) => row.label === wanted);
+      if (settingsSkill) {
+        return ok({ skill: settingsSkillToApi(settingsSkill) });
+      }
+
+      const projectRows = await projectSkillsForSession(callerSession);
+      const projectSkill = projectRows.find((row) => row.label === wanted);
+      if (!projectSkill) return fail(`Skill "${wanted}" was not found`);
+      return ok({ skill: projectSkillToApi(projectSkill) });
     },
   };
 }
@@ -118,7 +172,7 @@ export function createCreateSkillTool(ctx) {
         const skill = await app
           .service('skills')
           .create({ label, description, content }, skillParamsFor(userId));
-        return ok({ skill: skillToApi(skill) });
+        return ok({ skill: settingsSkillToApi(skill) });
       } catch (err) {
         return fail(err.message);
       }
@@ -157,7 +211,7 @@ export function createUpdateSkillTool(ctx) {
           return fail(`Skill was not found (skill_id: ${skill_id ?? '—'}, label: ${label ?? '—'})`);
         }
         const updated = await app.service('skills').patch(skill.id, patch, skillParamsFor(userId));
-        return ok({ skill: skillToApi(updated) });
+        return ok({ skill: settingsSkillToApi(updated) });
       } catch (err) {
         return fail(err.message);
       }

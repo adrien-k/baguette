@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { feathers } from 'feathers';
 import { createTestDb } from '../../../../test-utils/db.js';
 import { registerSkillsService } from '../../../feathers/skills.service.js';
@@ -64,6 +67,7 @@ describe('skill MCP tools', () => {
         id: expect.any(Number),
         label: 'Review checklist',
         description: 'Use when reviewing a pull request',
+        source: 'settings',
       },
     ]);
     expect(JSON.stringify(body)).not.toContain('Look for missing tests');
@@ -162,6 +166,56 @@ describe('skill MCP tools', () => {
     expect(payload(noIdentifier)).toMatchObject({
       ok: false,
     });
+  });
+
+  it('lists and reads project skills from the caller session worktree', async () => {
+    const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'baguette-mcp-skills-'));
+    const skillsDir = path.join(tmpDir, '.baguette', 'skills');
+    await fs.promises.mkdir(skillsDir, { recursive: true });
+    await fs.promises.writeFile(
+      path.join(skillsDir, 'migrations.md'),
+      `---
+label: SQLite migrations
+description: Use when editing Knex SQLite migrations
+---
+Prefer native DROP COLUMN when possible.
+`
+    );
+    const ctx = {
+      app,
+      userId: alice.id,
+      callerSession: { session_path: tmpDir, absolute_session_path: tmpDir },
+    };
+    try {
+      const listed = payload(await createListSkillsTool(ctx).handler());
+      expect(listed.skills).toEqual(
+        expect.arrayContaining([
+          {
+            label: 'SQLite migrations',
+            description: 'Use when editing Knex SQLite migrations',
+            source: 'project',
+            rel_path: path.join('.baguette', 'skills', 'migrations.md'),
+          },
+          {
+            id: expect.any(Number),
+            label: 'Review checklist',
+            description: 'Use when reviewing a pull request',
+            source: 'settings',
+          },
+        ])
+      );
+
+      const loaded = payload(
+        await createReadSkillTool(ctx).handler({ label: 'SQLite migrations' })
+      );
+      expect(loaded.skill).toMatchObject({
+        label: 'SQLite migrations',
+        source: 'project',
+        content: 'Prefer native DROP COLUMN when possible.',
+      });
+    } finally {
+      await fs.promises.rm(tmpDir, { recursive: true, force: true });
+    }
   });
 
   it('deletes by id and by label and keeps other users’ skills', async () => {
