@@ -7,6 +7,7 @@ import TextInput from '../../components/TextInput.jsx';
 import SearchableSelect from '../../components/SearchableSelect';
 import AgentTestButton from '../../components/AgentTestButton.jsx';
 import AgentConfigDefaultModelPicker from './AgentConfigDefaultModelPicker.jsx';
+import AgentConfigCredentialHelpTooltip from './AgentConfigCredentialHelpTooltip.jsx';
 import AgentConfigLogoPicker from './AgentConfigLogoPicker.jsx';
 import AgentConfigLogo from '../../components/AgentConfigLogo.jsx';
 import { agentConfigsService } from '../../feathers.js';
@@ -243,7 +244,10 @@ export default function AgentConfigModal({ onClose, config, onSaved, onConfigUpd
         />
       </Field>
       {hasEnvVarSelect ? (
-        <Field label={envVarFieldLabel}>
+        <Field
+          label={envVarFieldLabel}
+          labelAccessory={<AgentConfigCredentialHelpTooltip schema={schema} />}
+        >
           {useSearchableEnvSelect ? (
             <SearchableSelect
               options={envOptions}

@@ -8,12 +8,14 @@ import { parseCursorModelPrefsJson } from '../../../shared/cursor-model-prefs.js
 import { normalizeClaudeCodePickerModelId } from '../../../shared/claude-code-model-list.js';
 import {
   ANTHROPIC_API_KEY_ENV,
+  ANTHROPIC_AUTH_TOKEN_ENV,
   CLAUDE_API_KEY_ENV_OPTIONS,
 } from '../../../shared/agent-config-api-key-env.js';
 import { toolListToClaudeMcpServer } from './adapt-tools.js';
 import { resetUsageTotals } from './usage-totals.js';
 import { normalizeAnthropicBaseUrl } from './env.js';
 import { CLAUDE_AGENT_SDK_KEY, CLAUDE_AGENT_SDK_LABEL, CLAUDE_AGENT_SERVICE_PATH } from './meta.js';
+import { CLAUDE_CREDENTIAL_HELP_BANNER } from './credential-help.js';
 
 /**
  * Claude agent SDK plugin (contract: `agent-sdks/registry.js`).
@@ -35,7 +37,10 @@ export const claudeAgentSdkPlugin = {
     defaultEnvVar: ANTHROPIC_API_KEY_ENV,
     hasApiUrl: true,
     secretPlaceholder: 'sk-ant-…',
-    secretPlaceholderByEnvVar: null,
+    secretPlaceholderByEnvVar: {
+      [ANTHROPIC_AUTH_TOKEN_ENV]: 'sk-ant-oat…',
+    },
+    credentialHelpBanner: CLAUDE_CREDENTIAL_HELP_BANNER,
   },
 
   register(app, { servicePath } = {}) {

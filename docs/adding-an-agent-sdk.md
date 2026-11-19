@@ -77,6 +77,7 @@ export const claudeAgentSdkPlugin = {
     hasApiUrl,              // Claude only today
     secretPlaceholder,      // default input placeholder
     secretPlaceholderByEnvVar, // optional { ENV_VAR: placeholder }
+    credentialHelpBanner,   // optional { markdown } — Settings ? tooltip on credential type
   },
 };
 ```

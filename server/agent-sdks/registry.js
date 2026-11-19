@@ -31,7 +31,7 @@
  * - `resetUsageTotals(totalsKey)` — drop SDK running-total maps (Claude chat/review deltas)
  * - `usageLabelExtras(row)` — PR/Slack footer extras e.g. `{ fast: boolean }` (Cursor)
  * - `credentialSchema` — JSON-serializable Settings fields:
- *   `{ envVarOptions, defaultEnvVar, hasApiUrl, secretPlaceholder, secretPlaceholderByEnvVar }`
+ *   `{ envVarOptions, defaultEnvVar, hasApiUrl, secretPlaceholder, secretPlaceholderByEnvVar, credentialHelpBanner? }` — markdown shown via ? on credential type
  *
  * `agent-configs.getSdkMetas()` exposes the JSON-serializable subset (see
  * `sdkPluginPublicMeta`). Functions stay on the plugin; server callers use
