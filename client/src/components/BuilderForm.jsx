@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronRight, HelpCircle, Repeat, Trash2 } from 'lucide-react';
+import { HelpCircle, Repeat, Trash2 } from 'lucide-react';
 import Alert from './Alert.jsx';
 import GithubIcon from './svg/GithubIcon.jsx';
 import LoopScheduleFields from './LoopScheduleFields.jsx';
@@ -100,7 +100,6 @@ export default function BuilderForm({
         ? 'builder-form-all'
         : `builder-form-${isGlobalProp ? 'global' : repoFullNameProp}`;
   const persistentState = usePersistentState(persistKey);
-  const globalState = usePersistentState('builder-form-global');
   // Whether this mount hydrated from a snapshot that captured prompt text. Such snapshots only
   // exist through hasPromptText, so their sdk/model/params picks are intentional and should not
   // be re-seeded from agent defaults or the last session.
@@ -140,7 +139,6 @@ export default function BuilderForm({
     if (!trimmed || editingLoop) return;
     setInitialPrompt(trimmed);
   }, [defaultPrompt, editingLoop, setInitialPrompt]);
-  const [showMore, setShowMore] = globalState.useState('showMore', false);
   const [branchName, setBranchName] = persistentState.useState('branchName', '', {
     persistWhen: hasPromptText,
   });
@@ -400,9 +398,24 @@ export default function BuilderForm({
   }, [editingLoop?.id]);
 
   const isLoop = mode === 'loop';
-  // The branch-name field is the only other entry, and a loop never shows it.
-  const hasMoreOptions =
-    (!isGlobal && !isLoop) || availablePlugins.length > 0 || mcpCatalog.length > 0;
+  const hasMcpOrPlugins = mcpCatalog.length > 0 || availablePlugins.length > 0;
+  const skillPreloadBlock =
+    skillCatalog.length > 0 ? (
+      <div>
+        <label className="block text-sm font-medium text-secondary mb-1.5">Preload skills</label>
+        <p className="text-xs text-faint mb-2">
+          {isLoop
+            ? 'Inject selected skills into the agent system prompt for every turn in sessions this loop starts.'
+            : 'Inject selected skills into the agent system prompt for every turn in this session.'}
+        </p>
+        <SkillPreloadSelect
+          skills={skillCatalog}
+          value={selectedAutoLoadSkills}
+          onChange={setSelectedAutoLoadSkills}
+          disabled={loopReadOnly}
+        />
+      </div>
+    ) : null;
   const canSubmit =
     !loopReadOnly &&
     !loading &&
@@ -770,6 +783,24 @@ export default function BuilderForm({
         </div>
       )}
 
+      {!isLoop && !isGlobal && (
+        <div>
+          <label className="block text-sm font-medium text-secondary mb-1">
+            Branch name{' '}
+            <span className="text-faint font-normal">
+              (optional, for Start — auto-generated if empty)
+            </span>
+          </label>
+          <input
+            type="text"
+            value={branchName}
+            onChange={(e) => setBranchName(e.target.value)}
+            placeholder="my-feature-branch"
+            className={`${INPUT_CLASS} focus:border-transparent`}
+          />
+        </div>
+      )}
+
       <div>
         {!isLoop && (
           <div className="flex flex-wrap items-baseline justify-end gap-2 mb-1">
@@ -807,20 +838,7 @@ export default function BuilderForm({
         className="gap-2"
       />
 
-      {skillCatalog.length > 0 && (
-        <div>
-          <label className="block text-sm font-medium text-secondary mb-1.5">Preload skills</label>
-          <p className="text-xs text-faint mb-2">
-            Inject selected skills into the agent system prompt for every turn in this session.
-          </p>
-          <SkillPreloadSelect
-            skills={skillCatalog}
-            value={selectedAutoLoadSkills}
-            onChange={setSelectedAutoLoadSkills}
-            disabled={loopReadOnly}
-          />
-        </div>
-      )}
+      {!isLoop && skillPreloadBlock}
 
       {isLoop && (
         <>
@@ -870,114 +888,78 @@ export default function BuilderForm({
         </>
       )}
 
-      {hasMoreOptions && (
-        <div>
-          <button
-            type="button"
-            onClick={() => setShowMore((v) => !v)}
-            className="flex items-center gap-1.5 text-xs text-fg-muted hover:text-heading transition-colors"
-          >
-            <ChevronRight
-              className={`w-3 h-3 transition-transform ${showMore ? 'rotate-90' : ''}`}
-            />
-            More options
-          </button>
+      {isLoop && skillPreloadBlock}
 
-          {showMore && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mt-3">
-              {/* A loop reuses its template on every run, so a fixed branch name would clash. */}
-              {!isLoop && !isGlobal && (
-                <>
-                  <div className="sm:col-span-2">
-                    <label className="block text-sm font-medium text-secondary mb-1">
-                      Branch name{' '}
-                      <span className="text-faint font-normal">
-                        (optional, for Start — auto-generated if empty)
-                      </span>
-                    </label>
+      {hasMcpOrPlugins && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+          {mcpCatalog.length > 0 && (
+            <div className="sm:col-span-2">
+              <label className="block text-sm font-medium text-secondary mb-1.5">MCP servers</label>
+              <div className="space-y-1.5">
+                {mcpCatalog.map((server) => (
+                  <label
+                    key={server.id}
+                    className="flex cursor-pointer items-start gap-2 rounded-md border border-strong/80 bg-control/40 px-3 py-2"
+                  >
                     <input
-                      type="text"
-                      value={branchName}
-                      onChange={(e) => setBranchName(e.target.value)}
-                      placeholder="my-feature-branch"
-                      className={`${INPUT_CLASS} focus:border-transparent`}
+                      type="checkbox"
+                      checked={!!mcpEnabled[String(server.id)]}
+                      onChange={(e) =>
+                        setMcpEnabled((prev) => ({
+                          ...prev,
+                          [String(server.id)]: e.target.checked,
+                        }))
+                      }
+                      className="mt-0.5 rounded border-strong text-accent focus:ring-brand/50"
                     />
-                  </div>
-                </>
-              )}
-
-              {mcpCatalog.length > 0 && (
-                <div className="sm:col-span-2">
-                  <label className="block text-sm font-medium text-secondary mb-1.5">
-                    MCP servers
+                    <span className="text-sm text-secondary leading-tight">
+                      <span className="font-medium text-heading">{server.name}</span>
+                      <span className="block text-xs font-normal text-faint mt-0.5">
+                        {server.url}
+                        {server.transport === 'sse' ? ' · not attached on Pi' : ''}
+                      </span>
+                      {server.description ? (
+                        <span className="block text-xs font-normal text-secondary mt-0.5 whitespace-pre-wrap">
+                          {server.description}
+                        </span>
+                      ) : null}
+                    </span>
                   </label>
-                  <div className="space-y-1.5">
-                    {mcpCatalog.map((server) => (
-                      <label
-                        key={server.id}
-                        className="flex cursor-pointer items-start gap-2 rounded-md border border-strong/80 bg-control/40 px-3 py-2"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={!!mcpEnabled[String(server.id)]}
-                          onChange={(e) =>
-                            setMcpEnabled((prev) => ({
-                              ...prev,
-                              [String(server.id)]: e.target.checked,
-                            }))
-                          }
-                          className="mt-0.5 rounded border-strong text-accent focus:ring-brand/50"
-                        />
-                        <span className="text-sm text-secondary leading-tight">
-                          <span className="font-medium text-heading">{server.name}</span>
-                          <span className="block text-xs font-normal text-faint mt-0.5">
-                            {server.url}
-                            {server.transport === 'sse' ? ' · not attached on Pi' : ''}
-                          </span>
-                          {server.description ? (
-                            <span className="block text-xs font-normal text-secondary mt-0.5 whitespace-pre-wrap">
-                              {server.description}
-                            </span>
-                          ) : null}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
+                ))}
+              </div>
+            </div>
+          )}
 
-              {availablePlugins.length > 0 && (
-                <div className="sm:col-span-2">
-                  <label className="block text-sm font-medium text-secondary mb-1.5">Plugins</label>
-                  <div className="space-y-1.5">
-                    {availablePlugins.map((plugin) => (
-                      <label
-                        key={plugin.id}
-                        className="flex cursor-pointer items-start gap-2 rounded-md border border-strong/80 bg-control/40 px-3 py-2"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedPlugins.includes(plugin.id)}
-                          onChange={(e) =>
-                            setSelectedPlugins((prev) =>
-                              e.target.checked
-                                ? [...prev, plugin.id]
-                                : prev.filter((id) => id !== plugin.id)
-                            )
-                          }
-                          className="mt-0.5 rounded border-strong text-accent focus:ring-brand/50"
-                        />
-                        <span className="text-sm text-secondary leading-tight">
-                          <span className="font-medium text-heading">{plugin.name}</span>
-                          <span className="block text-xs font-normal text-faint mt-0.5">
-                            {plugin.marketplace_repo} · {plugin.plugin_path}
-                          </span>
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
+          {availablePlugins.length > 0 && (
+            <div className="sm:col-span-2">
+              <label className="block text-sm font-medium text-secondary mb-1.5">Plugins</label>
+              <div className="space-y-1.5">
+                {availablePlugins.map((plugin) => (
+                  <label
+                    key={plugin.id}
+                    className="flex cursor-pointer items-start gap-2 rounded-md border border-strong/80 bg-control/40 px-3 py-2"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedPlugins.includes(plugin.id)}
+                      onChange={(e) =>
+                        setSelectedPlugins((prev) =>
+                          e.target.checked
+                            ? [...prev, plugin.id]
+                            : prev.filter((id) => id !== plugin.id)
+                        )
+                      }
+                      className="mt-0.5 rounded border-strong text-accent focus:ring-brand/50"
+                    />
+                    <span className="text-sm text-secondary leading-tight">
+                      <span className="font-medium text-heading">{plugin.name}</span>
+                      <span className="block text-xs font-normal text-faint mt-0.5">
+                        {plugin.marketplace_repo} · {plugin.plugin_path}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </div>
             </div>
           )}
         </div>
