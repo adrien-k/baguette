@@ -1,7 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import {
-  CHAT_WORK_COLLAPSE_MIN_CALLS,
-  CHAT_WORK_VISIBLE_TAIL_CALLS,
   groupChatDisplayMessages,
   isChatAnchorMessage,
   isChatGroupBoundary,
@@ -94,7 +92,7 @@ describe('chat display grouping', () => {
   });
 
   it('does not collapse CreatePlan into a surrounding Worked group', () => {
-    const manyTools = Array.from({ length: CHAT_WORK_COLLAPSE_MIN_CALLS }, (_, i) => ({
+    const manyTools = Array.from({ length: 6 }, (_, i) => ({
       type: 'tool_use',
       name: 'Bash',
       id: `b${i}`,
@@ -117,7 +115,7 @@ describe('chat display grouping', () => {
   });
 
   it('does not collapse AskUserQuestions (ask_user) into a Worked group', () => {
-    const manyTools = Array.from({ length: CHAT_WORK_COLLAPSE_MIN_CALLS }, (_, i) => ({
+    const manyTools = Array.from({ length: 6 }, (_, i) => ({
       type: 'tool_use',
       name: 'Bash',
       id: `b${i}`,
@@ -158,7 +156,7 @@ describe('chat display grouping', () => {
   });
 
   it('collapses PrUpsert/UpdateSession into a surrounding Worked group', () => {
-    const manyTools = Array.from({ length: CHAT_WORK_COLLAPSE_MIN_CALLS }, (_, i) => ({
+    const manyTools = Array.from({ length: 6 }, (_, i) => ({
       type: 'tool_use',
       name: 'Bash',
       id: `b${i}`,
@@ -176,10 +174,10 @@ describe('chat display grouping', () => {
     ];
     const grouped = groupChatDisplayMessages(messages);
     expect(grouped.map((g) => g.kind)).toEqual(['message', 'work', 'message']);
-    expect(grouped[1].callCount).toBe(CHAT_WORK_COLLAPSE_MIN_CALLS + 1);
+    expect(grouped[1].callCount).toBe(7);
   });
 
-  it('does not collapse work with at most five tool calls', () => {
+  it('always groups work between anchors even with few tool calls', () => {
     const messages = [
       { type: 'user', message: { content: 'go' }, created_at: '2026-01-01T00:00:00Z' },
       {
@@ -195,12 +193,12 @@ describe('chat display grouping', () => {
       },
     ];
     const grouped = groupChatDisplayMessages(messages);
-    expect(grouped).toHaveLength(4);
-    expect(grouped.every((g) => g.kind === 'message')).toBe(true);
+    expect(grouped.map((g) => g.kind)).toEqual(['message', 'work', 'message']);
+    expect(grouped[1].callCount).toBe(1);
   });
 
-  it('collapses work when a later boundary exists and call count exceeds five', () => {
-    const toolBlocks = Array.from({ length: CHAT_WORK_COLLAPSE_MIN_CALLS }, (_, i) => ({
+  it('groups tool work before a final assistant reply', () => {
+    const toolBlocks = Array.from({ length: 6 }, (_, i) => ({
       type: 'tool_use',
       name: 'Bash',
       id: `t${i}`,
@@ -221,12 +219,12 @@ describe('chat display grouping', () => {
     const grouped = groupChatDisplayMessages(messages);
     expect(grouped).toHaveLength(3);
     expect(grouped[1].kind).toBe('work');
-    expect(grouped[1].callCount).toBe(CHAT_WORK_COLLAPSE_MIN_CALLS);
+    expect(grouped[1].callCount).toBe(6);
   });
 
   it('folds PrUpsert and trailing tools into one Worked group before the final reply', () => {
     const fewTools = [{ type: 'tool_use', name: 'Read', id: 'r1' }];
-    const manyTools = Array.from({ length: CHAT_WORK_COLLAPSE_MIN_CALLS }, (_, i) => ({
+    const manyTools = Array.from({ length: 6 }, (_, i) => ({
       type: 'tool_use',
       name: 'Bash',
       id: `b${i}`,
@@ -244,11 +242,11 @@ describe('chat display grouping', () => {
     const grouped = groupChatDisplayMessages(messages);
     const kinds = grouped.map((g) => g.kind);
     expect(kinds).toEqual(['message', 'work', 'message']);
-    expect(grouped[1].callCount).toBe(CHAT_WORK_COLLAPSE_MIN_CALLS + 2);
+    expect(grouped[1].callCount).toBe(8);
   });
 
   it('folds multiple PrUpsert calls into the same Worked group', () => {
-    const manyTools = Array.from({ length: CHAT_WORK_COLLAPSE_MIN_CALLS }, (_, i) => ({
+    const manyTools = Array.from({ length: 6 }, (_, i) => ({
       type: 'tool_use',
       name: 'Bash',
       id: `b${i}`,
@@ -272,10 +270,10 @@ describe('chat display grouping', () => {
     ];
     const grouped = groupChatDisplayMessages(messages);
     expect(grouped.map((g) => g.kind)).toEqual(['message', 'work', 'message']);
-    expect(grouped[1].callCount).toBe(CHAT_WORK_COLLAPSE_MIN_CALLS + 2);
+    expect(grouped[1].callCount).toBe(8);
   });
 
-  it('does not collapse trailing work without a following anchor', () => {
+  it('groups trailing work while the turn is still open', () => {
     const messages = [
       { type: 'user', message: { content: 'go' } },
       {
@@ -284,38 +282,23 @@ describe('chat display grouping', () => {
       },
     ];
     const grouped = groupChatDisplayMessages(messages);
-    expect(grouped).toHaveLength(2);
-    expect(grouped.every((g) => g.kind === 'message')).toBe(true);
+    expect(grouped.map((g) => g.kind)).toEqual(['message', 'work']);
+    expect(grouped[1].callCount).toBe(1);
   });
 
-  it('keeps only the last 10 tool calls visible in an open work run', () => {
-    const extra = 5;
-    const total = CHAT_WORK_VISIBLE_TAIL_CALLS + extra;
+  it('groups all tool calls in an open work run', () => {
+    const total = 15;
     const messages = [
       { type: 'user', message: { content: 'go' } },
       ...Array.from({ length: total }, (_, i) => toolCallRow(i + 1)),
     ];
     const grouped = groupChatDisplayMessages(messages);
-    expect(grouped[0].kind).toBe('message');
-    expect(grouped[1].kind).toBe('work');
-    expect(grouped[1].callCount).toBe(extra);
-    expect(grouped.slice(2)).toHaveLength(CHAT_WORK_VISIBLE_TAIL_CALLS);
-    expect(grouped.slice(2).every((g) => g.kind === 'message')).toBe(true);
-    expect(grouped.at(-1).message.id).toBe(total);
+    expect(grouped.map((g) => g.kind)).toEqual(['message', 'work']);
+    expect(grouped[1].callCount).toBe(total);
   });
 
-  it('does not collapse an open run of at most 10 tool calls', () => {
-    const messages = [
-      { type: 'user', message: { content: 'go' } },
-      ...Array.from({ length: CHAT_WORK_VISIBLE_TAIL_CALLS }, (_, i) => toolCallRow(i + 1)),
-    ];
-    const grouped = groupChatDisplayMessages(messages);
-    expect(grouped.every((g) => g.kind === 'message')).toBe(true);
-    expect(grouped).toHaveLength(1 + CHAT_WORK_VISIBLE_TAIL_CALLS);
-  });
-
-  it('still fully collapses a completed run even when it exceeds the visible tail', () => {
-    const total = CHAT_WORK_VISIBLE_TAIL_CALLS + 4;
+  it('groups a completed run with many tool calls before the final reply', () => {
+    const total = 14;
     const messages = [
       { type: 'user', message: { content: 'go' } },
       ...Array.from({ length: total }, (_, i) => toolCallRow(i + 1)),
@@ -327,7 +310,7 @@ describe('chat display grouping', () => {
   });
 
   it('does not collapse StartSubagent into a surrounding Worked group', () => {
-    const manyTools = Array.from({ length: CHAT_WORK_COLLAPSE_MIN_CALLS }, (_, i) => ({
+    const manyTools = Array.from({ length: 6 }, (_, i) => ({
       type: 'tool_use',
       name: 'Bash',
       id: `b${i}`,
@@ -363,7 +346,7 @@ describe('chat display grouping', () => {
   });
 
   it('does not collapse ConfigureMcpServer into a surrounding Worked group', () => {
-    const manyTools = Array.from({ length: CHAT_WORK_COLLAPSE_MIN_CALLS }, (_, i) => ({
+    const manyTools = Array.from({ length: 6 }, (_, i) => ({
       type: 'tool_use',
       name: 'Bash',
       id: `b${i}`,
@@ -481,7 +464,7 @@ describe('chat display grouping', () => {
     expect(grouped[2].message.message.content[0].text).toBe('Second');
   });
 
-  it('keeps the last assistant message visible while the turn streams (no later anchor)', () => {
+  it('groups mid-turn work while the turn streams (no later anchor yet)', () => {
     const messages = [
       { type: 'user', message: { content: 'go' } },
       { type: 'assistant', message: { content: [{ type: 'text', text: 'Working…' }] } },
@@ -489,10 +472,11 @@ describe('chat display grouping', () => {
       toolCallRow(2),
     ];
     const grouped = groupChatDisplayMessages(messages);
-    expect(grouped.map((g) => g.kind)).toEqual(['message', 'message', 'message', 'message']);
+    expect(grouped.map((g) => g.kind)).toEqual(['message', 'work']);
+    expect(grouped[1].callCount).toBe(2);
   });
 
-  it('does not fold the assistant message before an errored turn result', () => {
+  it('folds work before an errored turn result into the Worked group', () => {
     const messages = [
       { type: 'user', message: { content: 'go' } },
       { type: 'assistant', message: { content: [{ type: 'text', text: 'Investigating…' }] } },
@@ -500,7 +484,8 @@ describe('chat display grouping', () => {
       { type: 'turn_result', status: 'error', error_message: 'boom', total_cost_usd: null },
     ];
     const grouped = groupChatDisplayMessages(messages);
-    expect(grouped.map((g) => g.kind)).toEqual(['message', 'message', 'message', 'message']);
+    expect(grouped.map((g) => g.kind)).toEqual(['message', 'work']);
+    expect(grouped[1].callCount).toBe(1);
   });
 
   it('folds mid-turn assistants independently per turn', () => {

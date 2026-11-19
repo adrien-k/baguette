@@ -1,12 +1,6 @@
 import { TURN_ENDING_BAGUETTE_TOOLS, baguetteMcpShortName } from './baguette-mcp-tool-names.js';
 import { isTurnStartingUserMessage } from './turn-model.js';
 
-/** Minimum tool calls in a run before it collapses into a work summary. */
-export const CHAT_WORK_COLLAPSE_MIN_CALLS = 6;
-
-/** How many of the newest tool calls stay expanded in an open (in-progress or expanded) work run. */
-export const CHAT_WORK_VISIBLE_TAIL_CALLS = 10;
-
 /** Chat-pinned MCP tools: always visible, never inside Worked. Includes turn-ending tools. */
 const CHAT_PINNED_BAGUETTE_TOOLS = new Set([
   ...TURN_ENDING_BAGUETTE_TOOLS,
@@ -151,9 +145,20 @@ function computeTurnLastAnchorIndices(messages) {
 function assistantIsMidTurn(msg, context) {
   if (msg?.type !== 'assistant' || !isChatAnchorMessage(msg)) return false;
   if (isTurnReplyAssistantMessage(msg)) return false;
-  if (!context || !Array.isArray(context.turnLastAnchors)) return false;
+  if (!Array.isArray(context?.turnLastAnchors) || context.index == null) return false;
+
   const last = context.turnLastAnchors[context.index];
-  return last !== -1 && last !== context.index;
+  if (last !== -1 && last !== context.index) return true;
+
+  if (!context.messages) return false;
+  const { messages, index } = context;
+  for (let i = index + 1; i < messages.length; i++) {
+    const m = messages[i];
+    if (isTurnStartingUserMessage(m)) break;
+    if (m.type === 'turn_result' || m.type === 'result') continue;
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -199,21 +204,6 @@ function countToolCallsInMessages(messages) {
   return n;
 }
 
-/**
- * Index in `run` where the visible tail starts so the tail holds at most `tailCalls` tool calls.
- * Returns 0 when the whole run fits in the tail.
- */
-export function findWorkRunVisibleTailStart(run, tailCalls = CHAT_WORK_VISIBLE_TAIL_CALLS) {
-  let callsFromEnd = 0;
-  for (let k = run.length - 1; k >= 0; k--) {
-    const n = toolCallCountInMessage(run[k]);
-    if (n === 0) continue;
-    callsFromEnd += n;
-    if (callsFromEnd >= tailCalls) return k;
-  }
-  return 0;
-}
-
 function workSpanDurationMs(messages) {
   const times = messages
     .map((m) => m.created_at)
@@ -240,27 +230,13 @@ function pushMessageItems(items, messages, startIndex) {
   }
 }
 
-function runContainsAssistantText(run) {
-  return run.some((msg) => msg.type === 'assistant' && isChatAnchorMessage(msg));
-}
-
-function pushWorkRun(items, run, startIndex, { collapseAll }) {
-  const callCount = countToolCallsInMessages(run);
-  if (collapseAll && (callCount >= CHAT_WORK_COLLAPSE_MIN_CALLS || runContainsAssistantText(run))) {
-    pushWorkItem(items, run, startIndex, callCount);
+function pushWorkRun(items, run, startIndex, { flat } = {}) {
+  if (run.length === 0) return;
+  if (flat) {
+    pushMessageItems(items, run, startIndex);
     return;
   }
-  if (callCount > CHAT_WORK_VISIBLE_TAIL_CALLS) {
-    const split = findWorkRunVisibleTailStart(run);
-    const prefix = run.slice(0, split);
-    const prefixCalls = countToolCallsInMessages(prefix);
-    if (prefixCalls > 0) {
-      pushWorkItem(items, prefix, startIndex, prefixCalls);
-      pushMessageItems(items, run.slice(split), startIndex + split);
-      return;
-    }
-  }
-  pushMessageItems(items, run, startIndex);
+  pushWorkItem(items, run, startIndex, countToolCallsInMessages(run));
 }
 
 /**
@@ -274,8 +250,8 @@ function pushWorkRun(items, run, startIndex, { collapseAll }) {
  * >}
  */
 export function groupChatDisplayMessages(messages, opts = {}) {
-  const turnLastAnchors =
-    opts.foldMidTurnAssistants === false ? null : computeTurnLastAnchorIndices(messages);
+  const flatWorkRuns = opts.foldMidTurnAssistants === false;
+  const turnLastAnchors = flatWorkRuns ? null : computeTurnLastAnchorIndices(messages);
   const groupContext = (index) => ({
     messages,
     index,
@@ -293,10 +269,7 @@ export function groupChatDisplayMessages(messages, opts = {}) {
     let j = i;
     while (j < messages.length && isChatWorkMessage(messages[j], groupContext(j))) j += 1;
     const run = messages.slice(i, j);
-    const hasFutureBoundary = messages
-      .slice(j)
-      .some((m, k) => isChatGroupBoundary(m, groupContext(j + k)));
-    pushWorkRun(items, run, i, { collapseAll: hasFutureBoundary });
+    pushWorkRun(items, run, i, { flat: flatWorkRuns });
     i = j;
   }
   return items;

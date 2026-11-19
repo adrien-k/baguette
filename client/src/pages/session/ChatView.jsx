@@ -68,6 +68,7 @@ import { builderMessageCreateFields } from '../../utils/messageCreateFields.js';
 import { COMPOSER_STOP_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 import {
   agentDisplayTitle,
+  isAgentAwaitingUser,
   isAgentTurnActive,
   isSubagentBuilder,
   showSessionChatFooterExtrasForAgent,
@@ -221,6 +222,7 @@ export default function ChatView({
   }, [session?.id, agentSource?.agent_sdk, agentSource?.model, models, modelsStale]);
 
   const isRunning = isAgentTurnActive(activeAgent?.status);
+  const isAwaitingApproval = isAgentAwaitingUser(activeAgent?.status);
   const isProvisioning = session?.status === 'provisioning';
   const activeSubagent = isSubagentBuilder(activeAgent);
   const showMessageComposer = !activeSubagent;
@@ -361,6 +363,13 @@ export default function ChatView({
     () => groupChatDisplayMessages(displayMessages),
     [displayMessages]
   );
+
+  const trailingWorkDisplayIndex = useMemo(() => {
+    for (let i = chatDisplayItems.length - 1; i >= 0; i--) {
+      if (chatDisplayItems[i].kind === 'work') return i;
+    }
+    return -1;
+  }, [chatDisplayItems]);
 
   const agentQueue = useMemo(() => {
     if (!activeAgent?.id) return queue;
@@ -802,7 +811,7 @@ export default function ChatView({
               {showPendingInitialPrompt && (
                 <PendingInitialPromptMessage text={pendingInitialPrompt} />
               )}
-              {chatDisplayItems.map((item) =>
+              {chatDisplayItems.map((item, displayIndex) =>
                 item.kind === 'work' ? (
                   <ChatWorkSummary
                     key={`work-${item.indices[0]}`}
@@ -819,6 +828,10 @@ export default function ChatView({
                     onSelectAgent={onSelectAgent}
                     tasks={tasks}
                     onSelectTask={onSelectTask}
+                    inProgress={isRunning && displayIndex === trailingWorkDisplayIndex}
+                    awaitingApproval={
+                      isAwaitingApproval && displayIndex === trailingWorkDisplayIndex
+                    }
                   />
                 ) : (
                   <ChatMessage
