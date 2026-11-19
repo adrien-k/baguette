@@ -178,6 +178,14 @@ const mapRepo = (r) => ({
 
 const GITHUB_REPO_FULL_NAME_RE = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
 
+function isResolvablePublicRepoFullName(fullName) {
+  if (!GITHUB_REPO_FULL_NAME_RE.test(fullName)) return false;
+  const [owner, repo] = fullName.split('/');
+  if (!owner || !repo) return false;
+  if (owner === '.' || owner === '..' || repo === '.' || repo === '..') return false;
+  return true;
+}
+
 /** Quote user text so it cannot inject GitHub search qualifiers. */
 function quoteGithubSearchFragment(text) {
   const stripped = text.replaceAll('"', '').trim();
@@ -193,9 +201,11 @@ async function githubJsonOrThrow(res, context) {
 
 /** Resolve a public GitHub repo by exact `owner/repo` (null when private or missing). */
 export async function fetchPublicRepoByFullName(token, fullName) {
+  if (!isResolvablePublicRepoFullName(fullName)) return null;
   const res = await githubFetch(`https://api.github.com/repos/${fullName}`, { token });
   if (res.status === 404) return null;
   const data = await githubJsonOrThrow(res, `GitHub repos/${fullName}`);
+  if (typeof data.full_name !== 'string' || !data.full_name) return null;
   if (data.private) return null;
   return mapRepo(data);
 }
@@ -229,7 +239,7 @@ export async function findPublicRemoteRepos(token, { query = '', org = '' } = {}
   const results = [];
 
   const maybeAdd = (repo) => {
-    if (!repo || repo.private) return;
+    if (!repo || repo.private || typeof repo.full_name !== 'string' || !repo.full_name) return;
     const key = repo.full_name.toLowerCase();
     if (seen.has(key)) return;
     if (orgPrefix && !key.startsWith(orgPrefix)) return;
@@ -237,7 +247,7 @@ export async function findPublicRemoteRepos(token, { query = '', org = '' } = {}
     results.push(repo);
   };
 
-  if (GITHUB_REPO_FULL_NAME_RE.test(q)) {
+  if (isResolvablePublicRepoFullName(q)) {
     const exact = await fetchPublicRepoByFullName(token, q);
     maybeAdd(exact);
   }
