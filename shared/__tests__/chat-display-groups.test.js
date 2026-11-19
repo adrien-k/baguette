@@ -5,7 +5,6 @@ import {
   isChatGroupBoundary,
   isChatWorkMessage,
   isTurnReplyAssistantMessage,
-  messageContainsPinnedChatTool,
   messageContainsPrUpsert,
 } from '../chat-display-groups.js';
 
@@ -91,7 +90,7 @@ describe('chat display grouping', () => {
     expect(isChatWorkMessage(prUpsert)).toBe(true);
   });
 
-  it('does not collapse CreatePlan into a surrounding Worked group', () => {
+  it('folds CreatePlan into a surrounding Worked group', () => {
     const manyTools = Array.from({ length: 6 }, (_, i) => ({
       type: 'tool_use',
       name: 'Bash',
@@ -110,11 +109,11 @@ describe('chat display grouping', () => {
       { type: 'assistant', message: { content: [{ type: 'text', text: 'Done' }] } },
     ];
     const grouped = groupChatDisplayMessages(messages);
-    expect(grouped.map((g) => g.kind)).toEqual(['message', 'work', 'message', 'message']);
-    expect(grouped[2].message.kind).toBe('mcp');
+    expect(grouped.map((g) => g.kind)).toEqual(['message', 'work', 'message']);
+    expect(grouped[1].callCount).toBe(7);
   });
 
-  it('does not collapse AskUserQuestions (ask_user) into a Worked group', () => {
+  it('folds AskUserQuestions (ask_user) into a Worked group', () => {
     const manyTools = Array.from({ length: 6 }, (_, i) => ({
       type: 'tool_use',
       name: 'Bash',
@@ -133,8 +132,8 @@ describe('chat display grouping', () => {
       { type: 'assistant', message: { content: [{ type: 'text', text: 'Done' }] } },
     ];
     const grouped = groupChatDisplayMessages(messages);
-    expect(grouped.map((g) => g.kind)).toEqual(['message', 'work', 'message', 'message']);
-    expect(grouped[2].message.kind).toBe('ask_user');
+    expect(grouped.map((g) => g.kind)).toEqual(['message', 'work', 'message']);
+    expect(grouped[1].callCount).toBe(7);
   });
 
   it('treats CreateIssue as a regular work tool (not a group boundary)', () => {
@@ -340,12 +339,11 @@ describe('chat display grouping', () => {
       args: { tool: 'StartSubagent', name: 'Scout' },
       id: 'sub',
     };
-    expect(messageContainsPinnedChatTool(startSubagent)).toBe(false);
     expect(isChatGroupBoundary(startSubagent)).toBe(false);
     expect(isChatWorkMessage(startSubagent)).toBe(true);
   });
 
-  it('does not collapse ConfigureMcpServer into a surrounding Worked group', () => {
+  it('folds ConfigureMcpServer into a surrounding Worked group', () => {
     const manyTools = Array.from({ length: 6 }, (_, i) => ({
       type: 'tool_use',
       name: 'Bash',
@@ -364,11 +362,11 @@ describe('chat display grouping', () => {
       { type: 'assistant', message: { content: [{ type: 'text', text: 'Done' }] } },
     ];
     const grouped = groupChatDisplayMessages(messages);
-    expect(grouped.map((g) => g.kind)).toEqual(['message', 'work', 'message', 'message']);
-    expect(grouped[2].message.args.name).toBe('docs');
+    expect(grouped.map((g) => g.kind)).toEqual(['message', 'work', 'message']);
+    expect(grouped[1].callCount).toBe(7);
   });
 
-  it('treats ConfigureMcpServer as a group boundary', () => {
+  it('treats ConfigureMcpServer as work, not a group boundary', () => {
     const configureServer = {
       type: 'tool_call',
       kind: 'mcp',
@@ -376,12 +374,11 @@ describe('chat display grouping', () => {
       args: { name: 'docs', start_oauth: true },
       id: 'cfg',
     };
-    expect(messageContainsPinnedChatTool(configureServer)).toBe(true);
-    expect(isChatGroupBoundary(configureServer)).toBe(true);
-    expect(isChatWorkMessage(configureServer)).toBe(false);
+    expect(isChatGroupBoundary(configureServer)).toBe(false);
+    expect(isChatWorkMessage(configureServer)).toBe(true);
   });
 
-  it('treats Cursor mcp meta-tool ConfigureMcpServer as a group boundary', () => {
+  it('treats Cursor mcp meta-tool ConfigureMcpServer as work, not a boundary', () => {
     const configureServer = {
       type: 'assistant',
       message: {
@@ -395,9 +392,8 @@ describe('chat display grouping', () => {
         ],
       },
     };
-    expect(messageContainsPinnedChatTool(configureServer)).toBe(true);
-    expect(isChatGroupBoundary(configureServer)).toBe(true);
-    expect(isChatWorkMessage(configureServer)).toBe(false);
+    expect(isChatGroupBoundary(configureServer)).toBe(false);
+    expect(isChatWorkMessage(configureServer)).toBe(true);
   });
 
   it('treats turn_reply assistant as the turn anchor without scanning ahead', () => {
@@ -536,7 +532,7 @@ describe('chat display grouping', () => {
     expect(isChatGroupBoundary(second, context(2))).toBe(true);
   });
 
-  it('does not fold a mid-turn assistant that carries a pinned chat tool', () => {
+  it('folds a mid-turn assistant that carries AskUserQuestions into Worked', () => {
     const messages = [
       { type: 'user', message: { content: 'go' } },
       {
@@ -551,8 +547,8 @@ describe('chat display grouping', () => {
       { type: 'assistant', message: { content: [{ type: 'text', text: 'Done' }] } },
     ];
     const grouped = groupChatDisplayMessages(messages);
-    expect(grouped.map((g) => g.kind)).toEqual(['message', 'message', 'message']);
-    expect(messageContainsPinnedChatTool(messages[1])).toBe(true);
+    expect(grouped.map((g) => g.kind)).toEqual(['message', 'work', 'message']);
+    expect(grouped[1].callCount).toBe(1);
   });
 
   it('treats Cursor mcp meta-tool StartSubagent as work, not a boundary', () => {
@@ -569,7 +565,6 @@ describe('chat display grouping', () => {
         ],
       },
     };
-    expect(messageContainsPinnedChatTool(startSubagent)).toBe(false);
     expect(isChatGroupBoundary(startSubagent)).toBe(false);
     expect(isChatWorkMessage(startSubagent)).toBe(true);
   });

@@ -1,8 +1,4 @@
-import { TURN_ENDING_BAGUETTE_TOOLS, baguetteMcpShortName } from './baguette-mcp-tool-names.js';
 import { isTurnStartingUserMessage } from './turn-model.js';
-
-/** Chat-pinned MCP tools: always visible, never inside Worked. Includes turn-ending tools. */
-const CHAT_PINNED_BAGUETTE_TOOLS = new Set([...TURN_ENDING_BAGUETTE_TOOLS, 'ConfigureMcpServer']);
 
 function toolUseNameIs(name, shortName) {
   if (!name) return false;
@@ -51,36 +47,6 @@ function blockIsPrUpsert(block) {
 
 function messageIsToolCallRow(msg) {
   return msg?.type === 'tool_call';
-}
-
-function toolCallRowShortName(msg) {
-  if (msg.kind === 'mcp') return msg.args?.tool ?? baguetteMcpShortName(msg.name);
-  return baguetteMcpShortName(msg.name) || msg.name;
-}
-
-function toolCallRowIsPinnedChatTool(msg) {
-  if (!messageIsToolCallRow(msg)) return false;
-  if (msg.kind === 'ask_user') return true;
-  return CHAT_PINNED_BAGUETTE_TOOLS.has(toolCallRowShortName(msg));
-}
-
-function blockIsPinnedChatTool(block) {
-  if (block._hidden) return false;
-  for (const shortName of CHAT_PINNED_BAGUETTE_TOOLS) {
-    if (blockIsNamedMcpTool(block, shortName)) return true;
-  }
-  if (block.type === 'tool_use') {
-    const n = block.name;
-    if (n === 'AskUserQuestion' || n === 'AskUserQuestions') return true;
-  }
-  return false;
-}
-
-/** CreatePlan, EditPlan, AskUserQuestions, or ConfigureMcpServer — always visible, never inside Worked. */
-export function messageContainsPinnedChatTool(msg) {
-  if (toolCallRowIsPinnedChatTool(msg)) return true;
-  if (msg.type !== 'assistant' || !Array.isArray(msg.message?.content)) return false;
-  return msg.message.content.some(blockIsPinnedChatTool);
 }
 
 /** Message whose visible tools include PrUpsert (MCP or legacy bash op). */
@@ -158,14 +124,11 @@ function assistantIsMidTurn(msg, context) {
 }
 
 /**
- * User/assistant text or pinned chat tools — splits work runs and enables collapse.
+ * User/assistant closing text — splits work runs (final reply of a turn only).
  * Mid-turn assistant messages fold into the Worked run instead of splitting it.
  */
 export function isChatGroupBoundary(msg, context) {
-  return (
-    (isChatAnchorMessage(msg) && !assistantIsMidTurn(msg, context)) ||
-    messageContainsPinnedChatTool(msg)
-  );
+  return isChatAnchorMessage(msg) && !assistantIsMidTurn(msg, context);
 }
 
 /**
@@ -174,7 +137,6 @@ export function isChatGroupBoundary(msg, context) {
  */
 export function isChatWorkMessage(msg, context) {
   if (!msg) return false;
-  if (messageContainsPinnedChatTool(msg)) return false;
   if (msg.type === 'result' || msg.type === 'turn_result') return true;
   if (msg.type === 'tool_call') return true;
   if (msg.type === 'system') return msg.subtype !== 'prompt';
