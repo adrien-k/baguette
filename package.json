@@ -1,6 +1,6 @@
 {
   "name": "baguette-ai",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Self-hosted orchestrator for Claude, Cursor or Pi coding agents: worktree sessions, live previews, and GitHub PRs",
   "type": "module",
   "license": "MIT",

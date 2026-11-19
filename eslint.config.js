@@ -82,6 +82,7 @@ export default [
                 './shared',
                 './scripts',
                 './client/src',
+                'client/vite.config.js',
                 'knexfile.js',
                 'vitest.config.js',
               ],
@@ -117,7 +118,7 @@ export default [
     files: [
       'server/**/*.js',
       'shared/**/*.js',
-      'scripts/**/*.js',
+      'scripts/**/*.{js,mjs}',
       'bin/**',
       'knexfile.js',
       'vitest.config.js',
@@ -154,9 +155,9 @@ export default [
     },
   })),
 
-  // Operator-facing CLI scripts print to stdout/stderr.
+  // Operator-facing CLI entrypoints print to stdout/stderr.
   {
-    files: ['scripts/**/*.js'],
+    files: ['bin/**', 'scripts/**/*.{js,mjs}'],
     rules: {
       'no-console': 'off',
     },

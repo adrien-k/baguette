@@ -104,11 +104,6 @@ export function buildBaseAgentTools(user, app, { callerSession = null, callerAge
   ];
 }
 
-/** @deprecated Use buildBaseAgentTools */
-export function buildBaguetteAccountToolList(user, app, options) {
-  return buildBaseAgentTools(user, app, options);
-}
-
 export function buildBaguetteSessionMcpTools(
   user,
   app,

@@ -65,7 +65,7 @@ export function isSpilledResultNotice(text) {
  * @param {string} sessionPath absolute session worktree root
  * @returns {{ baseDir: string, cwd: string }}
  */
-export function toolResultSpillDirs(sessionPath) {
+function toolResultSpillDirs(sessionPath) {
   const baseDir = path.join(sessionPath, TOOL_RESULTS_DIR);
   return { baseDir, cwd: sessionPath };
 }

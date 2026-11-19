@@ -7,7 +7,7 @@ import {
 
 /** @typedef {{ id: number; ref?: number; name?: string; agent_type?: string; status?: string; is_primary?: number | boolean }} SessionAgentSummary */
 
-export { agentAccessibleTitle, agentNameMatchesType, agentDisplayTitle, agentTypeLabel };
+export { agentAccessibleTitle, agentNameMatchesType, agentDisplayTitle };
 
 function agentRefPrefix(agent) {
   if (agent?.ref == null) return '';
@@ -127,7 +127,7 @@ export function isSecondaryBuilder(agent) {
 }
 
 /** Primary or secondary builder — shares the session worktree (not subagent/reviewer). */
-export function isComposerBuilderAgent(agent) {
+function isComposerBuilderAgent(agent) {
   return agent?.agent_type === 'builder';
 }
 

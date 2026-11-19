@@ -1,5 +1,5 @@
 /** Display label for inbound HTTP MCP (`/api/mcp`) when there is no caller session. */
-export const EXTERNAL_MCP_ACCESS_LABEL = 'Baguette MCP';
+const EXTERNAL_MCP_ACCESS_LABEL = 'Baguette MCP';
 
 /**
  * @typedef {import('../../../../shared/mcp-message-sender.js').McpMessageSender} McpMessageSender

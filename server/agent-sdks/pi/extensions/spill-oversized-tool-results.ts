@@ -98,5 +98,3 @@ export function createSpillOversizedToolResultsExtension(baguetteSessionId?: num
     });
   };
 }
-
-export default createSpillOversizedToolResultsExtension();
