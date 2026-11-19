@@ -100,8 +100,6 @@ For each **`opened`** issue you want off your plate (skip `needs_decision`):
 
 4. After subagents complete, run full tests, add a single builder integration commit if needed, then call **`ContinueReview`**. The reviewer reconciles **`submitted`** issues against the diff, moves acceptable fixes to **`resolved`**, and **`CloseIssue`** (or opens a new finding if something is still wrong). Do not pre-mark issues **`resolved`** from the orchestrator turn.
 
-Until dedicated submit MCP tools exist, move issues to **`submitted`** yourself only when you are about to fix them (builder or subagent). Do not mark submitted without an agent assigned to fix.
-
 ## 5. End-to-end orchestration recipe
 
 ```mermaid
