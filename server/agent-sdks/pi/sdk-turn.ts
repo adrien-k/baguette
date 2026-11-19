@@ -1,4 +1,4 @@
-import { mapPiEvent, piTurnResultOps } from './mapping.ts';
+import { mapPiAssistantMessageThinkingBackfill, mapPiEvent, piTurnResultOps } from './mapping.ts';
 import type { MessageOp } from '../../../shared/message-types.ts';
 import type { MessageStreamWriter } from '../../../shared/message-stream-writer.ts';
 import { addPiTokenUsage, emptyTurnUsage } from '../../services/turn-usage.js';
@@ -42,6 +42,7 @@ export async function processPiSessionStream(
   const turnUsage = emptyTurnUsage();
 
   let applyChain: Promise<void> = Promise.resolve();
+  let thinkingStreamed = false;
 
   const noteTurnResultFromOps = (ops: MessageOp[]) => {
     for (const op of ops) {
@@ -106,8 +107,16 @@ export async function processPiSessionStream(
       lastError = errorDetail(event.finalError ?? event.errorMessage, 'Turn failed after retries');
     }
 
-    // Pi still emits agent_settled after a failed assistant turn; do not treat that as success.
-    const ops = event.type === 'agent_settled' && turnFailed ? null : mapPiEvent(event);
+    let ops = event.type === 'agent_settled' && turnFailed ? null : mapPiEvent(event);
+    if (event.type === 'message_end' && !thinkingStreamed) {
+      const backfill = mapPiAssistantMessageThinkingBackfill(event.message);
+      if (backfill?.length) {
+        ops = ops?.length ? [...ops, ...backfill] : backfill;
+      }
+    }
+    if (ops?.some((op) => op.op === 'assistant_thinking')) {
+      thinkingStreamed = true;
+    }
     applyOps(ops);
   });
 

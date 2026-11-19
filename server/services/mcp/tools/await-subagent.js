@@ -13,7 +13,7 @@ export function createAwaitSubagentTool(ctx) {
       `Block until a subagent turn finishes (up to ${waitMinutes} minutes per call), then return status, error_message when failed, and the last assistant message. ` +
       'On timeout the subagent is NOT cancelled — the wait is virtually detached and the turn keeps running: read its last assistant message (GetAgentMessages) to check progress, then AwaitSubagent again to continue waiting, or StopSubagent only if it looks stuck for no good reason. ' +
       'Use after StartSubagent with attach: false, or to wait on a subagent started earlier. ' +
-      'Identify the subagent by agent_id or agent_ref from ListSubagents / StartSubagent.',
+      'Identify the subagent by agent_id or agent_ref from ListAgents / StartSubagent.',
     schema: {
       session_id: z
         .number()
@@ -26,7 +26,7 @@ export function createAwaitSubagentTool(ctx) {
         .int()
         .min(1)
         .optional()
-        .describe('Session-relative agent ref from ListSubagents'),
+        .describe('Session-relative agent ref from ListAgents'),
     },
     handler: async ({ session_id, agent_id, agent_ref }) => {
       let targetSessionId = callerSession?.id ?? null;

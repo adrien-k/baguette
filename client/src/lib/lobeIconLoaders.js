@@ -1,56 +1,57 @@
 /**
  * Per-icon dynamic imports for the curated agent-config logo set only.
- * Avoids loading the full @lobehub/icons barrel.
+ * Uses @lobehub/icons-static-avatar (pre-rendered round marks, same as Lobe Icon.Avatar).
  */
 
-/** @type {Record<string, () => Promise<{ default: object }>>} */
+/** @type {Record<string, () => Promise<{ default: string }>>} */
 const LOADERS = {
-  Anthropic: () => import('@lobehub/icons/es/Anthropic'),
-  Claude: () => import('@lobehub/icons/es/Claude'),
-  ClaudeCode: () => import('@lobehub/icons/es/ClaudeCode'),
-  OpenAI: () => import('@lobehub/icons/es/OpenAI'),
-  Google: () => import('@lobehub/icons/es/Google'),
-  Gemini: () => import('@lobehub/icons/es/Gemini'),
-  Meta: () => import('@lobehub/icons/es/Meta'),
-  Mistral: () => import('@lobehub/icons/es/Mistral'),
-  Cohere: () => import('@lobehub/icons/es/Cohere'),
-  DeepSeek: () => import('@lobehub/icons/es/DeepSeek'),
-  Grok: () => import('@lobehub/icons/es/Grok'),
-  XAI: () => import('@lobehub/icons/es/XAI'),
-  Cursor: () => import('@lobehub/icons/es/Cursor'),
-  OpenRouter: () => import('@lobehub/icons/es/OpenRouter'),
-  OpenCode: () => import('@lobehub/icons/es/OpenCode'),
-  Groq: () => import('@lobehub/icons/es/Groq'),
-  Together: () => import('@lobehub/icons/es/Together'),
-  Fireworks: () => import('@lobehub/icons/es/Fireworks'),
-  Perplexity: () => import('@lobehub/icons/es/Perplexity'),
-  Azure: () => import('@lobehub/icons/es/Azure'),
-  AzureAI: () => import('@lobehub/icons/es/AzureAI'),
-  Aws: () => import('@lobehub/icons/es/Aws'),
-  Bedrock: () => import('@lobehub/icons/es/Bedrock'),
-  VertexAI: () => import('@lobehub/icons/es/VertexAI'),
-  Cloudflare: () => import('@lobehub/icons/es/Cloudflare'),
-  Vercel: () => import('@lobehub/icons/es/Vercel'),
-  Baseten: () => import('@lobehub/icons/es/Baseten'),
-  Ollama: () => import('@lobehub/icons/es/Ollama'),
-  HuggingFace: () => import('@lobehub/icons/es/HuggingFace'),
-  Replicate: () => import('@lobehub/icons/es/Replicate'),
-  Nvidia: () => import('@lobehub/icons/es/Nvidia'),
-  Microsoft: () => import('@lobehub/icons/es/Microsoft'),
-  Copilot: () => import('@lobehub/icons/es/Copilot'),
-  GithubCopilot: () => import('@lobehub/icons/es/GithubCopilot'),
-  Alibaba: () => import('@lobehub/icons/es/Alibaba'),
-  Qwen: () => import('@lobehub/icons/es/Qwen'),
-  Moonshot: () => import('@lobehub/icons/es/Moonshot'),
-  Zhipu: () => import('@lobehub/icons/es/Zhipu'),
-  Minimax: () => import('@lobehub/icons/es/Minimax'),
-  Pi: () => import('@lobehub/icons/es/Pi'),
-  LobeHub: () => import('@lobehub/icons/es/LobeHub'),
+  Anthropic: () => import('@lobehub/icons-static-avatar/avatars/anthropic.webp?url'),
+  Claude: () => import('@lobehub/icons-static-avatar/avatars/claude.webp?url'),
+  ClaudeCode: () => import('@lobehub/icons-static-avatar/avatars/claudecode.webp?url'),
+  OpenAI: () => import('@lobehub/icons-static-avatar/avatars/openai.webp?url'),
+  Google: () => import('@lobehub/icons-static-avatar/avatars/google.webp?url'),
+  Gemini: () => import('@lobehub/icons-static-avatar/avatars/gemini.webp?url'),
+  Meta: () => import('@lobehub/icons-static-avatar/avatars/meta.webp?url'),
+  Mistral: () => import('@lobehub/icons-static-avatar/avatars/mistral.webp?url'),
+  Cohere: () => import('@lobehub/icons-static-avatar/avatars/cohere.webp?url'),
+  DeepSeek: () => import('@lobehub/icons-static-avatar/avatars/deepseek.webp?url'),
+  Grok: () => import('@lobehub/icons-static-avatar/avatars/grok.webp?url'),
+  XAI: () => import('@lobehub/icons-static-avatar/avatars/xai.webp?url'),
+  Cursor: () => import('@lobehub/icons-static-avatar/avatars/cursor.webp?url'),
+  OpenRouter: () => import('@lobehub/icons-static-avatar/avatars/openrouter.webp?url'),
+  OpenCode: () => import('@lobehub/icons-static-avatar/avatars/opencode.webp?url'),
+  Groq: () => import('@lobehub/icons-static-avatar/avatars/groq.webp?url'),
+  Together: () => import('@lobehub/icons-static-avatar/avatars/together.webp?url'),
+  Fireworks: () => import('@lobehub/icons-static-avatar/avatars/fireworks.webp?url'),
+  Perplexity: () => import('@lobehub/icons-static-avatar/avatars/perplexity.webp?url'),
+  Azure: () => import('@lobehub/icons-static-avatar/avatars/azure.webp?url'),
+  AzureAI: () => import('@lobehub/icons-static-avatar/avatars/azureai.webp?url'),
+  Aws: () => import('@lobehub/icons-static-avatar/avatars/aws.webp?url'),
+  Bedrock: () => import('@lobehub/icons-static-avatar/avatars/bedrock.webp?url'),
+  VertexAI: () => import('@lobehub/icons-static-avatar/avatars/vertexai.webp?url'),
+  Cloudflare: () => import('@lobehub/icons-static-avatar/avatars/cloudflare.webp?url'),
+  Vercel: () => import('@lobehub/icons-static-avatar/avatars/vercel.webp?url'),
+  Baseten: () => import('@lobehub/icons-static-avatar/avatars/baseten.webp?url'),
+  Ollama: () => import('@lobehub/icons-static-avatar/avatars/ollama.webp?url'),
+  HuggingFace: () => import('@lobehub/icons-static-avatar/avatars/huggingface.webp?url'),
+  Replicate: () => import('@lobehub/icons-static-avatar/avatars/replicate.webp?url'),
+  Nvidia: () => import('@lobehub/icons-static-avatar/avatars/nvidia.webp?url'),
+  Microsoft: () => import('@lobehub/icons-static-avatar/avatars/microsoft.webp?url'),
+  Copilot: () => import('@lobehub/icons-static-avatar/avatars/copilot.webp?url'),
+  GithubCopilot: () => import('@lobehub/icons-static-avatar/avatars/githubcopilot.webp?url'),
+  Alibaba: () => import('@lobehub/icons-static-avatar/avatars/alibaba.webp?url'),
+  Qwen: () => import('@lobehub/icons-static-avatar/avatars/qwen.webp?url'),
+  Moonshot: () => import('@lobehub/icons-static-avatar/avatars/moonshot.webp?url'),
+  Zhipu: () => import('@lobehub/icons-static-avatar/avatars/zhipu.webp?url'),
+  Minimax: () => import('@lobehub/icons-static-avatar/avatars/minimax.webp?url'),
+  Pi: () => import('@lobehub/icons-static-avatar/avatars/pi.webp?url'),
+  LobeHub: () => import('@lobehub/icons-static-avatar/avatars/lobehub.webp?url'),
 };
 
 const cache = new Map();
 
-export function loadLobeIconModule(iconId) {
+/** @returns {Promise<string | null>} Resolved asset URL for the icon mark. */
+export function loadLobeIconUrl(iconId) {
   const loader = LOADERS[iconId];
   if (!loader) return Promise.resolve(null);
   if (!cache.has(iconId)) {

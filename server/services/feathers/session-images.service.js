@@ -9,7 +9,7 @@ import {
   DEFAULT_PAGINATE,
   GITHUB_ENABLE_IMAGE_ATTACH,
   IMAGES_DIR,
-  PUBLIC_API_URL,
+  PUBLIC_HOST,
 } from '../../config.js';
 import {
   SESSION_IMAGE_MEDIA_TYPES,
@@ -31,7 +31,7 @@ function normalizeAltText(raw) {
 
 /** Public image URL for a stored row (the non-attach publish path). */
 function publicImageUrl(row) {
-  return publicSessionImageUrl(row, PUBLIC_API_URL);
+  return publicSessionImageUrl(row, PUBLIC_HOST);
 }
 
 class SessionImagesService extends KnexService {

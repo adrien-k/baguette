@@ -41,6 +41,53 @@ Every session has up to four kinds of agents:
 
 Subagents are ideal for background subtasks inside one session (explore the codebase while the builder keeps working, run an isolated analysis, …). They inherit the session's context scope and cannot take UI chat messages — everything is MCP-driven.
 
+### Working directory
+
+By default, `StartSubagent` runs in the **session worktree** — the same checkout and branch as the primary builder and other shared-cwd agents.
+
+Pass **`isolated_worktree: true`** when the subagent needs its own checkout (parallel experiments, isolated installs, or edits that should not touch the builder's working tree). Baguette then:
+
+- Creates branch **`baguette/subagent/<agent_id>`** at the **committed** snapshot of the session worktree HEAD (uncommitted builder changes are not included).
+- Checks out that branch in a **sibling** directory next to the session worktree: `<DATA_DIR>/repos/<stripped_name>/sessions/<session_short_id>/sub-worktrees/<agent_id>/` — never nested inside the session worktree.
+
+`isolated_worktree` is **rejected** for global sessions and for repo sessions that have no worktree.
+
+`StartSubagent` and `ListAgents` (subagent rows) include **`isolated_worktree`**, **`worktree_path`** (absolute path when isolated, otherwise `null`), and **`local_branch`** (the throwaway branch name when isolated, otherwise `null`).
+
+### What isolated subagents see (`CurrentSessionInfo`)
+
+Isolated subagents still get the **parent session** fields — `session_path`, `local_branch`, `remote_branch`, label, PR description, and the usual git helper strings — so they know which branch and PR the builder owns. They also get **`subagent_worktree_path`** and **`subagent_local_branch`** for their own checkout. **`working_directory_restrictions`** point at the sub-worktree, not `session_path`.
+
+Shared-cwd subagents use `session_path` as both context and cwd (same as additional builders).
+
+### Commits, merge, and push
+
+| Mode               | Commits                                                              | Push                                                            |
+| ------------------ | -------------------------------------------------------------------- | --------------------------------------------------------------- |
+| Shared session cwd | Only when the delegating message **explicitly** asks to commit       | N/A — builder owns shipping                                     |
+| Isolated worktree  | Commit on the throwaway branch when the task is done (or when asked) | Subagents **cannot** push — no `GitPush` tool and no shell push |
+
+There is **no automatic merge** from a subagent branch into the session branch. When an isolated subagent finishes, the primary builder **merges** (or cherry-picks) locally, or calls **`GitPush`** with **`source_branch`** set to the subagent's local branch name to publish those commits (see below).
+
+Subagents do not receive the **`GitPush`** MCP tool (along with other session-shipping tools such as `UpdateSession` and nested `StartSubagent`).
+
+## Pushing changes
+
+Two paths update the remote — they are independent.
+
+**Post-turn auto-push (primary builder only).** When auto-push is on, Baguette pushes the **session worktree** and syncs the PR **silently** after each primary builder turn ends. Subagent turns never trigger this.
+
+**MCP `GitPush`.** A **plain** session-branch push (no `force`, no `source_branch`, target is the session branch) with **auto-push on** runs **immediately** — the same as post-turn auto-push, so the agent should not call `GitPush` just to duplicate that. When **auto-push is off**, or the push is **not plain** (different target branch, `source_branch`, or `force`), `GitPush` **opens the Push approval modal** and waits for you to confirm.
+
+| `GitPush` argument | Behavior                                                                                             |
+| ------------------ | ---------------------------------------------------------------------------------------------------- |
+| (default)          | Push worktree **HEAD** to the session's remote branch (direct when auto-push is on; otherwise modal) |
+| `branch`           | Target branch on `origin` (default: session branch; a different branch always requires approval)     |
+| `source_branch`    | Local ref to push instead of HEAD; refspec is `source_branch:target` — always requires approval      |
+| `force`            | `lease` or `force`, both require approval in the modal                                               |
+
+When **`source_branch`** is pushed onto the **session branch**, Baguette first tries to **fast-forward the session worktree** to that ref. It aborts if the worktree is dirty or the source ref is not a fast-forward of the current checkout. Pushing to a **different** target does **not** move the session checkout. **`sessions.remote_branch`** in the database updates **only** when the push target is the session branch.
+
 ## Delegation and wake-ups (`agent_observers`)
 
 Turn-end notifications are first-class subscriptions stored in the `agent_observers` table (observed agent → watcher agent, unique per pair). One mechanism covers both delegation scenarios:

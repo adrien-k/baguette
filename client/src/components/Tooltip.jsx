@@ -8,13 +8,21 @@ import {
   flip,
   shift,
   autoUpdate,
+  safePolygon,
 } from '@floating-ui/react';
 
+/**
+ * @param {boolean} [wrap] — multiline body
+ * @param {boolean} [wide] — wider panel (with `wrap`)
+ * @param {boolean} [interactive] — links and copy in the panel (hover bridge to the tooltip)
+ */
 export default function Tooltip({
   children,
   content,
   placement = 'top',
   wrap = false,
+  wide = false,
+  interactive = false,
   /** Classes for the wrapper around `children`; use `flex w-full` to fill a row. */
   className = 'inline-flex items-stretch',
 }) {
@@ -30,8 +38,18 @@ export default function Tooltip({
   });
   const { setReference, setFloating } = refs;
 
-  const hover = useHover(context);
+  const hover = useHover(
+    context,
+    interactive ? { move: false, handleClose: safePolygon({ buffer: 4 }) } : undefined
+  );
   const { getReferenceProps, getFloatingProps } = useInteractions([hover]);
+
+  let panelSizeClass = 'px-2 py-1 whitespace-nowrap';
+  if (wrap && wide) {
+    panelSizeClass = 'max-w-sm px-3 py-2 whitespace-normal';
+  } else if (wrap) {
+    panelSizeClass = 'max-w-[240px] px-2 py-1 whitespace-normal';
+  }
 
   return (
     <>
@@ -43,8 +61,8 @@ export default function Tooltip({
           ref={setFloating}
           style={{ ...floatingStyles, display: open ? undefined : 'none' }}
           {...getFloatingProps()}
-          className={`z-[9999] px-2 py-1 bg-control-hover text-heading text-xs rounded pointer-events-none ${
-            wrap ? 'max-w-[240px] whitespace-normal' : 'whitespace-nowrap'
+          className={`z-[9999] rounded border border-line bg-control-hover text-heading text-xs shadow-md ${panelSizeClass} ${
+            interactive ? 'pointer-events-auto' : 'pointer-events-none'
           }`}
         >
           {content}

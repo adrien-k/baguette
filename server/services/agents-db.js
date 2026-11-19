@@ -36,10 +36,6 @@ export async function resolveAgentRowForMessage(db, row) {
   return byId;
 }
 
-export async function listAgentsForSession(db, sessionId) {
-  return db('agents').where({ session_id: sessionId }).orderBy('id', 'asc');
-}
-
 /**
  * Summed usage cost per agent id for a session (agents without usage are absent).
  * @returns {Promise<Map<number, number>>} agent_id → summed `cost_usd`
@@ -54,14 +50,22 @@ export async function listAgentCostsForSession(db, sessionId) {
   return new Map(rows.map((r) => [r.agent_id, parseFloat(r.cost_usd ?? 0)]));
 }
 
+export const SESSION_AGENT_TYPES = ['builder', 'reviewer', 'subagent'];
+
 /**
  * @param {import('knex').Knex} db
  * @param {number} sessionId
- * @param {{ status?: string, active_only?: boolean }} [filter]
+ * @param {{ agent_types?: string[], status?: string, active_only?: boolean }} [filter]
  */
-export async function listSubagentsForSession(db, sessionId, { status, active_only } = {}) {
+export async function listAgentsForSession(
+  db,
+  sessionId,
+  { agent_types, status, active_only } = {}
+) {
+  const types = agent_types == null || agent_types.length === 0 ? SESSION_AGENT_TYPES : agent_types;
   let q = db('agents')
-    .where({ session_id: sessionId, agent_type: 'subagent' })
+    .where({ session_id: sessionId })
+    .whereIn('agent_type', types)
     .orderBy('id', 'asc');
   if (active_only) {
     q = q.whereIn('status', ['running', 'approval']);

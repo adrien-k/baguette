@@ -205,6 +205,24 @@ describe('Loops service', () => {
       expect(loop.create_new_branch).toBe(false);
     });
 
+    it('stores user default_auto_load_skills when auto_load_skills is omitted', async () => {
+      await db('users')
+        .where({ id: aliceId })
+        .update({ default_auto_load_skills: JSON.stringify(['Delegation and orchestration']) });
+      const loop = await app.service('loops').create(loopData(), params(aliceId));
+      expect(loop.auto_load_skills).toEqual(['Delegation and orchestration']);
+    });
+
+    it('stores an explicit empty auto_load_skills list without filling defaults', async () => {
+      await db('users')
+        .where({ id: aliceId })
+        .update({ default_auto_load_skills: JSON.stringify(['Delegation and orchestration']) });
+      const loop = await app
+        .service('loops')
+        .create(loopData({ auto_load_skills: [] }), params(aliceId));
+      expect(loop.auto_load_skills).toEqual([]);
+    });
+
     it('forces auto_push off for local repository loops', async () => {
       await db('repos').insert({ full_name: 'local-loop', repo_path: '/tmp/local-loop' });
       const loop = await app
@@ -292,6 +310,36 @@ describe('Loops service', () => {
       const loop = await app.service('loops').create(loopData({ enabled: false }), params(aliceId));
       expect(loop.enabled).toBe(false);
       expect(loop.next_run_at).toBeNull();
+    });
+
+    it('creates a manual loop with no next_run_at', async () => {
+      const loop = await app
+        .service('loops')
+        .create(loopData({ schedule_type: 'manual' }), params(aliceId));
+      expect(loop.schedule_type).toBe('manual');
+      expect(loop.next_run_at).toBeNull();
+      expect(loop.interval_minutes).toBeNull();
+    });
+  });
+
+  describe('runNow', () => {
+    it('runs an enabled loop on demand', async () => {
+      const loop = await app
+        .service('loops')
+        .create(loopData({ schedule_type: 'manual' }), params(aliceId));
+      sessionsCreate.mockClear();
+      const result = await app.service('loops').runNow(loop.id, params(aliceId));
+      expect(result.session_id).toBe(77);
+      expect(sessionsCreate).toHaveBeenCalled();
+    });
+
+    it('rejects when the loop is paused', async () => {
+      const loop = await app
+        .service('loops')
+        .create(loopData({ schedule_type: 'manual', enabled: false }), params(aliceId));
+      await expect(app.service('loops').runNow(loop.id, params(aliceId))).rejects.toBeInstanceOf(
+        BadRequest
+      );
     });
   });
 
@@ -586,6 +634,44 @@ describe('Loops service', () => {
         expect.objectContaining({ base_branch: 'main', create_new_branch: false }),
         expect.anything()
       );
+    });
+
+    it('passes loop auto_load_skills to spawned sessions, not current user defaults', async () => {
+      await db('users')
+        .where({ id: aliceId })
+        .update({ default_auto_load_skills: JSON.stringify(['Other default']) });
+      const loop = await makeDueLoop({ auto_load_skills: ['Pinned skill'] });
+      await app.service('loops').runDue();
+      expect(sessionsCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          loop_id: loop.id,
+          auto_load_skills: ['Pinned skill'],
+        }),
+        expect.anything()
+      );
+      await db('users')
+        .where({ id: aliceId })
+        .update({ default_auto_load_skills: JSON.stringify(['Changed default']) });
+      sessionsCreate.mockClear();
+      await db('loops')
+        .where({ id: loop.id })
+        .update({ next_run_at: new Date(Date.now() - 60_000).toISOString() });
+      await app.service('loops').runDue();
+      expect(sessionsCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ auto_load_skills: ['Pinned skill'] }),
+        expect.anything()
+      );
+    });
+
+    it('does not inject user default skills when the loop has no preload skills', async () => {
+      await db('users')
+        .where({ id: aliceId })
+        .update({ default_auto_load_skills: JSON.stringify(['Fresh default']) });
+      const loop = await makeDueLoop({ auto_load_skills: [] });
+      await app.service('loops').runDue();
+      const payload = sessionsCreate.mock.calls.at(-1)?.[0];
+      expect(payload.loop_id).toBe(loop.id);
+      expect(payload.auto_load_skills).toBeUndefined();
     });
 
     it('reuses the loop MCP snapshot instead of current defaults', async () => {

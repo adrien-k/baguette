@@ -1,10 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useStickToBottomScroll } from '../../hooks/useStickToBottomScroll.js';
 import {
-  GitPullRequest,
   GitMerge,
-  CircleCheck,
-  MessageSquare,
   GitCompare,
   ClipboardCheck,
   RotateCcw,
@@ -35,10 +32,13 @@ import {
 } from '@baguette/shared/running-tools.js';
 import ChatRunningBashDock from '../../components/chat/ChatRunningBashDock.tsx';
 import ChatCostSummary from '../../components/chat/ChatCostSummary.tsx';
+import ChatSessionPlanLinks from '../../components/chat/ChatSessionPlanLinks.tsx';
 import ChatPushChangesButton from '../../components/chat/ChatPushChangesButton.tsx';
 import ChatQuickActionButton, {
   CHAT_ACTION_BUTTON_CLASS,
 } from '../../components/chat/ChatQuickActionButton.tsx';
+import ChatRecipesSection from '../../components/chat/ChatRecipesSection.tsx';
+import { useSessionChatRecipes } from '../../hooks/useSessionChatRecipes.js';
 import FileAttachmentPicker from '../../components/FileAttachmentPicker.jsx';
 import AgentMessageComposer from '../../components/AgentMessageComposer.jsx';
 import ComposerScheduleAddon from '../../components/ComposerScheduleAddon.jsx';
@@ -58,6 +58,8 @@ import ScheduleMessageModal from '../../components/ScheduleMessageModal.jsx';
 import SendRegularlyModal from '../../components/SendRegularlyModal.jsx';
 import StartSubagentModal from '../../components/StartSubagentModal.jsx';
 import ChatMessagesViewport, { CHAT_COLUMN_CLASS } from '../../components/ChatMessagesViewport.jsx';
+import PendingInitialPromptMessage from '../../components/chat/PendingInitialPromptMessage.jsx';
+import { shouldShowPendingInitialPrompt } from './pendingInitialPrompt.js';
 import Tooltip from '../../components/Tooltip.jsx';
 import { isGlobalSession } from '@baguette/shared/session-scope.js';
 import { useFilterRoutes } from '../../hooks/useFilterRoutes.js';
@@ -67,24 +69,15 @@ import { builderMessageCreateFields } from '../../utils/messageCreateFields.js';
 import { COMPOSER_STOP_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 import {
   agentDisplayTitle,
+  isAgentAwaitingUser,
   isAgentTurnActive,
   isSubagentBuilder,
+  showSessionChatFooterExtrasForAgent,
 } from '../../utils/sessionAgents.js';
 import { formatAgentUsageCostLabel, usageCostByAgentId } from '../../utils/usageSeries.js';
 import { useAgentConfigs } from '../../hooks/useAgentConfigs.js';
 import { useAgentConfigModels } from '../../hooks/useAgentConfigModels.js';
 import { defaultModelForSdk, paramsJsonForModelChange } from '../../utils/models.js';
-
-/** "Check comments" quick message for builder sessions — must stay aligned with `## Responding to PR feedback` in `server/prompts/build-prompt.md` (injected via session prompt; do not duplicate that section here). */
-const CHECK_COMMENTS_PROMPT_BUILDER =
-  'Address open PR feedback by following the **Responding to PR feedback** section in your system instructions.';
-
-/** Reviewer sessions use `reviewer-prompt.md`, not the build prompt; nudge PrComments + review workflow only. */
-const CHECK_COMMENTS_PROMPT_REVIEWER =
-  'Call PrComments to load existing PR conversation and inline review comments, then summarize and continue per your review workflow.';
-
-const CHECK_COMMENTS_TOOLTIP_BUILDER = 'Check review comments and fix problems.';
-const CHECK_COMMENTS_TOOLTIP_REVIEWER = 'Check review comments.';
 
 function SystemPromptEntry({ content }) {
   const [expanded, setExpanded] = useState(false);
@@ -192,6 +185,7 @@ export default function ChatView({
   const { models, stale: modelsStale } = useAgentConfigModels(composerAgentConfigId);
   const modelsLoading = modelsStale && !models.length;
   const isReviewerAgent = activeAgent?.agent_type === 'reviewer';
+  const chatRecipes = useSessionChatRecipes(session, activeAgent);
   const [composerModel, setComposerModel] = useState(agentSource?.model ?? null);
   const [composerModelParams, setComposerModelParams] = useState(agentSource?.model_params ?? null);
 
@@ -229,10 +223,11 @@ export default function ChatView({
   }, [session?.id, agentSource?.agent_sdk, agentSource?.model, models, modelsStale]);
 
   const isRunning = isAgentTurnActive(activeAgent?.status);
+  const isAwaitingApproval = isAgentAwaitingUser(activeAgent?.status);
   const isProvisioning = session?.status === 'provisioning';
   const activeSubagent = isSubagentBuilder(activeAgent);
   const showMessageComposer = !activeSubagent;
-  const showSessionChatFooterExtras = !activeAgent || Boolean(Number(activeAgent.is_primary));
+  const showSessionChatFooterExtras = showSessionChatFooterExtrasForAgent(activeAgent);
   const { usage: sessionUsage, loading: sessionUsageLoading } = useSessionUsage(session?.id);
   const costByAgentId = useMemo(
     () => usageCostByAgentId(sessionUsage?.by_agent),
@@ -354,10 +349,28 @@ export default function ChatView({
     return result;
   }, [messages]);
 
+  const pendingInitialPrompt = session?.initial_prompt?.trim() ?? '';
+  const showPendingInitialPrompt = useMemo(
+    () =>
+      shouldShowPendingInitialPrompt({
+        session,
+        messages: displayMessages,
+        activeAgent,
+      }),
+    [session, displayMessages, activeAgent]
+  );
+
   const chatDisplayItems = useMemo(
     () => groupChatDisplayMessages(displayMessages),
     [displayMessages]
   );
+
+  const trailingWorkDisplayIndex = useMemo(() => {
+    for (let i = chatDisplayItems.length - 1; i >= 0; i--) {
+      if (chatDisplayItems[i].kind === 'work') return i;
+    }
+    return -1;
+  }, [chatDisplayItems]);
 
   const agentQueue = useMemo(() => {
     if (!activeAgent?.id) return queue;
@@ -621,6 +634,7 @@ export default function ChatView({
       if (composerModel) payload.model = composerModel;
       if (composerModelParams) payload.model_params = composerModelParams;
       if (session.plugins?.length) payload.plugins = session.plugins;
+      if (session.auto_load_skills?.length) payload.auto_load_skills = session.auto_load_skills;
       await loopsService.create({ ...payload, ...schedulePayload(schedule) });
       setInput('');
       persistentState.clear();
@@ -796,7 +810,10 @@ export default function ChatView({
                 </div>
               )}
               {systemPrompt && <SystemPromptEntry content={systemPrompt} />}
-              {chatDisplayItems.map((item) =>
+              {showPendingInitialPrompt && (
+                <PendingInitialPromptMessage text={pendingInitialPrompt} />
+              )}
+              {chatDisplayItems.map((item, displayIndex) =>
                 item.kind === 'work' ? (
                   <ChatWorkSummary
                     key={`work-${item.indices[0]}`}
@@ -813,6 +830,10 @@ export default function ChatView({
                     onSelectAgent={onSelectAgent}
                     tasks={tasks}
                     onSelectTask={onSelectTask}
+                    inProgress={isRunning && displayIndex === trailingWorkDisplayIndex}
+                    awaitingApproval={
+                      isAwaitingApproval && displayIndex === trailingWorkDisplayIndex
+                    }
                   />
                 ) : (
                   <ChatMessage
@@ -884,18 +905,6 @@ export default function ChatView({
                 !isRunning &&
                 session?.pr_status !== 'merged' && (
                   <div className="flex gap-2 flex-wrap py-2">
-                    <ChatQuickActionButton
-                      icon={GitPullRequest}
-                      label="Git sync"
-                      tooltip="Pull latest from the remote and base branch. Fix conflicts if any."
-                      disabled={!canQuickSend}
-                      onClick={() =>
-                        handleQuickSend(
-                          'Please run GitPull to sync with the latest changes from the remote branch. Merge the base branch. If there are any merge conflicts, resolve them.'
-                        )
-                      }
-                      className={CHAT_ACTION_BUTTON_CLASS}
-                    />
                     {isOwner && (
                       <ChatQuickActionButton
                         icon={GitMerge}
@@ -906,36 +915,6 @@ export default function ChatView({
                         className={CHAT_ACTION_BUTTON_CLASS}
                       />
                     )}
-                    <ChatQuickActionButton
-                      icon={CircleCheck}
-                      label="Check CI"
-                      tooltip="Check all PR workflow statuses and fix problems."
-                      disabled={!canQuickSend}
-                      onClick={() =>
-                        handleQuickSend(
-                          'Please check the CI workflow status using PrWorkflows. Fix any failing workflows.'
-                        )
-                      }
-                      className={CHAT_ACTION_BUTTON_CLASS}
-                    />
-                    <ChatQuickActionButton
-                      icon={MessageSquare}
-                      label="Check comments"
-                      tooltip={
-                        isReviewerAgent
-                          ? CHECK_COMMENTS_TOOLTIP_REVIEWER
-                          : CHECK_COMMENTS_TOOLTIP_BUILDER
-                      }
-                      disabled={!canQuickSend}
-                      onClick={() =>
-                        handleQuickSend(
-                          isReviewerAgent
-                            ? CHECK_COMMENTS_PROMPT_REVIEWER
-                            : CHECK_COMMENTS_PROMPT_BUILDER
-                        )
-                      }
-                      className={CHAT_ACTION_BUTTON_CLASS}
-                    />
                     {onViewChange && (
                       <>
                         <ChatQuickActionButton
@@ -967,6 +946,21 @@ export default function ChatView({
                     />
                   </div>
                 )}
+              {!readonly &&
+                showSessionChatFooterExtras &&
+                !isProvisioning &&
+                !isGlobalSession(session) &&
+                !isRunning &&
+                session?.pr_status !== 'merged' && (
+                  <ChatRecipesSection
+                    recipes={chatRecipes}
+                    disabled={!canQuickSend}
+                    onRun={handleQuickSend}
+                  />
+                )}
+              {session && showSessionChatFooterExtras && !isProvisioning && (
+                <ChatSessionPlanLinks sessionId={session.id} />
+              )}
               {session && showSessionChatFooterExtras && !isRunning && !isProvisioning && (
                 <ChatCostSummary usage={sessionUsage} loading={sessionUsageLoading} />
               )}
@@ -1107,7 +1101,7 @@ export default function ChatView({
                     agentConfigOptions={agentConfigOptions}
                     configsLoading={configsLoading}
                     modelsLoading={modelsLoading}
-                    showAutoPushParam
+                    showAutoPushParam={!isGlobalSession(session)}
                     textareaId="chat-input"
                     canSend={canSendDraft}
                     submitLabel={isRunning || isProvisioning ? 'Queue' : 'Send'}

@@ -6,7 +6,7 @@ import { createListBranchesTool } from '../tools/list-branches.js';
 import { createListModelsTool } from '../tools/list-models.js';
 import { createListPresetModelsTool } from '../tools/list-preset-models.js';
 import { createStartSubagentTool } from '../tools/start-subagent.js';
-import { createListSubagentsTool } from '../tools/list-subagents.js';
+import { createListAgentsTool } from '../tools/list-agents.js';
 import { createAwaitSubagentTool } from '../tools/await-subagent.js';
 import { createStopSubagentTool } from '../tools/stop-subagent.js';
 import { createCreateSessionTool } from '../tools/create-session.js';
@@ -93,7 +93,7 @@ export function buildBaseAgentTools(user, app, { callerSession = null, callerAge
     createListModelsTool(ctx),
     createListPresetModelsTool(ctx),
     createStartSubagentTool(ctx),
-    createListSubagentsTool(ctx),
+    createListAgentsTool(ctx),
     createAwaitSubagentTool(ctx),
     createStopSubagentTool(ctx),
     createCreateSessionTool(ctx),
@@ -104,11 +104,6 @@ export function buildBaseAgentTools(user, app, { callerSession = null, callerAge
     ...loopToolsFromContext(ctx),
     ...issueReadToolsFromContext(ctx),
   ];
-}
-
-/** @deprecated Use buildBaseAgentTools */
-export function buildBaguetteAccountToolList(user, app, options) {
-  return buildBaseAgentTools(user, app, options);
 }
 
 export function buildBaguetteSessionMcpTools(

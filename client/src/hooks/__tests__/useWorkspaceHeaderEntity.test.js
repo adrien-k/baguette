@@ -34,15 +34,15 @@ describe('resolveWorkspaceEntity', () => {
     ).toBeNull();
   });
 
-  it('prefers the fetched record when it matches the route', () => {
+  it('merges the list row onto the fetched record when both match the route', () => {
     expect(
       resolveWorkspaceEntity({
         routeId: '1',
         isNewRoute: false,
-        fetched,
-        list,
-      })?.name
-    ).toBe('from-fetch');
+        fetched: { ...fetched, enabled: true },
+        list: [{ id: 1, name: 'from-list', enabled: false }],
+      })
+    ).toMatchObject({ name: 'from-list', enabled: false });
   });
 
   it('falls back to the list row while fetch is in flight or for another id', () => {

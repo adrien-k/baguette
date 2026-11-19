@@ -25,34 +25,32 @@ export function validateLogByteRange({ startByte, endByte } = {}) {
 }
 
 /**
- * True when the range must be applied after a full log download (negative endByte, or both bounds negative).
+ * True when the requested range must be resolved against the full log length
+ * (negative endByte, or a negative startByte together with an explicit endByte).
+ * Every other case maps to a bounded HTTP Range request, so the response body
+ * already matches the requested window and no full-log download is needed.
  *
  * @param {{ startByte?: number, endByte?: number }} [options]
  * @returns {boolean}
  */
 export function rangeNeedsFullLogFetch({ startByte, endByte } = {}) {
-  if (endByte != null && endByte < 0) return true;
-  if (startByte != null && endByte != null && startByte < 0) return true;
-  if (endByte == null && startByte != null) return true;
+  if (endByte != null && endByte < 0) {
+    // Last N bytes through EOF — HTTP suffix range (`bytes=-N`), no full download.
+    if (startByte != null && startByte < 0 && endByte === -1) return false;
+    return true;
+  }
   return false;
 }
 
-function spanFromStartToEof(start, totalBytes) {
-  return totalBytes - start;
-}
-
 /**
- * When endByte is omitted: read max(MAX_LOG_RANGE_BYTES, remaining bytes from start through EOF).
+ * When endByte is omitted: a forward window of at most MAX_LOG_RANGE_BYTES bytes.
  *
  * @param {number} start
  * @param {number} lastIndex
- * @param {number} totalBytes
  * @returns {number} inclusive end index
  */
-function defaultEndFromStart(start, lastIndex, totalBytes) {
-  const remaining = spanFromStartToEof(start, totalBytes);
-  const span = Math.max(MAX_LOG_RANGE_BYTES, remaining);
-  return Math.min(lastIndex, start + span - 1);
+function defaultEndFromStart(start, lastIndex) {
+  return Math.min(lastIndex, start + MAX_LOG_RANGE_BYTES - 1);
 }
 
 function capExplicitRangeEnd(start, end, lastIndex) {
@@ -93,7 +91,7 @@ export function resolveByteRange(totalBytes, { startByte, endByte } = {}) {
     end = Math.max(0, Math.min(toAbsoluteByteIndex(endByte, totalBytes), lastIndex));
     end = capExplicitRangeEnd(start, end, lastIndex);
   } else if (startByte != null) {
-    end = defaultEndFromStart(start, lastIndex, totalBytes);
+    end = defaultEndFromStart(start, lastIndex);
   } else {
     end = lastIndex;
   }
@@ -137,6 +135,11 @@ export function sliceByteRange(text, options = {}) {
  * @returns {string}
  */
 export function buildLogRangeHeader({ startByte, endByte, totalBytes } = {}) {
+  if (startByte != null && startByte < 0 && endByte === -1) {
+    const suffix = Math.min(MAX_LOG_RANGE_BYTES, -startByte);
+    return `bytes=-${suffix}`;
+  }
+
   if (rangeNeedsFullLogFetch({ startByte, endByte })) {
     return 'bytes=0-';
   }
@@ -150,18 +153,19 @@ export function buildLogRangeHeader({ startByte, endByte, totalBytes } = {}) {
     return `bytes=-${DEFAULT_LOG_BYTES}`;
   }
 
-  if (startByte != null && endByte == null) {
-    if (startByte < 0) {
-      const suffix = Math.min(MAX_LOG_RANGE_BYTES, -startByte);
-      return `bytes=-${suffix}`;
-    }
-    return `bytes=${startByte}-${startByte + MAX_LOG_RANGE_BYTES - 1}`;
+  if (startByte != null && startByte < 0) {
+    const suffix = Math.min(MAX_LOG_RANGE_BYTES, -startByte);
+    return `bytes=-${suffix}`;
   }
 
-  if (startByte != null && endByte != null && startByte >= 0 && endByte >= 0) {
-    const cappedEnd = Math.min(endByte, startByte + MAX_LOG_RANGE_BYTES - 1);
-    return `bytes=${startByte}-${cappedEnd}`;
+  if (startByte == null) {
+    const cappedEnd = Math.min(endByte, MAX_LOG_RANGE_BYTES - 1);
+    return `bytes=0-${cappedEnd}`;
   }
 
-  return 'bytes=0-';
+  const cappedEnd = Math.min(
+    endByte ?? Number.MAX_SAFE_INTEGER,
+    startByte + MAX_LOG_RANGE_BYTES - 1
+  );
+  return `bytes=${startByte}-${cappedEnd}`;
 }

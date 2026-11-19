@@ -4,6 +4,8 @@ import { dbRowFromPayload } from '../../shared/message-db-row.js';
 import { agentEventLogPath, appendAgentEvent } from './agent-event-log.js';
 import type { SessionMessagePayload, SessionMessageRow } from '../../shared/session-messages.ts';
 import { getSdkPlugin } from '../agent-sdks/registry.js';
+import { spillOversizedRawToolResult } from './mcp/lib/spill-oversized-results.js';
+import { resolveDataDirRelativePath } from '../config.js';
 
 /** @param app Feathers application */
 export type WriterFactoryApp = {
@@ -84,6 +86,10 @@ export function createMessageStreamWriter(app: WriterFactoryApp, opts: MessageWr
   const builders =
     plugin?.toolCallBuilders != null ? plugin.toolCallBuilders() : EMPTY_TOOL_CALL_BUILDERS;
 
+  const sessionPath = opts.sessionPath
+    ? resolveDataDirRelativePath(opts.sessionPath) || opts.sessionPath
+    : null;
+
   return new MessageStreamWriter({
     sessionId: opts.sessionId,
     turnId: opts.turnId,
@@ -98,6 +104,10 @@ export function createMessageStreamWriter(app: WriterFactoryApp, opts: MessageWr
       await appendAgentEvent(logPath, event);
     },
     builders,
+    guardToolRawResult: sessionPath
+      ? async (toolName, rawResult) =>
+          spillOversizedRawToolResult(rawResult, { sessionPath, toolName })
+      : undefined,
   });
 }
 

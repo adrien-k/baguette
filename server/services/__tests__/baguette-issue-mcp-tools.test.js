@@ -438,6 +438,36 @@ describe('session agent issue MCP tools', () => {
     expect(cleared.issue.selected_option_id).toBeNull();
   });
 
+  it('builder UpdateIssue records needs_decision choice via selected_option_id', async () => {
+    const tools = buildSessionAgentIssueMcpTools(session, app);
+    const created = parseOk(
+      await tools
+        .find((t) => t.name === 'CreateIssue')
+        .handler({
+          severity: 'high',
+          title: 'Pick one',
+          options: [
+            { id: 'a', title: 'Approach A', description: 'Smaller diff' },
+            { id: 'b', title: 'Approach B', description: 'Cleaner API' },
+          ],
+        })
+    );
+    expect(created.issue.status).toBe('needs_decision');
+
+    const chosen = parseOk(
+      await tools
+        .find((t) => t.name === 'UpdateIssue')
+        .handler({
+          session_id: session.id,
+          ref: created.issue.ref,
+          selected_option_id: 'b',
+        })
+    );
+    expect(chosen.ok).toBe(true);
+    expect(chosen.issue.status).toBe('opened');
+    expect(chosen.issue.selected_option_id).toBe('b');
+  });
+
   it('snapshots the calling builder on CreateIssue', async () => {
     const tools = buildBuilderAgentTools(session, app, {
       agent: {

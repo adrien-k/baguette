@@ -28,6 +28,7 @@ import { toolListToClaudeMcpServer } from './adapt-tools.js';
 import { createMessageChannel } from '../../services/message-channel.js';
 import { buildSystemPromptAppend } from '../../services/session-prompt.js';
 import { resolveDataDirRelativePath } from '../../config.js';
+import { agentWorktreeCwd } from '../../services/subagent-worktree.js';
 import { SDK_QUERY_CLOSED_MESSAGE } from './claude-agent-sdk-constants.js';
 import { normalizeUserMessageForAgentSdk } from '../../../shared/user-message-content.js';
 import { isBaguetteUserMessage, requireTurnModelFromRow } from '../../../shared/turn-model.js';
@@ -43,6 +44,7 @@ import {
   rejectTurnMismatch,
 } from '../../services/agent-message-dispatch.js';
 import { createMessageStreamWriter } from '../../services/message-writer-factory.ts';
+import { prepareAgentTurnCompaction } from '../../services/agent-turn-compaction.js';
 import { sessionMessageIdentity } from '../../services/feathers/message-create-fields.js';
 import { claudeResultErrorText } from './mapping.ts';
 import { processClaudeQueryStream, type ClaudeStreamTurnOutcome } from './sdk-turn.ts';
@@ -249,7 +251,10 @@ export class ClaudeAgentService {
     if (!claudeEnv) throw new Error('Agent configuration is required to run this turn');
     const resolvedModel = model;
     const cwd =
-      resolveDataDirRelativePath(sessionRow.session_path) || sessionRow.absolute_session_path || '';
+      agentWorktreeCwd(sessionRow, agent) ||
+      sessionRow.absolute_session_path ||
+      resolveDataDirRelativePath(sessionRow.session_path) ||
+      '';
     const resolvedMcp =
       mcpServer ??
       (getSdkPlugin(CLAUDE_AGENT_SDK_KEY)?.adaptTools ?? toolListToClaudeMcpServer)(
@@ -317,6 +322,7 @@ export class ClaudeAgentService {
     const systemPrompt = await buildSystemPromptAppend(sessionRow, {
       agent,
       db: this.app.get('db') as never,
+      app: this.app,
       agentSdk: CLAUDE_AGENT_SDK_KEY,
     });
     return this.buildQueryOptions(sessionRow, {
@@ -492,6 +498,7 @@ export class ClaudeAgentService {
     });
     const { model, modelParams } = turnModel;
     const turnAgentConfigId = requireAgentConfigId(row.agent_config_id);
+    await prepareAgentTurnCompaction(this.app, session);
     const writer =
       row.turn_id != null
         ? createMessageStreamWriter(this.app, {

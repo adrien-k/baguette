@@ -1,11 +1,20 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { createAppQueryClient } from '../queryClient.js';
+import { resetReconnectResyncForTests } from '../reconnectResync.js';
 
 function feathersError(code) {
   return { code, name: 'BadRequest', message: 'bad request' };
 }
 
 describe('createAppQueryClient', () => {
+  beforeEach(() => {
+    resetReconnectResyncForTests();
+  });
+
+  afterEach(() => {
+    resetReconnectResyncForTests();
+  });
+
   it('does not retry 4xx feathers errors', () => {
     const client = createAppQueryClient();
     const { retry } = client.getDefaultOptions().queries;
@@ -29,25 +38,12 @@ describe('createAppQueryClient', () => {
     expect(retry(3, new Error('network down'))).toBe(false);
   });
 
-  it('refetches on window focus and reconnect by default', () => {
+  it('does not refetch on window focus or browser reconnect', () => {
     const client = createAppQueryClient();
     const { refetchOnWindowFocus, refetchOnReconnect, staleTime } =
       client.getDefaultOptions().queries;
-    expect(refetchOnWindowFocus).toBe(true);
-    expect(refetchOnReconnect).toBe(true);
+    expect(refetchOnWindowFocus).toBe(false);
+    expect(refetchOnReconnect).toBe(false);
     expect(staleTime).toBeGreaterThan(0);
-  });
-
-  it('refetchActiveQueriesOnSseReconnect refetches only stale active queries', async () => {
-    const client = createAppQueryClient();
-    const refetched = [];
-    const original = client.refetchQueries.bind(client);
-    client.refetchQueries = (filters, options) => {
-      refetched.push(filters);
-      return original(filters, options);
-    };
-    const { refetchActiveQueriesOnSseReconnect } = await import('../queryClient.js');
-    refetchActiveQueriesOnSseReconnect(client);
-    expect(refetched).toEqual([{ type: 'active', stale: true }]);
   });
 });

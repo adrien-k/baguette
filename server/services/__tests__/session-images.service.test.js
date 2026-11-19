@@ -3,7 +3,7 @@ import { feathers } from 'feathers';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { PUBLIC_API_URL } from '../../config.js';
+import { PUBLIC_HOST } from '../../config.js';
 import { createTestDb, insertTestSession } from '../../test-utils/db.js';
 import { registerSessionsService } from '../feathers/sessions.service.js';
 import { registerSessionImagesService } from '../feathers/session-images.service.js';
@@ -234,7 +234,7 @@ describe('session-images resolveForPush', () => {
 
     expect(resolved['img-a']).toEqual({
       // publicSessionImageUrl strips a trailing slash from the configured origin.
-      url: `${PUBLIC_API_URL.replace(/\/$/, '')}/api/images/img-a.png`,
+      url: `${PUBLIC_HOST.replace(/\/$/, '')}/api/images/img-a.png`,
       alt_text: 'shot',
     });
     expect(resolved['img-b']).toEqual({

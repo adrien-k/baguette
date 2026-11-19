@@ -16,13 +16,19 @@ export function createGitPushTool(ctx) {
   return {
     name: 'GitPush',
     description:
-      'Push the session work to origin. NOT for regular turn work: Baguette pushes and syncs the PR automatically after each turn — calling this for a routine push of the session branch only duplicates that. Anything beyond a plain session-branch push with auto-push on opens the Push approval modal for the user to confirm: a different target branch (e.g. branch: "development" to fast-forward a shared branch), a force option ("lease" = --force-with-lease, "force" = --force overwrites remote history — only when the user explicitly asks to force), or auto-push being disabled (the user is asked whether to push once anyway). Always pass reason with a short explanation of why the push is needed; it is shown to the user in the approval. While the approval is open, do not retry and do not push via shell git — the push runs once the user confirms.',
+      'Push the session work to origin. NOT for regular turn work: Baguette pushes and syncs the PR automatically after each turn — calling this for a plain session-branch push with auto-push on only duplicates that. A plain session-branch push with auto-push on goes through immediately (no Push modal). Auto-push off, a different target branch, source_branch, or force opens the Push approval modal for the user to confirm. Always pass reason with a short explanation of why the push is needed; it is shown to the user in the approval. While the approval is open, do not retry and do not push via shell git — the push runs once the user confirms.',
     schema: {
       branch: z
         .string()
         .optional()
         .describe(
           'Target branch on origin (defaults to the current session branch). A different branch requires user approval via the Push modal.'
+        ),
+      source_branch: z
+        .string()
+        .optional()
+        .describe(
+          'Optional local git ref to push from (branch name, tag, or commit). When set, the push refspec is source_branch:target and user approval is always required.'
         ),
       force: z
         .enum(['lease', 'force'])
@@ -37,7 +43,7 @@ export function createGitPushTool(ctx) {
           'Short explanation of why this push is needed, shown to the user in the approval (e.g. "fast-forward development with the finished feature work").'
         ),
     },
-    handler: async ({ branch, force, reason } = {}) => {
+    handler: async ({ branch, source_branch: sourceBranch, force, reason } = {}) => {
       const localErr = await requireRemoteRepo();
       if (localErr) return localErr;
 
@@ -46,12 +52,13 @@ export function createGitPushTool(ctx) {
       const isForcePush = force === 'lease' || force === 'force';
       const isNonSessionBranch =
         branch && branch !== sessionBranch && branch !== freshSession.local_branch;
+      const cleanedSourceBranch =
+        typeof sourceBranch === 'string' && sourceBranch.trim() ? sourceBranch.trim() : null;
+      const hasSourceBranch = !!cleanedSourceBranch;
       const autoPushOff = !freshSession.auto_push;
       const cleanedReason = typeof reason === 'string' && reason.trim() ? reason.trim() : null;
 
-      if (!isForcePush && !isNonSessionBranch && !autoPushOff) {
-        // Plain session-branch push with auto-push on — identical to what
-        // Baguette does automatically after the turn, so no approval is needed.
+      if (!isForcePush && !isNonSessionBranch && !hasSourceBranch && !autoPushOff) {
         let result;
         try {
           result = await gitPush(absoluteSessionPath, await getGitAuth(), {
@@ -71,13 +78,13 @@ export function createGitPushTool(ctx) {
         return ok(result);
       }
 
-      // Agent-initiated approval: never touches PRs (no create, no sync) —
-      // PR handling is Baguette's automatic post-turn behavior.
       const requestId = randomUUID();
+      const targetBranch = branch || sessionBranch;
       app.service('sessions').emit('push:request', {
         sessionId: session.id,
         request_id: requestId,
-        branch: branch || sessionBranch,
+        branch: targetBranch,
+        source_branch: cleanedSourceBranch,
         forceMode: force || null,
         reason: cleanedReason,
         autoPushOff,
@@ -89,7 +96,8 @@ export function createGitPushTool(ctx) {
         approval_requested: true,
         request_id: requestId,
         local_branch: sessionBranch || null,
-        target_branch: branch || sessionBranch || null,
+        source_branch: cleanedSourceBranch,
+        target_branch: targetBranch || null,
         force: force || null,
         reason: cleanedReason,
         auto_push_off: autoPushOff,

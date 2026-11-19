@@ -19,6 +19,7 @@ import { resolveDataDirRelativePath } from '../../config.js';
 import { buildBaguetteToolList, buildReviewerAgentTools } from '../../services/mcp/server.js';
 import { loadConfiguredSlackApps } from '../../services/mcp/lib/slack.js';
 import { toolListToPiCustomTools } from './adapt-tools.js';
+import { createSpillOversizedToolResultsExtension } from './extensions/spill-oversized-tool-results.ts';
 import { buildSystemPromptAppend } from '../../services/session-prompt.js';
 import { processPiSessionStream, type PiTurnUsage } from './sdk-turn.ts';
 import { piTurnResultOps } from './mapping.ts';
@@ -39,6 +40,11 @@ import {
   rejectTurnMismatch,
 } from '../../services/agent-message-dispatch.js';
 import { createMessageStreamWriter } from '../../services/message-writer-factory.ts';
+import {
+  prepareAgentTurnCompaction,
+  registerBaguetteToolMessageCompactionHook,
+  unregisterBaguetteToolMessageCompactionHook,
+} from '../../services/agent-turn-compaction.js';
 import { sessionMessageIdentity } from '../../services/feathers/message-create-fields.js';
 import type { MessageStreamWriter } from '../../../shared/message-stream-writer.ts';
 import type { SystemMessagePayload } from '../../../shared/session-messages.ts';
@@ -147,7 +153,7 @@ export class PiAgentService {
         ...session,
         absolute_session_path: absoluteCwd,
       },
-      { agent, db: this.app.get('db') as never, agentSdk: PI_AGENT_SDK_KEY }
+      { agent, db: this.app.get('db') as never, app: this.app, agentSdk: PI_AGENT_SDK_KEY }
     );
     return systemPrompt ? [systemPrompt] : [];
   }
@@ -159,8 +165,12 @@ export class PiAgentService {
     if (sessionsDir) await mkdir(sessionsDir, { recursive: true });
   }
 
-  _openSessionManager(session: AgentSessionRow, storedPiSessionId?: string | null): SessionManager {
-    const cwd = piWorktreeCwd(session);
+  _openSessionManager(
+    session: AgentSessionRow,
+    storedPiSessionId?: string | null,
+    agent: AgentRow | null = null
+  ): SessionManager {
+    const cwd = piWorktreeCwd(session, agent);
     const sessionsDir = piSessionsDir(session) ?? undefined;
     if (storedPiSessionId && sessionsDir) {
       const sessionFile = SessionManager.findById(cwd, storedPiSessionId, sessionsDir);
@@ -194,7 +204,7 @@ export class PiAgentService {
     } = {}
   ): Promise<PiBuildAgentOptionsResult> {
     await this._ensurePiDirs(session);
-    const cwd = piWorktreeCwd(session);
+    const cwd = piWorktreeCwd(session, agent);
     const agentDir = piAgentDir(session) ?? undefined;
     const configId = requireAgentConfigId(agentConfigId);
     const agentConfig = await this.loadAgentConfig(session.user_id, configId);
@@ -223,7 +233,10 @@ export class PiAgentService {
       // MCP" and examples/sdk/14-codemode-mcp.ts). The extension's own default
       // loader reads only the global pi agent dir, so it must point at this
       // session's mcp.json (written above from the enabled user MCP servers).
-      extensionFactories: [createMcpExtension({ loadConfig: () => readPiUserMcpConfig(agentDir) })],
+      extensionFactories: [
+        createMcpExtension({ loadConfig: () => readPiUserMcpConfig(agentDir) }),
+        createSpillOversizedToolResultsExtension(session.id),
+      ],
     });
     await resourceLoader.reload();
     const resolvedTools =
@@ -234,7 +247,7 @@ export class PiAgentService {
           agent,
         })
       );
-    const sessionManager = this._openSessionManager(session, storedPiSessionId);
+    const sessionManager = this._openSessionManager(session, storedPiSessionId, agent);
     const options: PiBuildAgentOptionsResult = {
       cwd,
       agentDir,
@@ -536,6 +549,10 @@ export class PiAgentService {
         requiresModelParamsOnTurn: getSdkPlugin('pi')?.requiresModelParamsOnTurn === true,
       });
       const turnAgentConfigId = requireAgentConfigId(row.agent_config_id);
+      await prepareAgentTurnCompaction(this.app, session);
+      registerBaguetteToolMessageCompactionHook(sessionId, () =>
+        prepareAgentTurnCompaction(this.app, session)
+      );
       writer =
         turnId != null
           ? createMessageStreamWriter(this.app, {
@@ -680,6 +697,7 @@ export class PiAgentService {
         turnFinishedOk = true;
       }
     } finally {
+      unregisterBaguetteToolMessageCompactionHook(sessionId);
       await clearAgentActiveTurnId(this.app, agent, userId).catch(() => {});
       this._activeSessions.delete(activeKey);
     }

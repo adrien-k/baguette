@@ -75,4 +75,15 @@ describe('gitCommitsToPush / gitCommitsNotOnAnyRemote', () => {
       await gitCommitsToPush(workPath, UNKNOWN_TARGET, { missingOriginRefMeansUnpushed: true })
     ).toBe(1);
   });
+
+  it('counts commits on localRef when HEAD is already on the remote', async () => {
+    await git(workPath, 'checkout', '-b', 'side-source');
+    await fs.promises.writeFile(path.join(workPath, 'side.txt'), 'side\n');
+    await git(workPath, 'add', '.');
+    await git(workPath, 'commit', '-m', 'side branch commit');
+    await git(workPath, 'checkout', SESSION_BRANCH);
+
+    expect(await gitCommitsToPush(workPath, SESSION_BRANCH)).toBe(0);
+    expect(await gitCommitsToPush(workPath, SESSION_BRANCH, { localRef: 'side-source' })).toBe(1);
+  });
 });

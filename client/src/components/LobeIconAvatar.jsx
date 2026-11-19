@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Bot } from 'lucide-react';
-import { loadLobeIconModule } from '../lib/lobeIconLoaders.js';
+import { loadLobeIconUrl } from '../lib/lobeIconLoaders.js';
 
 function parseSize(className, sizeProp) {
   if (typeof sizeProp === 'number' && sizeProp > 0) return sizeProp;
@@ -11,21 +11,21 @@ function parseSize(className, sizeProp) {
 
 /** Renders a Lobe brand avatar for a curated icon id. */
 export default function LobeIconAvatar({ iconId, size, className = '' }) {
-  const [Icon, setIcon] = useState(null);
+  const [src, setSrc] = useState(null);
   const pixelSize = parseSize(className, size);
 
   useEffect(() => {
     let cancelled = false;
-    setIcon(null);
-    loadLobeIconModule(iconId).then((component) => {
-      if (!cancelled) setIcon(component);
+    setSrc(null);
+    loadLobeIconUrl(iconId).then((url) => {
+      if (!cancelled) setSrc(url);
     });
     return () => {
       cancelled = true;
     };
   }, [iconId]);
 
-  if (!Icon?.Avatar) {
+  if (!src) {
     return (
       <Bot
         className={className || 'w-3.5 h-3.5 shrink-0'}
@@ -35,5 +35,14 @@ export default function LobeIconAvatar({ iconId, size, className = '' }) {
     );
   }
 
-  return <Icon.Avatar size={pixelSize} className={className} />;
+  return (
+    <img
+      src={src}
+      alt=""
+      className={`${className} rounded-full object-cover`}
+      width={pixelSize}
+      height={pixelSize}
+      aria-hidden
+    />
+  );
 }

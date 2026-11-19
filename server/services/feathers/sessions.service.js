@@ -9,7 +9,9 @@ import {
   loadBaguetteConfig,
   readBaguetteConfigRaw,
   getAvailableCommands,
+  resolveSessionChatRecipes,
   getScriptBlock,
+  resolveConfigSessionBlock,
   BaguetteConfigError,
   resolveServicesConfig,
 } from '../baguette-config.js';
@@ -43,6 +45,7 @@ import {
 } from '../github.js';
 import { trimSessionMessagesForArchive } from '../session-archive.js';
 import { persistGitPushApprovalOutcome } from '../git-push-approval-persistence.js';
+import * as sessionPushWorktree from '../session-push-worktree.js';
 import { loadSessionFooterUsageLines } from '../pr-footer-usage.js';
 import logger from '../../logger.js';
 import { requireUser, scopeByUser } from './hooks.js';
@@ -78,6 +81,7 @@ import {
   interpolateSessionImagePlaceholders,
 } from '../../../shared/session-images.js';
 import { stringifyModelParamsForStorage } from '../../../shared/agent-session-defaults.js';
+import { teardownSubagentWorktreesForSessionArchive } from '../subagent-worktree.js';
 import {
   computeSessionGitStatus,
   sessionNeedsPrMetadataSync,
@@ -102,7 +106,6 @@ import {
   getSessionPreviewUrl,
   previewTaskLookupKey,
   resolvePreviewServiceConfig,
-  sessionHasPreviewConfig,
 } from '../preview-services.js';
 import { isPortListening } from '../port-utils.js';
 import path from 'path';
@@ -115,6 +118,11 @@ import {
 import { getGithubToken } from '../agent-settings.js';
 import { resolveSessionPrStatus, storedPrStatusSkipsGithubRefresh } from '../session-pr-status.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
+import {
+  applyUserDefaultAutoLoadSkillsOnCreate,
+  parseAutoLoadSkillLabels,
+  serializeAutoLoadSkillLabels,
+} from '../skill-resolution.js';
 import { getAgentById } from '../agents-db.js';
 import {
   usageLimitFieldsError,
@@ -490,7 +498,7 @@ export class SessionsService extends KnexService {
       '',
       'Other agents in this session were also interrupted by the restart:',
       ...lines,
-      'Re-synchronize with ListSubagents / AwaitSubagent as needed, and do not redo work a resumed subagent is already doing.',
+      'Re-synchronize with ListAgents / AwaitSubagent as needed, and do not redo work a resumed subagent is already doing.',
     ].join('\n');
   }
 
@@ -716,7 +724,7 @@ export class SessionsService extends KnexService {
   async _runCleanupAndFinalize(session) {
     if (session.session_path) {
       const baguetteConfig = await loadBaguetteConfig(session.session_path);
-      const cleanupCommand = getScriptBlock(baguetteConfig?.session?.cleanup);
+      const cleanupCommand = getScriptBlock(resolveConfigSessionBlock(baguetteConfig).cleanup);
       if (cleanupCommand) {
         try {
           await this.app.service('tasks').create(
@@ -753,6 +761,7 @@ export class SessionsService extends KnexService {
     const repo = session?.repo_id ? await db('repos').where({ id: session.repo_id }).first() : null;
     await trimSessionMessagesForArchive(db, sessionId);
     if (!isGlobalSession(session)) {
+      await teardownSubagentWorktreesForSessionArchive(this.app, sessionId, session, repo);
       await removeWorktree(session, repo, { keepLocalBranch: true });
     }
     this.app.service('tasks').deleteSessionTasks(sessionId);
@@ -883,6 +892,16 @@ export class SessionsService extends KnexService {
       if (err instanceof BaguetteConfigError) throw new BadRequest(err.message);
       throw err;
     }
+  }
+
+  async recipes(data, params) {
+    const session = params.resolvedSession;
+    const agentType = data?.agent_type;
+    if (!session?.session_path || isGlobalSession(session)) {
+      return resolveSessionChatRecipes(null, { agent_type: agentType });
+    }
+    const baguetteConfig = await loadBaguetteConfig(session.session_path);
+    return resolveSessionChatRecipes(baguetteConfig, { agent_type: agentType });
   }
 
   async baguetteYaml(_data, params) {
@@ -1187,8 +1206,12 @@ export class SessionsService extends KnexService {
       const user = await this.app.service('users').get(session.user_id, {});
       const auth = await sessionGitAuth(this.app, session, user);
       const branch = data.branch || session.remote_branch || session.local_branch;
+      const sourceBranch =
+        typeof data?.source_branch === 'string' && data.source_branch.trim()
+          ? data.source_branch.trim()
+          : null;
       if (branch) await gitFetch(cwd, auth, branch).catch(() => {});
-      return await gitLocalAndRemoteSha(cwd, branch || null);
+      return await gitLocalAndRemoteSha(cwd, branch || null, sourceBranch);
     } catch (err) {
       return { localSha: null, remoteSha: null, error: err.message };
     }
@@ -1313,9 +1336,18 @@ export class SessionsService extends KnexService {
       // Only governs creating a *new* PR; an existing PR is synced unless syncPr is false.
       const createPr = data?.createPr !== false;
       const syncPr = data?.syncPr !== false;
+      const sourceBranch =
+        typeof data?.source_branch === 'string' && data.source_branch.trim()
+          ? data.source_branch.trim()
+          : null;
       let commitsToPush = 0;
       if (!forceGit) {
-        if (pushToAlternateBranch && branch) {
+        if (sourceBranch && branch) {
+          commitsToPush = await gitCommitsToPush(cwd, branch, {
+            missingOriginRefMeansUnpushed: true,
+            localRef: sourceBranch,
+          });
+        } else if (pushToAlternateBranch && branch) {
           commitsToPush = await gitCommitsToPush(cwd, branch, {
             missingOriginRefMeansUnpushed: true,
           });
@@ -1328,10 +1360,14 @@ export class SessionsService extends KnexService {
       const isSessionBranchPush = session.remote_branch
         ? branch === session.remote_branch
         : branch === session.local_branch;
+      if (sourceBranch && isSessionBranchPush) {
+        await sessionPushWorktree.fastForwardWorktreeToSourceBranch(cwd, sourceBranch);
+      }
       if (forceGit || commitsToPush > 0) {
         try {
           const result = await gitPush(cwd, auth, {
             branch,
+            ...(sourceBranch ? { sourceBranch } : {}),
             force: forceMode === 'lease',
             forceOverwrite: forceMode === 'force',
           });
@@ -1986,7 +2022,7 @@ export class SessionsService extends KnexService {
   /** Push and sync the PR after a builder turn when auto-push is enabled (usage already recorded). */
   async maybeAutoPushAfterTurn(session, agent) {
     if (!session?.auto_push || isGlobalSession(session) || !session.session_path) return;
-    if (agent && (!agent.is_primary || agent.agent_type === 'subagent')) return;
+    if (agent && agent.agent_type !== 'builder') return;
     if (await sessionRepoIsLocal(this.app, session)) return;
     const user = await this.app.service('users').get(session.user_id, {});
     const auth = await sessionGitAuth(this.app, session, user);
@@ -2642,14 +2678,15 @@ async function withHasWebserver(session, { forExternalClient = false } = {}) {
   const absoluteSessionPath = resolvedPath
     ? await fs.realpath(resolvedPath).catch(() => resolvedPath)
     : resolvedPath;
-  const config = session.session_path ? await loadBaguetteConfig(session.session_path) : null;
-  const hasPreview = sessionHasPreviewConfig(config);
+  const loadedConfig = session.session_path ? await loadBaguetteConfig(session.session_path) : null;
+  const config = loadedConfig?.error ? null : loadedConfig;
   const previewServices =
-    hasPreview && session.short_id ? getPreviewServiceDefinitions(config, session.short_id) : null;
+    config && session.short_id ? getPreviewServiceDefinitions(config, session.short_id) : null;
+  const hasPreview = (previewServices?.length ?? 0) > 0;
   const shaped = {
     ...session,
     absolute_session_path: absoluteSessionPath ?? null,
-    preview_url: hasPreview && getSessionPreviewUrl(session, config),
+    preview_url: hasPreview ? getSessionPreviewUrl(session, config) : null,
     preview_services: previewServices,
     is_preview_public: hasPreview ? !!session.is_preview_public : false,
     is_preview_ip_public: hasPreview ? !!session.is_preview_ip_public : false,
@@ -2657,6 +2694,7 @@ async function withHasWebserver(session, { forExternalClient = false } = {}) {
     is_global: Boolean(session.is_global),
     mcp_servers: parseMcpServersMap(session.mcp_servers),
     is_shared: Boolean(session.is_shared),
+    auto_load_skills: parseAutoLoadSkillLabels(session.auto_load_skills),
     codeserver_url:
       absoluteSessionPath && !isGlobalSession(session)
         ? getCodeserverUrl(absoluteSessionPath)
@@ -2737,6 +2775,23 @@ function serializePlugins(context) {
   } else if (plugins == null) {
     delete context.data.plugins;
   }
+  return context;
+}
+
+function serializeAutoLoadSkills(context) {
+  const { auto_load_skills: labels } = context.data;
+  if (labels === null) {
+    context.data.auto_load_skills = null;
+    return context;
+  }
+  if (labels === undefined) {
+    delete context.data.auto_load_skills;
+    return context;
+  }
+  if (!Array.isArray(labels)) {
+    throw new BadRequest('auto_load_skills must be an array of skill labels');
+  }
+  context.data.auto_load_skills = serializeAutoLoadSkillLabels(labels);
   return context;
 }
 
@@ -2976,6 +3031,7 @@ export function registerSessionsService(app, path = 'sessions') {
       'remove',
       'stop',
       'commands',
+      'recipes',
       'baguetteYaml',
       'diff',
       'changedFiles',
@@ -3070,6 +3126,8 @@ const sessionsHooks = {
       validateSessionCreate,
       assertAgentConfigOnCreate,
       serializePlugins,
+      applyUserDefaultAutoLoadSkillsOnCreate,
+      serializeAutoLoadSkills,
       snapshotMcpServers,
       extractInitialFiles,
       normalizeModelFields,
@@ -3083,11 +3141,13 @@ const sessionsHooks = {
       clampAutoPushForLocalRepo,
       touchPrMetadataUpdatedAtOnPatch,
       redirectAgentFieldsOnSessionPatch,
+      serializeAutoLoadSkills,
       snapshotMcpServers,
       normalizeModelFields,
     ],
     stop: [resolveSessionFromData],
     commands: [resolveSessionFromData],
+    recipes: [resolveSessionFromData],
     baguetteYaml: [resolveSessionFromData],
     diff: [resolveSessionFromData],
     changedFiles: [resolveSessionFromData],

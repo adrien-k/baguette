@@ -121,7 +121,7 @@ export default function Session() {
     isNewLoopRoute: isLoopsView && isNewLoopRoute,
     loops,
   });
-  const loopTabActive = isNewLoopRoute ? 'edit' : loopWorkspace.activeTab;
+  const loopTabActive = isNewLoopRoute ? 'edit' : loopWorkspace.activeTab || 'overview';
   const {
     session: sessionFromHook,
     loading: sessionLoading,
@@ -424,6 +424,7 @@ export default function Session() {
     const onPushRequest = ({
       sessionId: sid,
       branch,
+      source_branch: sourceBranch,
       forceMode,
       reason,
       autoPushOff,
@@ -431,7 +432,15 @@ export default function Session() {
       request_id: requestId,
     }) => {
       if (sid !== sessionId) return;
-      setPushRequest({ branch, forceMode, reason, autoPushOff, agentRequest, requestId });
+      setPushRequest({
+        branch,
+        sourceBranch,
+        forceMode,
+        reason,
+        autoPushOff,
+        agentRequest,
+        requestId,
+      });
       setShowPushModal(true);
     };
     sessionsService.on('push:request', onPushRequest);
@@ -706,7 +715,13 @@ export default function Session() {
     setShowPushModal(true);
   };
 
-  const handlePushConfirmed = async ({ forceMode, branch, createPr, syncPr } = {}) => {
+  const handlePushConfirmed = async ({
+    forceMode,
+    branch,
+    sourceBranch,
+    createPr,
+    syncPr,
+  } = {}) => {
     if (!session?.id || pushing) return;
     const approvalRequestId = pushRequest?.requestId ?? null;
     setShowPushModal(false);
@@ -717,6 +732,7 @@ export default function Session() {
         id: session.id,
         forceMode,
         branch,
+        ...(sourceBranch ? { source_branch: sourceBranch } : {}),
         createPr,
         ...(syncPr === false ? { syncPr: false } : {}),
         ...(approvalRequestId ? { request_id: approvalRequestId } : {}),
@@ -882,6 +898,7 @@ export default function Session() {
     usageLimitAction,
     usageLimit,
     plugins,
+    autoLoadSkills,
     mcpServers,
     agentConfigId,
     isShared,
@@ -909,6 +926,7 @@ export default function Session() {
     if (modelParams) params.model_params = modelParams;
     if (!isGlobal && branchName) params.branch_name = branchName;
     if (plugins?.length) params.plugins = plugins;
+    if (autoLoadSkills?.length) params.auto_load_skills = autoLoadSkills;
     if (mcpServers && typeof mcpServers === 'object') params.mcp_servers = mcpServers;
     if (isShared) params.is_shared = true;
     if (files?.length) {
@@ -1214,8 +1232,8 @@ export default function Session() {
           onDeleteLoop={loopWorkspace.handleDeleteLoop}
           sidebarSessions={sidebarSessions}
           routeSessionId={routeSessionId}
-          // Highlight the open agent row only while an agent chat is actually
-          // open; other views (review, diff) highlight the session row itself.
+          // Session title is the filled highlight. Agent chat outlines the open agent
+          // in that same color (review/diff: session fill only).
           routeAgentId={chatViewOpen ? (activeAgent?.id ?? null) : null}
           autoExpandId={lastOpenedSessionId}
           isMobileList={!isMdUp}
@@ -1268,10 +1286,13 @@ export default function Session() {
                 builderAllowRepoChoice={loopWorkspace.builderAllowRepoChoice}
                 onCreateLoop={loopWorkspace.handleCreateLoop}
                 onUpdateLoop={loopWorkspace.handleUpdateLoop}
+                onCancelLoopEdit={loopWorkspace.handleCancelLoopEdit}
                 onDeleteLoop={() => loopWorkspace.handleDeleteLoop()}
                 runSessions={loopWorkspace.runSessions}
                 runsLoading={loopWorkspace.runsLoading}
                 runsLoaded={loopWorkspace.runsLoaded}
+                onRunLoop={loopWorkspace.handleRunLoop}
+                runningLoop={loopWorkspace.runningLoop}
               />
             )}
             {!isLoopsView && isNewSessionRoute && (
@@ -1397,7 +1418,12 @@ export default function Session() {
               !awaitingSession &&
               session &&
               activeView === 'plan' && (
-                <PlanView key={session.id} session={session} readonly={isReadonly} />
+                <PlanView
+                  key={session.id}
+                  session={session}
+                  readonly={isReadonly}
+                  runPlanAgentId={primaryBuilder?.id ?? null}
+                />
               )}
             {!isLoopsView &&
               !isNewSessionRoute &&

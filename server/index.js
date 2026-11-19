@@ -33,6 +33,7 @@ import { DevserverHandler } from './services/devserver-handler.js';
 import { LoopScheduler } from './services/loop-scheduler.js';
 import db from './db.js';
 import { seedInstanceSettings, getGithubAppConfig } from './lib/instance-settings.js';
+import { packageRoot } from './lib/package-root.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -96,7 +97,7 @@ if (process.env.VITE_SERVER_ENABLED === 'true') {
 }
 
 if (process.env.VITE_SERVER_ENABLED !== 'true') {
-  const clientDist = path.join(__dirname, '..', 'client', 'dist');
+  const clientDist = path.join(packageRoot(), 'client', 'dist');
   expressApp.use(express.static(clientDist));
   expressApp.get('*', (req, res, next) => {
     if (req.url.startsWith('/api/')) return next();
@@ -165,7 +166,10 @@ server.on('upgrade', (req, socket, head) => devProxy.handleUpgrade(req, socket, 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1';
 server.listen(PORT, HOST, () => {
-  logger.info({ port: PORT, host: HOST }, 'Server running');
+  logger.info({ port: PORT, host: HOST, url: PUBLIC_HOST }, 'Server running');
+  if (process.env.NODE_ENV !== 'test') {
+    logger.info('Open Baguette in your browser: %s', PUBLIC_HOST);
+  }
 });
 
 let shuttingDown = false;

@@ -10,6 +10,11 @@ import {
   appendTaskArgs,
   getAvailableTasks,
   getAvailableCommands,
+  getCustomChatRecipes,
+  getSessionChatRecipes,
+  resolveSessionChatRecipes,
+  resolveConfigSessionBlock,
+  resolveServicesConfig,
   interpolateString,
   interpolateBaguetteConfig,
   interpolateDockerContainer,
@@ -73,7 +78,42 @@ describe('appendTaskArgs', () => {
   });
 });
 
+describe('resolveConfigSessionBlock', () => {
+  it('prefers top-level fields over nested session', () => {
+    const block = resolveConfigSessionBlock({
+      env: { FLAT: '1' },
+      init: 'flat-init',
+      tasks: { flat: { run: 'true' } },
+      session: {
+        env: { NESTED: '2' },
+        init: 'nested-init',
+        tasks: { nested: { run: 'false' } },
+      },
+    });
+    expect(block.env).toEqual({ FLAT: '1' });
+    expect(block.init).toBe('flat-init');
+    expect(block.tasks.flat.run).toBe('true');
+  });
+
+  it('falls back to nested session when top-level is absent', () => {
+    const block = resolveConfigSessionBlock({
+      session: { init: 'nested-init', tasks: { t: { run: 'echo' } } },
+    });
+    expect(block.init).toBe('nested-init');
+    expect(block.tasks.t.run).toBe('echo');
+  });
+});
+
 describe('getAvailableTasks', () => {
+  it('reads top-level init and tasks without session wrapper', () => {
+    const tasks = getAvailableTasks({
+      init: 'pnpm install',
+      tasks: { test: { run: 'pnpm test' } },
+    });
+    expect(tasks['baguette:init'].run).toBe('pnpm install');
+    expect(tasks.test.run).toBe('pnpm test');
+  });
+
   it('exposes session.init as a multi-line baguette:init task', () => {
     const tasks = getAvailableTasks({
       session: { init: 'pnpm install:all\npnpm run migrate\n' },
@@ -461,6 +501,107 @@ describe('getAvailableCommands', () => {
   });
 });
 
+describe('getCustomChatRecipes', () => {
+  it('parses top-level and session.recipes', () => {
+    expect(
+      getCustomChatRecipes({
+        recipes: [{ label: 'Audit', prompt: 'Run audit.', description: 'Packages' }],
+      })
+    ).toEqual([
+      {
+        id: 'custom:audit',
+        label: 'Audit',
+        description: 'Packages',
+        prompt: 'Run audit.',
+        builtin: false,
+      },
+    ]);
+    expect(
+      getCustomChatRecipes({
+        session: { recipes: [{ label: 'Lint', prompt: 'Fix lint.' }] },
+      })
+    ).toEqual([
+      {
+        id: 'custom:lint',
+        label: 'Lint',
+        description: null,
+        prompt: 'Fix lint.',
+        builtin: false,
+      },
+    ]);
+  });
+
+  it('rejects missing or non-string prompt', () => {
+    expect(() => getCustomChatRecipes({ recipes: [{ label: 'X', prompt: '' }] })).toThrow(
+      /recipes\[0\] is missing required "prompt"/
+    );
+    expect(() => getCustomChatRecipes({ recipes: [{ label: 'X' }] })).toThrow(
+      /recipes\[0\] is missing required "prompt"/
+    );
+    expect(() => getCustomChatRecipes({ recipes: [{ label: 'X', prompt: null }] })).toThrow(
+      /recipes\[0\] is missing required "prompt"/
+    );
+  });
+
+  it('rejects duplicate labels', () => {
+    expect(() =>
+      getCustomChatRecipes({
+        recipes: [
+          { label: 'Audit', prompt: 'a' },
+          { label: 'audit', prompt: 'b' },
+        ],
+      })
+    ).toThrow(/Duplicate recipes label/);
+  });
+});
+
+describe('resolveSessionChatRecipes', () => {
+  it('returns built-ins when custom recipes fail validation', () => {
+    const { recipes, config_error } = resolveSessionChatRecipes(
+      { recipes: { bad: true } },
+      { agent_type: 'builder' }
+    );
+    expect(config_error).toMatch(/recipes must be an array/);
+    expect(recipes.map((r) => r.id)).toEqual(['git_sync', 'check_ci', 'check_comments']);
+  });
+
+  it('omits config_error when config is valid', () => {
+    const result = resolveSessionChatRecipes({ recipes: [{ label: 'Custom', prompt: 'Go.' }] }, {});
+    expect(result.config_error).toBeUndefined();
+    expect(result.recipes).toHaveLength(4);
+  });
+});
+
+describe('resolveServicesConfig', () => {
+  it('resolves preview services when tasks are top-level', () => {
+    const services = resolveServicesConfig({
+      tasks: {
+        'dev-server': { run: 'pnpm dev --port $PORT', ports: ['PORT'] },
+      },
+      services: {
+        app: { task: 'dev-server', expose: 'PORT' },
+      },
+    });
+    expect(services).toHaveLength(1);
+    expect(services[0].name).toBe('app');
+    expect(services[0].taskKey).toBe('dev-server');
+  });
+});
+
+describe('getSessionChatRecipes', () => {
+  it('merges built-in and custom recipes', () => {
+    const recipes = getSessionChatRecipes({
+      recipes: [{ label: 'Custom', prompt: 'Do custom work.' }],
+    });
+    expect(recipes.map((r) => r.label)).toEqual([
+      'Git sync',
+      'Check CI',
+      'Check comments',
+      'Custom',
+    ]);
+  });
+});
+
 describe('loadBaguetteConfig', () => {
   let tmpDir;
 
@@ -541,5 +682,31 @@ describe('loadBaguetteAgentPrompt', () => {
   it('returns null when the role file is missing', async () => {
     const { loadBaguetteAgentPrompt } = await import('../baguette-config.js');
     expect(await loadBaguetteAgentPrompt(tmpDir, 'reviewer')).toBeNull();
+  });
+});
+
+describe('resolveServicesConfig', () => {
+  it('skips an invalid service and keeps the valid ones', () => {
+    const services = resolveServicesConfig({
+      session: {
+        tasks: {
+          'dev-server': { run: 'pnpm dev', ports: ['VITE_PORT:5173'] },
+          api: { run: 'pnpm api' },
+        },
+      },
+      services: {
+        app: { task: 'dev-server', expose: 'VITE_PORT' },
+        broken: { task: 'missing-task' },
+        web: { task: 'api' },
+      },
+    });
+    expect(services.map((s) => s.name)).toEqual(['app', 'web']);
+    expect(services[0].taskKey).toBe('dev-server');
+  });
+
+  it('returns null when the config failed to load', () => {
+    expect(resolveServicesConfig({ error: 'parse failed', services: { app: { task: 'x' } } })).toBe(
+      null
+    );
   });
 });

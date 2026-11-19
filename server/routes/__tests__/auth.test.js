@@ -23,10 +23,17 @@ const githubConfigMock = vi.hoisted(() => ({
 
 vi.mock('../../config.js', () => ({
   PUBLIC_HOST: 'http://localhost:5173',
-  PUBLIC_API_URL: 'http://localhost:3000',
   TRUST_PROXY_HOPS: 1,
   ENCRYPTION_KEY: 'test-encryption-key-at-least-32-chars',
 }));
+
+vi.mock('../../lib/public-host.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    resolveSessionSubdomainPublicUrl: vi.fn(() => 'http://localhost:3000'),
+  };
+});
 
 vi.mock('../../lib/instance-settings.js', async (importOriginal) => {
   const actual = await importOriginal();
@@ -366,14 +373,14 @@ describe('GET /auth/proxy', () => {
     });
     expect(safe.status).toBe(302);
     expect(safe.headers.get('location')).toBe(
-      'http://sess.localhost/_baguette/auth?sign=proxy-token&redirectTo=%2Ffoo%3Fq%3D1'
+      'http://sess.localhost:3000/_baguette/auth?sign=proxy-token&redirectTo=%2Ffoo%3Fq%3D1'
     );
 
     const external = await get('/auth/proxy?service=sess&redirectTo=https%3A%2F%2Fevil.example', {
       cookie: signedUserCookie(userId),
     });
     expect(external.headers.get('location')).toBe(
-      'http://sess.localhost/_baguette/auth?sign=proxy-token'
+      'http://sess.localhost:3000/_baguette/auth?sign=proxy-token'
     );
   });
 

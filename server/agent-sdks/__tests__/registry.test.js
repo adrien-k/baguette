@@ -97,6 +97,9 @@ describe('built-in SDK plugin contract', () => {
       hasApiUrl: true,
       secretPlaceholder: 'sk-ant-…',
     });
+    expect(claudeAgentSdkPlugin.credentialSchema.credentialHelpBanner?.markdown).toContain(
+      'claude setup-token'
+    );
 
     expect(cursorAgentSdkPlugin).toMatchObject({
       supportsModelParams: true,

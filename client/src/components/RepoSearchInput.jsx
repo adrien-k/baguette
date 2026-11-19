@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { reposService } from '../feathers.js';
 import { toastError } from '../utils/toastError.jsx';
 import SearchableSelect from './SearchableSelect/index.jsx';
+import { sortRemoteReposForPicker } from '../utils/remoteRepoPickerSort.js';
 
 /** Sends the user to GitHub to install the App or change which repos it can access. */
 function installHref() {
@@ -19,13 +20,13 @@ export default function RepoSearchInput({ value, onSelect, addedNames, trailing 
     async (query) => {
       try {
         const res = await reposService.findRemote({ org: selectedOrg, query });
-        return res.repos;
+        return sortRemoteReposForPicker(res.repos, addedNames);
       } catch (err) {
         toastError('Failed to load repositories', err);
         return [];
       }
     },
-    [selectedOrg]
+    [selectedOrg, addedNames]
   );
 
   // Accounts come from GitHub App installations — keep the current selection if it is still
@@ -153,9 +154,8 @@ export default function RepoSearchInput({ value, onSelect, addedNames, trailing 
       </div>
       <p className="text-xs text-faint mt-2 max-w-xl leading-relaxed">
         Lists up to <span className="text-fg-muted">20</span> repos per load. Empty field shows the
-        20 most recently updated you can access; type a fragment of{' '}
-        <span className="font-mono text-fg-muted">owner/repo</span> to search the full list. Only
-        repositories you granted the Baguette GitHub App are listed.{' '}
+        20 most recently updated you granted the App; type a fragment of{' '}
+        <span className="font-mono text-fg-muted">owner/repo</span> to filter that list.{' '}
         <a href={installHref()} className="text-accent hover:text-accent">
           Manage repository access ↗
         </a>

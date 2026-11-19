@@ -2,6 +2,17 @@ import { describe, it, expect } from 'vitest';
 import { normalizeUserPayloadForStorage } from '../normalize-user-payload.js';
 
 describe('normalizeUserPayloadForStorage', () => {
+  it('preserves mcp_sender on MCP user payloads', () => {
+    const sender = { kind: 'session', session_id: 1, session_label: 'A' };
+    const out = normalizeUserPayloadForStorage({
+      type: 'user',
+      source: 'mcp',
+      content: 'ping',
+      mcp_sender: sender,
+    });
+    expect(out.mcp_sender).toEqual(sender);
+  });
+
   it('normalizes legacy MCP user envelope to flat content', () => {
     const out = normalizeUserPayloadForStorage({
       type: 'user',

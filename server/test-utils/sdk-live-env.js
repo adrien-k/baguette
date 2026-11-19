@@ -82,3 +82,8 @@ export function liveSdkSuiteTimeoutMs(env, { includeReviewer = true } = {}) {
   const turns = includeReviewer ? 2 : 1;
   return env.timeoutMs * turns + 120_000;
 }
+
+/** Vitest timeout for the single-turn bash stdout persistence check. */
+export function liveBashStdoutTimeoutMs(env) {
+  return env.timeoutMs + 60_000;
+}

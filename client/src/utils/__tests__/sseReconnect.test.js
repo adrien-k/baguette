@@ -1,8 +1,10 @@
+// @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import {
-  flushSseReconnectNotifyForTests,
   notifySseReconnect,
+  notifySseStreamPaused,
   subscribeSseReconnect,
+  subscribeSseStreamPaused,
 } from '../sseReconnect.js';
 
 describe('sseReconnect', () => {
@@ -11,7 +13,6 @@ describe('sseReconnect', () => {
   });
 
   afterEach(() => {
-    flushSseReconnectNotifyForTests();
     vi.useRealTimers();
   });
 
@@ -19,34 +20,31 @@ describe('sseReconnect', () => {
     const listener = vi.fn();
     const unsubscribe = subscribeSseReconnect(listener);
     notifySseReconnect();
-    vi.runAllTimers();
     expect(listener).toHaveBeenCalledTimes(1);
     unsubscribe();
     notifySseReconnect();
-    vi.runAllTimers();
-    expect(listener).toHaveBeenCalledTimes(1);
-  });
-
-  it('debounces rapid reconnect notifications', () => {
-    const listener = vi.fn();
-    subscribeSseReconnect(listener);
-    notifySseReconnect();
-    notifySseReconnect();
-    notifySseReconnect();
-    vi.runAllTimers();
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
   it('isolates listener errors', () => {
     const good = vi.fn();
-    subscribeSseReconnect(() => {
+    const unsubscribeBad = subscribeSseReconnect(() => {
       throw new Error('boom');
     });
-    subscribeSseReconnect(good);
-    expect(() => {
-      notifySseReconnect();
-      vi.runAllTimers();
-    }).not.toThrow();
+    const unsubscribeGood = subscribeSseReconnect(good);
+    expect(() => notifySseReconnect()).not.toThrow();
     expect(good).toHaveBeenCalledTimes(1);
+    unsubscribeBad();
+    unsubscribeGood();
+  });
+
+  it('notifies pause subscribers when the SSE stream is paused', () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribeSseStreamPaused(listener);
+    notifySseStreamPaused();
+    expect(listener).toHaveBeenCalledTimes(1);
+    unsubscribe();
+    notifySseStreamPaused();
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 });

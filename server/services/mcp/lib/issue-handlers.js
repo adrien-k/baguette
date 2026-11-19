@@ -84,11 +84,25 @@ export function createIssueHandlers(session, app, turnAgent = {}) {
       return ok({ issue: serializeIssue(issue) });
     },
 
-    async updateIssue({ ref, severity, title, description, status, options }) {
+    async updateIssue({ ref, severity, title, description, status, options, selected_option_id }) {
       const issueRef = parseRef(ref);
       if (issueRef == null) return fail('Invalid issue ref');
       const issue = await findIssueByRef(app, sessionId, issueRef, userId);
       if (!issue) return fail('Issue not found');
+
+      if (selected_option_id != null) {
+        const optionId = String(selected_option_id).trim();
+        if (!optionId) return fail('selected_option_id is required');
+        try {
+          const updated = await app
+            .service('session-issues')
+            .selectOption({ id: issue.id, option_id: optionId }, userParams);
+          return ok({ issue: serializeIssue(updated) });
+        } catch (err) {
+          return serviceError(err);
+        }
+      }
+
       const patch = {};
       if (severity != null) patch.severity = severity;
       if (status != null) patch.status = status;

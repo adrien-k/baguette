@@ -1,5 +1,8 @@
 import { baguetteToolPausesForUserAfterSuccess } from '../../../../shared/baguette-mcp-tool-names.js';
 import { baguetteMcpToolSucceeded } from '../../baguette-mcp-tool-result.js';
+import { spillOversizedToolResult, TOOL_RESULTS_DIR } from './spill-oversized-results.js';
+import path from 'node:path';
+import { resolveDataDirRelativePath } from '../../../config.js';
 import { markAwaitingUserAfterTurnEndingTool } from '../../agent-awaiting-user.js';
 import { builderChatActiveKey, listAgentsForSession } from '../../agents-db.js';
 import { reviewTurnKey } from '../../review-agent-turn.js';
@@ -62,10 +65,18 @@ async function markAwaitingUserAfterTurnEndingBaguetteTool(app, session) {
 function wrapBaguetteToolHandler(session, app, name, handler) {
   return async (args) => {
     const result = await handler(args);
-    if (baguetteToolPausesForUserAfterSuccess(name, args) && baguetteMcpToolSucceeded(result)) {
+    const sessionPath = resolveDataDirRelativePath(session.session_path) || session.session_path;
+    const guarded = sessionPath
+      ? await spillOversizedToolResult(result, {
+          baseDir: path.join(sessionPath, TOOL_RESULTS_DIR),
+          cwd: sessionPath,
+          toolName: name,
+        })
+      : result;
+    if (baguetteToolPausesForUserAfterSuccess(name, args) && baguetteMcpToolSucceeded(guarded)) {
       await markAwaitingUserAfterTurnEndingBaguetteTool(app, session);
     }
-    return result;
+    return guarded;
   };
 }
 

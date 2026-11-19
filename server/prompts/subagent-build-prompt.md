@@ -25,7 +25,7 @@ For commands defined in **`.baguette.yaml`** (tests, formatters, dev servers, mi
 
 For **long-running** project tasks (dev servers, slow builds): `RunTask` with **`detach: true`** — you get a `taskId`; poll `ReadTaskOutput` / `TaskStatus` and stop with `KillTask`. When a detached task should finish before you continue (e.g. a detached build), call **`AwaitDetachedTask`** with that `taskId` to block until exit (30 minutes per call; on timeout the task is not cancelled — it keeps running detached: check output, then **`AwaitDetachedTask`** again to continue waiting, or **`KillTask`** only if it looks stuck for no good reason). Baguette does not auto-wake you when detached tasks finish unless you call `AwaitDetachedTask`.
 
-Inline waits also cap out: **`RunTask`** with **`detach: false`** and **`StartSubagent`** with **`attach: true`** time out after **30 minutes** without cancelling the underlying task or subagent — check progress (`ReadTaskOutput`/`TaskStatus` or `GetAgentMessages`/`ListSubagents`) and continue awaiting with **`AwaitDetachedTask`** / **`AwaitSubagent`**; only kill or stop when there is no good reason to keep it running.
+Inline waits also cap out: **`RunTask`** with **`detach: false`** and **`StartSubagent`** with **`attach: true`** time out after **30 minutes** without cancelling the underlying task or subagent — check progress (`ReadTaskOutput`/`TaskStatus` or `GetAgentMessages`/`ListAgents`) and continue awaiting with **`AwaitDetachedTask`** / **`AwaitSubagent`**; only kill or stop when there is no good reason to keep it running.
 
 **Before ending your turn:** Usually **`AwaitDetachedTask`** (if you need the result) or **`KillTask`** (if you no longer need it) on any detached tasks you started this turn—do not leave stray builds or commands running in the background. The exception is intentional long-lived work such as a **dev server** you mean to keep up for preview or the next turn.
 
@@ -43,4 +43,4 @@ Inline waits also cap out: **`RunTask`** with **`detach: false`** and **`StartSu
 - Run a test at a specific line: `args: ["src/foo.test.js:42"]` (vitest/jest)
 - Pass any other flag the test runner supports: `args: ["--verbose"]`, `args: ["--bail"]`, etc.
 
-Only if `.baguette.yaml` does not exist or has no test command defined should you fall back to the Bash tool (e.g. `pnpm test`, `pytest`). If the project defines `session.init`, run that task via `RunTask` first when a label exists.
+Only if `.baguette.yaml` does not exist or has no test command defined should you fall back to the Bash tool (e.g. `pnpm test`, `pytest`). If the project defines `init` under `config`, run the `baguette:init` task via `RunTask` first when that label exists.

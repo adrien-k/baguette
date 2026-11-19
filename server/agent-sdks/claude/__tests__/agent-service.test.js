@@ -33,6 +33,7 @@ vi.mock('../../../services/agent-settings.js', () => ({
 }));
 
 vi.mock('../../../services/baguette-config.js', () => ({
+  BAGUETTE_DIR: '.baguette',
   loadBaguetteConfig: vi.fn(),
   loadBaguetteAgentPrompt: vi.fn().mockResolvedValue(null),
   interpolateEnv: vi.fn(),

@@ -298,6 +298,34 @@ describe('MessageStreamWriter', () => {
     expect(completed.args.command).toBe('echo test');
   });
 
+  it('sets turn_reply on the assistant row flushed before turn_result', async () => {
+    const createRow = vi.fn().mockResolvedValue({ id: 11 });
+    const patchRow = vi.fn().mockResolvedValue(undefined);
+    const writer = new MessageStreamWriter({
+      sessionId: 1,
+      turnId: 2,
+      createRow,
+      patchRow,
+      builders: claudeBuilders,
+    });
+
+    await writer.apply([{ op: 'assistant_text', text: 'All done.' }]);
+    await writer.persistTurnResult({
+      type: 'turn_result',
+      status: 'ok',
+      error_message: null,
+      total_cost_usd: 0.01,
+    });
+
+    expect(patchRow).toHaveBeenCalledTimes(1);
+    const payload = JSON.parse(patchRow.mock.calls[0][1].message_json);
+    expect(payload.turn_reply).toBe(true);
+    expect(payload.blocks[0].text).toBe('All done.');
+    expect(createRow).toHaveBeenCalledTimes(2);
+    const turnResult = JSON.parse(createRow.mock.calls[1][0].message_json);
+    expect(turnResult.type).toBe('turn_result');
+  });
+
   it('marks pending tools cancelled when finish() runs', async () => {
     const createRow = vi.fn().mockResolvedValue({ id: 20 });
     const patchRow = vi.fn().mockResolvedValue(undefined);

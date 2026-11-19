@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
-process.env.PUBLIC_API_HOST = 'https://preview.example.com';
+process.env.PUBLIC_HOST = 'https://preview.example.com';
 
 const {
   buildDeepLinkUrl,
@@ -54,10 +54,6 @@ describe('preview-services', () => {
         )
       ).toBeNull();
     });
-  });
-
-  beforeEach(() => {
-    process.env.PUBLIC_API_URL = 'https://app.example.com';
   });
 
   it('normalizePreviewScheme adds :// when missing', () => {

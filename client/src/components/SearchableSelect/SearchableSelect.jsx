@@ -100,13 +100,16 @@ export default function SearchableSelect({
 
   const showClosedSelected = search === null && (selectedItem || value);
 
+  const showEmptyAsPlaceholder =
+    listSource.length === 0 && search !== null && !showLoadingPlaceholder;
+
   const inputPlaceholder = showClosedSelected
     ? ''
     : disabled && disabledText
       ? disabledText
       : showLoadingPlaceholder
         ? loadingText
-        : listSource.length === 0
+        : showEmptyAsPlaceholder
           ? emptyText
           : placeholder;
 
@@ -191,6 +194,9 @@ export default function SearchableSelect({
         </div>
       )}
     >
+      {!disabled && !loading && filteredOptions.length === 0 && search !== null && !asyncLoading ? (
+        <p className="px-3 py-2.5 text-sm text-faint">{emptyText}</p>
+      ) : null}
       {!disabled &&
         !loading &&
         filteredOptions.map((o) => {

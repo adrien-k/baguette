@@ -138,7 +138,12 @@ export function createSessionAgentContext(
     sessionRef = { ...sessionRef, ...updated };
   };
 
-  const absoluteSessionPath = resolveDataDirRelativePath(sessionRef.session_path) || '';
+  const parentAbsoluteSessionPath = resolveDataDirRelativePath(sessionRef.session_path) || '';
+  let absoluteSessionPath = parentAbsoluteSessionPath;
+  if (callerAgent?.worktree_path) {
+    const isolated = resolveDataDirRelativePath(callerAgent.worktree_path);
+    if (isolated) absoluteSessionPath = isolated;
+  }
   const baseBranch = sessionRef.base_branch;
 
   return {
@@ -166,6 +171,7 @@ export function createSessionAgentContext(
     requireGitHubRepo,
     patchSession,
     absoluteSessionPath,
+    parentAbsoluteSessionPath,
     baseBranch,
   };
 }

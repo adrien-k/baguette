@@ -13,11 +13,15 @@ import {
   parseSessionModelId,
   resolveEffectiveSubagentDefaultSettings,
   resolveExplicitBuilderDefaults,
+  resolveExplicitReviewerDefaults,
 } from './agent-config-resolver.js';
 import { validateAgentSessionDefaults } from './agent-session-defaults.js';
 
 export const MCP_BUILDER_MODEL_SETTINGS_ERROR =
   'Configure a default agent configuration and model under Settings → Agent (Builder default), or pass preset_model_id from ListPresetModels.';
+
+export const MCP_REVIEWER_MODEL_SETTINGS_ERROR =
+  'Configure a default reviewer configuration and model under Settings → Agent (Reviewer default).';
 
 export const MCP_SUBAGENT_PRESET_REQUIRED_ERROR =
   'Settings → Agent (Agent-created sessions and subagents) is Presets only: pass preset_model_id from ListPresetModels.';
@@ -216,6 +220,15 @@ export async function resolveMcpBuilderModel(db, userId, opts = {}) {
  * @param {number} userId
  * @param {{ session_id: number, preset_model_id?: number | null, agent_config_id?: number | null, model?: string | null, model_params?: unknown, repo_id?: number | null, app?: object }} opts
  */
+/** Reviewer model for MCP StartReview (account reviewer default only). */
+export async function resolveMcpReviewerModel(db, userId) {
+  const defaults = await resolveExplicitReviewerDefaults(db, userId);
+  if (!defaults) {
+    throw new BadRequest(MCP_REVIEWER_MODEL_SETTINGS_ERROR);
+  }
+  return defaults;
+}
+
 export async function resolveMcpStartSubagentModel(db, userId, opts = {}) {
   const { session_id, preset_model_id, agent_config_id, model, model_params, repo_id, app } = opts;
   const settings = await resolveEffectiveSubagentDefaultSettings(db, userId, repo_id ?? null);

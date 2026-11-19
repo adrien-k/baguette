@@ -90,13 +90,15 @@ export function applySessionSearchFilters(query, filters, userId) {
 }
 
 /** Matches `source` / `subtype` checked in client ChatMessage for MCP styling. */
-export function buildMcpUserMessageJson(text) {
-  return JSON.stringify({
+export function buildMcpUserMessageJson(text, mcpSender = null) {
+  const payload = {
     type: 'user',
     source: 'mcp',
     subtype: 'mcp',
     content: text,
-  });
+  };
+  if (mcpSender) payload.mcp_sender = mcpSender;
+  return JSON.stringify(payload);
 }
 
 export function summarizeAssistantMessage(row) {

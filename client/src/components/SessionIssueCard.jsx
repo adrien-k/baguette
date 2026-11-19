@@ -161,6 +161,9 @@ export default function SessionIssueCard({
   const canEdit = !readonly && issue.status === 'opened';
   const options = issueOptions(issue);
   const decisionTitle = selectedOptionTitle(issue, options);
+  const hasTakenDecision = Boolean(issue.selected_option_id && decisionTitle);
+  const canPickOrChangeDecision =
+    !readonly && Boolean(onSelectOption) && (needsDecision || issue.status === 'opened');
   const showStatusChip = readonly || issue.status === 'resolved' || needsDecision;
   const agentSubtitle = issueAgentSubtitle({
     agent_sdk: issue.agent_sdk,
@@ -310,25 +313,36 @@ export default function SessionIssueCard({
               </div>
             )}
           </div>
-          {needsDecision && options.length > 0 && (
-            <IssueOptionRows
-              options={options}
-              selectedId={issue.selected_option_id}
-              interactive={!readonly && Boolean(onSelectOption)}
-              disabled={selectingOption}
-              onSelect={(optionId) => onSelectOption(issue, optionId)}
-            />
+          {options.length > 0 && canPickOrChangeDecision && (
+            <div className="space-y-2">
+              {hasTakenDecision ? (
+                <p className="text-xs font-medium text-fg-muted">
+                  Decision: <span className="text-fg">{decisionTitle}</span>
+                </p>
+              ) : null}
+              <IssueOptionRows
+                options={options}
+                selectedId={issue.selected_option_id}
+                interactive
+                disabled={selectingOption}
+                onSelect={(optionId) => onSelectOption(issue, optionId)}
+              />
+            </div>
           )}
-          {!needsDecision && readonly && options.length > 0 && (
-            <IssueOptionRows
-              options={options}
-              selectedId={issue.selected_option_id}
-              interactive={false}
-            />
+          {options.length > 0 && !canPickOrChangeDecision && (
+            <div className="space-y-2">
+              {hasTakenDecision ? (
+                <p className="text-xs font-medium text-fg-muted">
+                  Decision: <span className="text-fg">{decisionTitle}</span>
+                </p>
+              ) : null}
+              <IssueOptionRows
+                options={options}
+                selectedId={issue.selected_option_id}
+                interactive={false}
+              />
+            </div>
           )}
-          {!needsDecision && decisionTitle ? (
-            <p className="text-xs text-fg-muted">Decision: {decisionTitle}</p>
-          ) : null}
           {!readonly && issue.status === 'opened' && (
             <div className="flex flex-wrap gap-2">
               <button type="button" onClick={() => onFix(issue)} className={SECONDARY_BUTTON_CLASS}>

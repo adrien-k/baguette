@@ -146,6 +146,7 @@ export default function AgentMessageComposer({
   submitLabel = 'Send',
   submitSubtitle,
   submitTooltip,
+  showSubmitButton = true,
   toolbarExtra,
   sendAddon,
   autoFocus = false,
@@ -382,7 +383,7 @@ export default function AgentMessageComposer({
         {!mcpReadOnly ? (
           <div className="flex shrink-0 items-center justify-end gap-1">
             {toolbarExtra}
-            {sendControl}
+            {showSubmitButton ? sendControl : null}
           </div>
         ) : null}
       </div>

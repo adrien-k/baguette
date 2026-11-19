@@ -8,6 +8,7 @@ import { agentsService } from '../feathers.js';
 import { toastError } from '../utils/toastError.jsx';
 import { buildSessionAgentList } from '../utils/sessionAgentList.js';
 import {
+  agentAccessibleTitle,
   agentDisplayTitle,
   isAgentAwaitingUser,
   isAgentTurnActive,
@@ -130,13 +131,13 @@ function AgentTreeCaret({ expanded, onToggle, collapseLocked = false }) {
 }
 
 /**
- * Quiet pill behind the agent name: the primary builder gets brand, the
- * reviewer merged (same intensities as the composer switcher badges);
- * secondary builders and subagents stay plain.
+ * Quiet pill behind the agent name: primary builder, reviewer, and subagent
+ * tints match the composer switcher badges; secondary builders stay plain.
  */
 function agentNameToneClass(agent) {
   if (isPrimaryAgent(agent)) return 'bg-brand/15';
   if (isReviewerAgent(agent)) return 'bg-merged/10';
+  if (isSubagentBuilder(agent)) return 'bg-info/10';
   return '';
 }
 
@@ -144,6 +145,8 @@ function AgentTreeRow({ agent, ...rest }) {
   const { getConfig } = useAgentConfigContext();
   const config = getConfig(agent.agent_config_id);
   const title = agentDisplayTitle(agent);
+  const accessibleTitle = agentAccessibleTitle(agent);
+  const agentRef = agent.ref ?? null;
   const {
     currentAgentId,
     canManage,
@@ -167,15 +170,17 @@ function AgentTreeRow({ agent, ...rest }) {
       <div
         data-testid="agent-tree-row"
         data-agent-name={agent.name || title}
-        className={`group flex items-center gap-1.5 rounded-md py-1 pl-0 pr-1.5 transition-colors ${
-          isCurrent ? 'bg-control-hover' : 'hover:bg-control/50'
+        data-selected={isCurrent ? 'true' : 'false'}
+        aria-current={isCurrent ? 'true' : undefined}
+        className={`group flex items-center gap-1.5 rounded-md border py-1 pl-1 pr-1.5 transition-colors ${
+          isCurrent ? 'border-control-hover' : 'border-transparent hover:bg-control/50'
         }`}
       >
         <AgentTreeIcon agent={agent} config={config} />
         <button
           type="button"
           onClick={() => onSelectAgent(agent)}
-          title={isAgentTurnActive(agent.status) ? 'Turn running' : `Open ${title} chat`}
+          title={isAgentTurnActive(agent.status) ? 'Turn running' : `Open ${accessibleTitle} chat`}
           className={`min-w-0 flex items-center gap-1.5 text-left ${renaming ? 'flex-1' : ''}`}
         >
           {renaming ? (
@@ -205,11 +210,11 @@ function AgentTreeRow({ agent, ...rest }) {
                 agent
               )} ${isCurrent ? 'text-fg' : 'text-secondary'}`}
             >
-              {isSubagentBuilder(agent) && (
-                <span className="shrink-0" aria-hidden>
-                  <AgentTypeIcon agentType="subagent" />
+              {agentRef != null ? (
+                <span className="shrink-0 font-mono text-[10px] text-faint tabular-nums">
+                  #{agentRef}
                 </span>
-              )}
+              ) : null}
               <span className="truncate">{title}</span>
             </span>
           )}
@@ -225,8 +230,8 @@ function AgentTreeRow({ agent, ...rest }) {
           <button
             type="button"
             onClick={() => onSelectAgent(agent)}
-            title={`Open ${title} chat`}
-            aria-label={`Open ${title} chat`}
+            title={`Open ${accessibleTitle} chat`}
+            aria-label={`Open ${accessibleTitle} chat`}
             className="flex min-w-0 grow cursor-pointer items-center justify-end"
           >
             {modelLabelNode}
@@ -248,9 +253,9 @@ function AgentTreeRow({ agent, ...rest }) {
  * would hide the open chat. Every row shares the same indent in the title column.
  * `autoExpanded` is the default (selected session on desktop, last-opened on
  * mobile), overridable via the caret. Builder and reviewer rows carry a quiet
- * brand/merged tint (subagent rows stay plain). Rows show provider icon · name
- * · status · rename affordance · model (on the right). Subagent titles are
- * prefixed with the subagent type icon.
+ * brand/merged/info name-pill tints. The open agent uses a control-hover border
+ * (the session title fill) instead of a second fill. Rows show provider icon · `#ref` · name ·
+ * status · rename affordance · model (on the right).
  */
 export default function SessionAgentTree({
   agents,

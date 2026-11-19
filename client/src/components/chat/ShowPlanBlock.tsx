@@ -1,8 +1,5 @@
-import { useState } from 'react';
 import CollapsibleMarkdown from './CollapsibleMarkdown.tsx';
-import { sessionsService } from '../../feathers.js';
-import { toastError } from '../../utils/toastError.jsx';
-import { SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
+import RunPlanButton from './RunPlanButton.tsx';
 
 export default function ShowPlanBlock({
   heading = 'Plan ready for review',
@@ -24,23 +21,6 @@ export default function ShowPlanBlock({
   isError?: boolean;
   errorMessage?: string | null;
 }) {
-  const [loading, setLoading] = useState(false);
-
-  const sendUserMessage = async (text: string) => {
-    if (sessionId == null) return;
-    setLoading(true);
-    try {
-      await sessionsService.createDefaultBuilderMessage({
-        id: sessionId,
-        content: text,
-        ...(agentId != null ? { agent_id: agentId } : {}),
-      });
-    } catch (err) {
-      toastError('Failed to send message', err);
-      setLoading(false);
-    }
-  };
-
   return (
     <div
       className={`rounded-lg border overflow-hidden ${
@@ -58,7 +38,7 @@ export default function ShowPlanBlock({
           <div className="w-3 h-3 border border-strong border-t-zinc-400 rounded-full animate-spin shrink-0" />
         )}
       </div>
-      <div className="px-3 sm:px-4 py-3 overflow-auto max-h-[50vh] text-sm">
+      <div className="px-3 sm:px-4 py-3 text-sm">
         {isError && errorMessage ? (
           <p className="text-sm text-danger">{errorMessage}</p>
         ) : markdown?.trim() ? (
@@ -71,14 +51,7 @@ export default function ShowPlanBlock({
       </div>
       {interactive && !isError && (
         <div className="px-3 sm:px-4 pb-4 pt-1 space-y-2">
-          <button
-            type="button"
-            onClick={() => sendUserMessage('Proceed with the plan.')}
-            disabled={loading}
-            className={SECONDARY_BUTTON_CLASS}
-          >
-            Run the plan
-          </button>
+          <RunPlanButton sessionId={sessionId} agentId={agentId} />
           <p className="text-xs text-faint">
             or continue chatting with the agent to refine the plan
           </p>

@@ -21,6 +21,7 @@ export default function PushConfirmModal({
   repo,
   commitsToPush,
   initialBranch,
+  initialSourceBranch = '',
   initialForceMode,
   localBranch = '',
   reason = null,
@@ -51,6 +52,12 @@ export default function PushConfirmModal({
   const { branches, loading: loadingBranches } = useGetBranches(repo);
 
   const isPureForce = forceMode === 'force';
+  const autoPushOffOnlyReason =
+    agentRequest &&
+    autoPushOff &&
+    !initialForceMode &&
+    !initialSourceBranch &&
+    (!branch || branch === localBranch);
 
   useEffect(() => {
     if (!sessionId || !branch) {
@@ -61,7 +68,11 @@ export default function PushConfirmModal({
     let cancelled = false;
     setLoadingShas(true);
     sessionsService
-      .shas({ id: sessionId, branch })
+      .shas({
+        id: sessionId,
+        branch,
+        ...(initialSourceBranch ? { source_branch: initialSourceBranch } : {}),
+      })
       .then((res) => {
         if (cancelled) return;
         setLocalSha(res.localSha ?? null);
@@ -79,11 +90,19 @@ export default function PushConfirmModal({
     return () => {
       cancelled = true;
     };
-  }, [sessionId, branch]);
+  }, [sessionId, branch, initialSourceBranch]);
 
   return (
     <Modal>
       <ModalHeader title="Push commits" onClose={onCancel} />
+
+      {autoPushOffOnlyReason ? (
+        <p className={`${TEXT_MUTED} text-sm mb-3 leading-snug`}>
+          Confirmation is required because{' '}
+          <strong className={TEXT_HEADING}>auto-push is off</strong> for this session — this is a
+          one-time manual push.
+        </p>
+      ) : null}
 
       {reason ? (
         <div
@@ -118,14 +137,16 @@ export default function PushConfirmModal({
             loadingText="Loading branches..."
             emptyText="No branches found"
           />
-          {localBranch && localBranch !== branch && (
+          {(initialSourceBranch || (localBranch && localBranch !== branch)) && (
             <div className={`mt-1.5 font-mono text-[10px] ${TEXT_FAINT}`}>
-              local {localBranch} → origin/{branch}
+              {initialSourceBranch
+                ? `${initialSourceBranch} → origin/${branch}`
+                : `local ${localBranch} → origin/${branch}`}
             </div>
           )}
           {(localSha || remoteSha) && (
             <div className={`mt-1.5 flex items-center gap-1.5 font-mono text-[10px] ${TEXT_FAINT}`}>
-              <span title="Local HEAD">{localSha ?? '?'}</span>
+              <span title={initialSourceBranch || 'Local HEAD'}>{localSha ?? '?'}</span>
               <span className="text-faint">/</span>
               <span
                 title={`origin/${branch}`}
@@ -233,6 +254,7 @@ export default function PushConfirmModal({
             onConfirm({
               forceMode: forceMode || null,
               branch: branch || null,
+              sourceBranch: initialSourceBranch || null,
               createPr: agentRequest ? false : createPr,
               syncPr: !agentRequest,
             })

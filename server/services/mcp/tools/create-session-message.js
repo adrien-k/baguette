@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ok, fail } from '../lib/result.js';
 import { requireOwnedSessionById, buildMcpUserMessageJson } from '../lib/session-resolution.js';
+import { resolveMcpMessageSender } from '../lib/mcp-message-sender.js';
 import { getAgentBySessionRef } from '../../agents-db.js';
 import { sessionMessageIdentity } from '../../feathers/message-create-fields.js';
 
@@ -63,7 +64,8 @@ export function createCreateSessionMessageTool(ctx) {
         return fail(err.message);
       }
 
-      const message_json = buildMcpUserMessageJson(body);
+      const mcpSender = await resolveMcpMessageSender(db, ctx);
+      const message_json = buildMcpUserMessageJson(body, mcpSender);
       const userParams = { provider: 'rest', user: { id: userId } };
 
       if (send_at) {

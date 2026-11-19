@@ -395,18 +395,18 @@ describe('session-issues service', () => {
     expect(row.status).toBe('opened');
     expect(row.selected_option_id).toBe('keep');
 
-    await expect(
-      app
-        .service('session-issues')
-        .selectOption({ id: created.id, option_id: 'drop' }, params(user))
-    ).rejects.toThrow('need a decision');
+    const changed = await app
+      .service('session-issues')
+      .selectOption({ id: created.id, option_id: 'drop' }, params(user));
+    expect(changed.status).toBe('opened');
+    expect(changed.selected_option_id).toBe('drop');
 
     const opened = await app
       .service('session-issues')
       .create({ session_id: sessionId, severity: 'low', title: 'Plain' }, { user });
     await expect(
       app.service('session-issues').selectOption({ id: opened.id, option_id: 'keep' }, params(user))
-    ).rejects.toThrow('need a decision');
+    ).rejects.toThrow(/no decision options/);
 
     const pending = await app.service('session-issues').create(
       {
@@ -422,6 +422,50 @@ describe('session-issues service', () => {
         .service('session-issues')
         .selectOption({ id: pending.id, option_id: 'missing' }, params(user))
     ).rejects.toThrow('Unknown option');
+  });
+
+  it('selectOption on submitted or resolved issues is rejected', async () => {
+    const submittedIssue = await app.service('session-issues').create(
+      {
+        session_id: sessionId,
+        severity: 'high',
+        title: 'Submitted choice',
+        options: decisionOptions,
+      },
+      { user }
+    );
+    const submittedChosen = await app
+      .service('session-issues')
+      .selectOption({ id: submittedIssue.id, option_id: 'keep' }, params(user));
+    await app
+      .service('session-issues')
+      .patch(submittedChosen.id, { status: 'submitted' }, params(user));
+    await expect(
+      app
+        .service('session-issues')
+        .selectOption({ id: submittedChosen.id, option_id: 'drop' }, params(user))
+    ).rejects.toThrow(/opened decision/);
+
+    const resolvedIssue = await app.service('session-issues').create(
+      {
+        session_id: sessionId,
+        severity: 'low',
+        title: 'Resolved choice',
+        options: decisionOptions,
+      },
+      { user }
+    );
+    const resolvedChosen = await app
+      .service('session-issues')
+      .selectOption({ id: resolvedIssue.id, option_id: 'keep' }, params(user));
+    await app
+      .service('session-issues')
+      .patch(resolvedChosen.id, { status: 'resolved' }, { user, agentStatusUpdate: true });
+    await expect(
+      app
+        .service('session-issues')
+        .selectOption({ id: resolvedChosen.id, option_id: 'drop' }, params(user))
+    ).rejects.toThrow(/opened decision/);
   });
 
   it('does not let an external patch set selected_option_id', async () => {

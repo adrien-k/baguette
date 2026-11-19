@@ -15,6 +15,7 @@ export default function ChatQuickActionButton({
   className = CHAT_ACTION_BUTTON_CLASS,
   iconClassName,
   children,
+  'data-testid': dataTestId,
 }: {
   icon?: LucideIcon;
   label?: string;
@@ -24,9 +25,16 @@ export default function ChatQuickActionButton({
   className?: string;
   iconClassName?: string;
   children?: ReactNode;
+  'data-testid'?: string;
 }) {
   const button = (
-    <button type="button" onClick={onClick} disabled={disabled} className={className}>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={className}
+      data-testid={dataTestId}
+    >
       {Icon ? (
         <Icon
           className={`w-3.5 h-3.5 shrink-0${iconClassName ? ` ${iconClassName}` : ''}`}

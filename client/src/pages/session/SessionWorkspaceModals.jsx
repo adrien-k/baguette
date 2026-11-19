@@ -67,6 +67,7 @@ export default function SessionWorkspaceModals({
           repo={repos.find((r) => r.full_name === session?.repo_full_name) ?? null}
           commitsToPush={commitsToPush}
           initialBranch={pushRequest?.branch || session?.remote_branch || session?.local_branch}
+          initialSourceBranch={pushRequest?.sourceBranch || ''}
           initialForceMode={pushRequest?.forceMode || null}
           localBranch={session?.remote_branch || session?.local_branch || ''}
           reason={pushRequest?.reason || null}

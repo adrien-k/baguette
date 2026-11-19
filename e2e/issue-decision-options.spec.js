@@ -87,5 +87,9 @@ test.describe('Issue decision options', () => {
     await expect(decisionCard.getByRole('button', { name: 'Ask agent to fix' })).toBeVisible();
 
     await saveE2eScreenshot(page, 'decision-selected.png', { fullPage: true });
+
+    await decisionCard.getByRole('button', { name: 'Rewrite the schema' }).click();
+    await expect(page.getByText('Decision: Rewrite the schema')).toBeVisible();
+    await expect(decisionCard.getByRole('button', { name: 'Ask agent to fix' })).toBeVisible();
   });
 });

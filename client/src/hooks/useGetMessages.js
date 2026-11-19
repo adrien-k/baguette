@@ -37,8 +37,8 @@ function flattenMessagePages(data) {
 /**
  * Returns messages for a session agent with cursor-based pagination (oldest
  * page fetched on demand). Realtime created/patched events are applied to the
- * query cache by the central `sseCacheBridge`; SSE reconnects refetch the
- * loaded pages through the global reconnect wiring.
+ * query cache by the central `sseCacheBridge`. A reconnect reloads this
+ * query from the server, then applies events that arrived during the reload.
  *
  * @param {number|null} sessionId
  * @param {number|null} agentId - when set, load that agent's transcript

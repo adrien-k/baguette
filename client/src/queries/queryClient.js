@@ -1,7 +1,7 @@
 import { QueryClient } from '@tanstack/react-query';
 import { isFeathersError } from '../utils/feathersErrors.js';
 
-/** How long cached data is considered fresh (no refetch on mount/focus). */
+/** How long cached data is considered fresh (no refetch on mount). */
 const STALE_TIME_MS = 30_000;
 /** Infinite retry budget for unexpected failures; 4xx errors never retry. */
 const MAX_RETRIES = 3;
@@ -15,14 +15,18 @@ function shouldRetry(failureCount, error) {
 /**
  * App-wide TanStack Query client. Server state for all Feathers services lives
  * here; the Feathers fetch+SSE transport keeps running underneath it.
+ *
+ * Focus and browser-online refetch stay off. Those refetches race the SSE
+ * cache bridge and replace a live cache with a stale HTTP snapshot. Reconnect
+ * reloads active queries in one place (`reconnectResync.js`) instead.
  */
 export function createAppQueryClient() {
   return new QueryClient({
     defaultOptions: {
       queries: {
         staleTime: STALE_TIME_MS,
-        refetchOnWindowFocus: true,
-        refetchOnReconnect: true,
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
         retry: shouldRetry,
       },
       mutations: {
@@ -30,13 +34,4 @@ export function createAppQueryClient() {
       },
     },
   });
-}
-
-/**
- * Refetch every mounted ("active") query after the SSE stream reconnects.
- * Debounced upstream by `notifySseReconnect`; staleTime filters entries whose
- * data is still fresh, so this is cheap for recently-fetched queries.
- */
-export function refetchActiveQueriesOnSseReconnect(queryClient) {
-  void queryClient.refetchQueries({ type: 'active', stale: true });
 }

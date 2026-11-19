@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { feathers } from 'feathers';
 import { createTestDb } from '../../../../test-utils/db.js';
 import { registerSkillsService } from '../../../feathers/skills.service.js';
@@ -59,14 +62,24 @@ describe('skill MCP tools', () => {
     const result = await createListSkillsTool({ app, userId: alice.id }).handler();
     const body = payload(result);
     expect(body.ok).toBe(true);
-    expect(body.skills).toEqual([
-      {
-        id: expect.any(Number),
-        label: 'Review checklist',
-        description: 'Use when reviewing a pull request',
-      },
-    ]);
+    expect(body.skills).toEqual(
+      expect.arrayContaining([
+        {
+          id: expect.any(Number),
+          label: 'Review checklist',
+          description: 'Use when reviewing a pull request',
+          source: 'settings',
+        },
+        {
+          label: 'Delegation and orchestration',
+          description: expect.any(String),
+          source: 'builtin',
+          builtin_id: 'delegation',
+        },
+      ])
+    );
     expect(JSON.stringify(body)).not.toContain('Look for missing tests');
+    expect(JSON.stringify(body)).not.toContain('StartSubagent');
     expect(JSON.stringify(body)).not.toContain('Bob secret');
   });
 
@@ -95,7 +108,9 @@ describe('skill MCP tools', () => {
     });
 
     const listed = payload(await createListSkillsTool({ app, userId: bob.id }).handler());
-    expect(listed.skills.map((s) => s.label)).toEqual(['Bob secret']);
+    expect(listed.skills.filter((s) => s.source === 'settings').map((s) => s.label)).toEqual([
+      'Bob secret',
+    ]);
   });
 
   it('rejects duplicate labels and missing fields on create', async () => {
@@ -162,6 +177,75 @@ describe('skill MCP tools', () => {
     expect(payload(noIdentifier)).toMatchObject({
       ok: false,
     });
+  });
+
+  it('lists and reads built-in skills', async () => {
+    const result = await createListSkillsTool({ app, userId: alice.id }).handler();
+    const body = payload(result);
+    const builtin = body.skills.find((s) => s.source === 'builtin');
+    expect(builtin).toMatchObject({
+      label: 'Delegation and orchestration',
+      builtin_id: 'delegation',
+    });
+
+    const loaded = await createReadSkillTool({ app, userId: alice.id }).handler({
+      label: 'Delegation and orchestration',
+    });
+    expect(payload(loaded).skill).toMatchObject({
+      source: 'builtin',
+      builtin_id: 'delegation',
+      content: expect.stringContaining('ContinueReview'),
+    });
+  });
+
+  it('lists and reads project skills from the caller session worktree', async () => {
+    const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'baguette-mcp-skills-'));
+    const skillsDir = path.join(tmpDir, '.baguette', 'skills');
+    await fs.promises.mkdir(skillsDir, { recursive: true });
+    await fs.promises.writeFile(
+      path.join(skillsDir, 'migrations.md'),
+      `---
+label: SQLite migrations
+description: Use when editing Knex SQLite migrations
+---
+Prefer native DROP COLUMN when possible.
+`
+    );
+    const ctx = {
+      app,
+      userId: alice.id,
+      callerSession: { session_path: tmpDir, absolute_session_path: tmpDir },
+    };
+    try {
+      const listed = payload(await createListSkillsTool(ctx).handler());
+      expect(listed.skills).toEqual(
+        expect.arrayContaining([
+          {
+            label: 'SQLite migrations',
+            description: 'Use when editing Knex SQLite migrations',
+            source: 'project',
+            rel_path: path.join('.baguette', 'skills', 'migrations.md'),
+          },
+          {
+            id: expect.any(Number),
+            label: 'Review checklist',
+            description: 'Use when reviewing a pull request',
+            source: 'settings',
+          },
+        ])
+      );
+
+      const loaded = payload(
+        await createReadSkillTool(ctx).handler({ label: 'SQLite migrations' })
+      );
+      expect(loaded.skill).toMatchObject({
+        label: 'SQLite migrations',
+        source: 'project',
+        content: 'Prefer native DROP COLUMN when possible.',
+      });
+    } finally {
+      await fs.promises.rm(tmpDir, { recursive: true, force: true });
+    }
   });
 
   it('deletes by id and by label and keeps other users’ skills', async () => {

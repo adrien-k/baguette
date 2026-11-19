@@ -42,6 +42,17 @@ describe('normalizeSchedule', () => {
     expect(s.timezone).toBe('UTC');
   });
 
+  it('accepts manual recurrence without automatic next run', () => {
+    const s = normalizeSchedule({ type: 'manual', timezone: 'UTC' });
+    expect(s).toMatchObject({
+      type: 'manual',
+      interval_minutes: null,
+      time_of_day: null,
+      days_of_week: null,
+    });
+    expect(computeNextRun(s, at('2026-03-01T10:00:00Z'))).toBeNull();
+  });
+
   it('clears the fields that do not apply to the chosen type', () => {
     const s = normalizeSchedule({
       type: 'interval',

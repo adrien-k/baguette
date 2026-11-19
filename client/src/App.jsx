@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { queryClient } from './queries/queryClientInstance.js';
 import { AuthProvider, useAuth } from './hooks/useAuth.jsx';
 import {
@@ -519,8 +518,15 @@ function ThemedToaster() {
 }
 
 function QueryDevtools() {
-  if (!import.meta.env.DEV) return null;
-  return <ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-right" />;
+  const [Devtools, setDevtools] = useState(null);
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    import('@tanstack/react-query-devtools').then((mod) => {
+      setDevtools(() => mod.ReactQueryDevtools);
+    });
+  }, []);
+  if (!Devtools) return null;
+  return <Devtools initialIsOpen={false} buttonPosition="bottom-right" />;
 }
 
 export default function App() {

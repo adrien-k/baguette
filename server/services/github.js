@@ -3,13 +3,7 @@ import { promisify } from 'util';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import {
-  PUBLIC_HOST,
-  PUBLIC_API_URL,
-  REPOS_DIR,
-  resolveRepoPath,
-  resolveDataDirRelativePath,
-} from '../config.js';
+import { PUBLIC_HOST, REPOS_DIR, resolveRepoPath, resolveDataDirRelativePath } from '../config.js';
 import * as cache from '../lib/cache.js';
 import {
   buildLogRangeHeader,
@@ -181,6 +175,90 @@ const mapRepo = (r) => ({
   private: r.private,
   default_branch: r.default_branch,
 });
+
+const GITHUB_REPO_FULL_NAME_RE = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
+
+function isResolvablePublicRepoFullName(fullName) {
+  if (!GITHUB_REPO_FULL_NAME_RE.test(fullName)) return false;
+  const [owner, repo] = fullName.split('/');
+  if (!owner || !repo) return false;
+  if (owner === '.' || owner === '..' || repo === '.' || repo === '..') return false;
+  return true;
+}
+
+/** Quote user text so it cannot inject GitHub search qualifiers. */
+function quoteGithubSearchFragment(text) {
+  const stripped = text.replaceAll('"', '').trim();
+  if (!stripped) return null;
+  return `"${stripped}"`;
+}
+
+async function githubJsonOrThrow(res, context) {
+  if (res.ok) return res.json();
+  const text = await res.text();
+  throw new Error(`${context}: ${res.status} ${text}`);
+}
+
+/** Resolve a public GitHub repo by exact `owner/repo` (null when private or missing). */
+export async function fetchPublicRepoByFullName(token, fullName) {
+  if (!isResolvablePublicRepoFullName(fullName)) return null;
+  const res = await githubFetch(`https://api.github.com/repos/${fullName}`, { token });
+  if (res.status === 404) return null;
+  const data = await githubJsonOrThrow(res, `GitHub repos/${fullName}`);
+  if (typeof data.full_name !== 'string' || !data.full_name) return null;
+  if (data.private) return null;
+  return mapRepo(data);
+}
+
+/** Search public repositories on GitHub by name fragment (requires a non-empty query). */
+export async function searchPublicRepositories(token, query) {
+  const q = query.trim();
+  if (!q || q.length < 2) return [];
+  const fragment = quoteGithubSearchFragment(q);
+  if (!fragment) return [];
+  const res = await githubFetch(
+    `https://api.github.com/search/repositories?${new URLSearchParams({
+      q: `${fragment} in:name is:public`,
+      sort: 'stars',
+      per_page: '20',
+    })}`,
+    { token }
+  );
+  if (res.status === 422) return [];
+  const data = await githubJsonOrThrow(res, 'GitHub search/repositories');
+  return (data.items ?? []).filter((r) => !r.private).map(mapRepo);
+}
+
+/** Search public GitHub repos by name or exact `owner/repo` (up to 20 results). */
+export async function findPublicRemoteRepos(token, { query = '', org = '' } = {}) {
+  const q = query.trim();
+  if (!q || !token) return [];
+
+  const orgPrefix = org ? `${org.toLowerCase()}/` : '';
+  const seen = new Set();
+  const results = [];
+
+  const maybeAdd = (repo) => {
+    if (!repo || repo.private || typeof repo.full_name !== 'string' || !repo.full_name) return;
+    const key = repo.full_name.toLowerCase();
+    if (seen.has(key)) return;
+    if (orgPrefix && !key.startsWith(orgPrefix)) return;
+    seen.add(key);
+    results.push(repo);
+  };
+
+  if (isResolvablePublicRepoFullName(q)) {
+    const exact = await fetchPublicRepoByFullName(token, q);
+    maybeAdd(exact);
+  }
+
+  if (q.length >= 2) {
+    const searchResults = await searchPublicRepositories(token, q);
+    for (const repo of searchResults) maybeAdd(repo);
+  }
+
+  return results.slice(0, 20);
+}
 
 // Refreshing installation and repo lists is manual, so we can cache them indefinitely
 const REPOS_CACHE_TTL = Infinity;
@@ -388,6 +466,56 @@ async function isLinkedWorktree(worktreePath) {
   }
 }
 
+async function subagentWorktreeHeadAtBranch(worktreeAbsPath, localBranch, commitSha) {
+  try {
+    const { stdout: branchStdout } = await execFileAsync(
+      'git',
+      ['-C', worktreeAbsPath, 'rev-parse', '--abbrev-ref', 'HEAD'],
+      { stdio: 'pipe' }
+    );
+    const branch = branchStdout.trim();
+    if (branch !== localBranch) return false;
+    const { stdout: headStdout } = await execFileAsync(
+      'git',
+      ['-C', worktreeAbsPath, 'rev-parse', 'HEAD'],
+      { stdio: 'pipe' }
+    );
+    return headStdout.trim() === commitSha;
+  } catch {
+    return false;
+  }
+}
+
+async function ensureLocalBranchAtCommit(mainRepoPath, localBranch, commitSha) {
+  try {
+    const { stdout } = await execFileAsync(
+      'git',
+      ['rev-parse', '--verify', `refs/heads/${localBranch}`],
+      { cwd: mainRepoPath, stdio: 'pipe' }
+    );
+    if (stdout.trim() === commitSha) return true;
+    await deleteLocalGitBranchBestEffort(mainRepoPath, localBranch);
+    try {
+      const { stdout: after } = await execFileAsync(
+        'git',
+        ['rev-parse', '--verify', `refs/heads/${localBranch}`],
+        { cwd: mainRepoPath, stdio: 'pipe' }
+      );
+      if (after.trim() === commitSha) return true;
+      throw new Error(
+        `createSubagentGitWorktree: branch ${localBranch} exists at ${after.trim()} but expected ${commitSha}`
+      );
+    } catch (err) {
+      if (err?.message?.startsWith('createSubagentGitWorktree:')) throw err;
+      /* branch removed — worktree add -b will recreate */
+    }
+  } catch (err) {
+    if (err?.message?.startsWith('createSubagentGitWorktree:')) throw err;
+    /* branch does not exist yet */
+  }
+  return false;
+}
+
 /** @param {{ baseBranch?: string, detach?: boolean, localBranch?: string }} [opts] — `detach` defaults to true (false checks out `branch` in the new worktree). `localBranch` creates a unique local ref instead of checking out `branch`. */
 export async function createWorktree(repo, branch, worktreeId, token, opts = {}) {
   const { baseBranch, detach = true, localBranch = null } = opts;
@@ -490,7 +618,7 @@ export async function createWorktree(repo, branch, worktreeId, token, opts = {})
 }
 
 /** Resolve the on-disk worktree path from the DB row, or from repo + short_id when still provisioning. */
-function resolveSessionWorktreePath(session, repo) {
+export function resolveSessionWorktreePath(session, repo) {
   const fromDb = resolveDataDirRelativePath(session?.session_path);
   if (fromDb) return fromDb;
   const stripped = repo?.stripped_name || (repo?.full_name ? toStrippedName(repo.full_name) : null);
@@ -564,6 +692,75 @@ export async function removeWorktree(session, repo, options = {}) {
   }
   await fs.promises.rm(cleanupPath, { recursive: true, force: true });
   await maybeDeleteUnique();
+}
+
+/**
+ * Add a subagent isolated worktree at an exact commit (no fetch, no upstream).
+ * Run from the main repo clone; `commitSha` is typically the session worktree HEAD.
+ */
+export async function createSubagentGitWorktree(
+  mainRepoPath,
+  localBranch,
+  worktreeAbsPath,
+  commitSha
+) {
+  if (!mainRepoPath || !localBranch || !worktreeAbsPath || !commitSha) {
+    throw new Error('createSubagentGitWorktree: missing required arguments');
+  }
+  if (await isLinkedWorktree(worktreeAbsPath)) {
+    if (await subagentWorktreeHeadAtBranch(worktreeAbsPath, localBranch, commitSha)) {
+      return { worktreePath: worktreeAbsPath };
+    }
+    await removeSubagentGitWorktree(mainRepoPath, worktreeAbsPath);
+  }
+  try {
+    await fs.promises.rm(worktreeAbsPath, { recursive: true, force: true });
+  } catch {
+    /* path may not exist */
+  }
+  const branchAtCommit = await ensureLocalBranchAtCommit(mainRepoPath, localBranch, commitSha);
+  const addArgs = ['worktree', 'add'];
+  if (!branchAtCommit) addArgs.push('-b', localBranch);
+  addArgs.push(worktreeAbsPath);
+  if (branchAtCommit) addArgs.push(localBranch);
+  else addArgs.push(commitSha);
+  await execFileAsync('git', addArgs, {
+    cwd: mainRepoPath,
+    stdio: 'pipe',
+  });
+  return { worktreePath: worktreeAbsPath };
+}
+
+/** Best-effort `git worktree remove` for a subagent checkout. */
+export async function removeSubagentGitWorktree(mainRepoPath, worktreeAbsPath) {
+  if (!mainRepoPath || !worktreeAbsPath) return;
+  try {
+    await fs.promises.access(worktreeAbsPath);
+  } catch {
+    return;
+  }
+  try {
+    await fs.promises.access(mainRepoPath);
+    await execFileAsync('git', ['worktree', 'remove', '--force', worktreeAbsPath], {
+      cwd: mainRepoPath,
+      stdio: 'pipe',
+    });
+  } catch {
+    /* directory may already be unlinked */
+  }
+}
+
+/** Best-effort delete of a throwaway local branch from the main repo clone. */
+export async function deleteLocalGitBranchBestEffort(mainRepoPath, branch) {
+  if (!mainRepoPath || !branch) return;
+  try {
+    await execFileAsync('git', ['branch', '-D', branch], {
+      cwd: mainRepoPath,
+      stdio: 'pipe',
+    });
+  } catch {
+    /* missing ref or still checked out elsewhere */
+  }
 }
 
 /** Prefer the archived session's unique local ref when it still exists in the main repo clone. */
@@ -679,16 +876,20 @@ export async function gitFetch(worktreePath, token, branch) {
 export async function gitPush(
   worktreePath,
   token,
-  { branch, force = false, forceOverwrite = false } = {}
+  { branch, sourceBranch, force = false, forceOverwrite = false } = {}
 ) {
   const currentBranch = (
     await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: worktreePath })
   ).stdout.trim();
   const targetBranch = branch ?? currentBranch;
-  const refspec =
-    !currentBranch || currentBranch === 'HEAD' || currentBranch === targetBranch
-      ? targetBranch
-      : `HEAD:${targetBranch}`;
+  let refspec;
+  if (sourceBranch) {
+    refspec = `${sourceBranch}:${targetBranch}`;
+  } else if (!currentBranch || currentBranch === 'HEAD' || currentBranch === targetBranch) {
+    refspec = targetBranch;
+  } else {
+    refspec = `HEAD:${targetBranch}`;
+  }
 
   const pushArgs = ['push', '--set-upstream'];
   if (forceOverwrite) pushArgs.push('--force');
@@ -731,11 +932,12 @@ const MAX_DIFF_BUFFER_SIZE = 5 * 1024 * 1024;
  * parent) are not counted, even if `origin/<session remote_branch>` was never pushed.
  * @returns {Promise<number>}
  */
-export async function gitCommitsNotOnAnyRemote(worktreePath) {
+export async function gitCommitsNotOnAnyRemote(worktreePath, localRef = 'HEAD') {
+  const rev = localRef || 'HEAD';
   try {
     const { stdout } = await execFileAsync(
       'git',
-      ['-C', worktreePath, 'rev-list', '--count', 'HEAD', '--not', '--remotes'],
+      ['-C', worktreePath, 'rev-list', '--count', rev, '--not', '--remotes'],
       { maxBuffer: 256 }
     );
     return parseInt(stdout.trim(), 10) || 0;
@@ -746,16 +948,17 @@ export async function gitCommitsNotOnAnyRemote(worktreePath) {
 
 /**
  * Returns the number of local commits not yet on the session remote branch.
- * When `remoteBranch` is set, counts `origin/<remoteBranch>..HEAD` so a unique
- * local worktree branch is not treated as fully unpushed. Falls back to
- * `HEAD --not --remotes` if that origin ref is missing (new branch never pushed).
- * When `missingOriginRefMeansUnpushed` is true, a missing `origin/<remoteBranch>`
- * returns 1 instead of that fallback (for alternate-target pushes where HEAD may
- * already be on the session remote).
+ * When `remoteBranch` is set, counts `origin/<remoteBranch>..<localRef>` so a unique
+ * local worktree branch is not treated as fully unpushed. `localRef` defaults to HEAD.
+ * Falls back to `<localRef> --not --remotes` if that origin ref is missing (new branch
+ * never pushed). When `missingOriginRefMeansUnpushed` is true, a missing
+ * `origin/<remoteBranch>` returns 1 instead of that fallback (for alternate-target
+ * pushes where the local ref may already be on the session remote).
  * @returns {Promise<number>}
  */
 export async function gitCommitsToPush(worktreePath, remoteBranch = null, options = {}) {
-  const { missingOriginRefMeansUnpushed = false } = options;
+  const { missingOriginRefMeansUnpushed = false, localRef = 'HEAD' } = options;
+  const local = localRef || 'HEAD';
   try {
     if (remoteBranch) {
       try {
@@ -764,20 +967,21 @@ export async function gitCommitsToPush(worktreePath, remoteBranch = null, option
           ['-C', worktreePath, 'rev-parse', '--verify', `origin/${remoteBranch}`],
           { maxBuffer: 256 }
         );
-        const { stdout } = await execFileAsync(
-          'git',
-          ['-C', worktreePath, 'rev-list', '--count', `origin/${remoteBranch}..HEAD`],
-          { maxBuffer: 256 }
-        );
-        return parseInt(stdout.trim(), 10) || 0;
       } catch {
         if (missingOriginRefMeansUnpushed) {
           return 1;
         }
         /* origin/<remoteBranch> missing — count commits not on any remote */
+        return gitCommitsNotOnAnyRemote(worktreePath, local);
       }
+      const { stdout } = await execFileAsync(
+        'git',
+        ['-C', worktreePath, 'rev-list', '--count', `origin/${remoteBranch}..${local}`],
+        { maxBuffer: 256 }
+      );
+      return parseInt(stdout.trim(), 10) || 0;
     }
-    return gitCommitsNotOnAnyRemote(worktreePath);
+    return gitCommitsNotOnAnyRemote(worktreePath, local);
   } catch {
     return 0;
   }
@@ -872,10 +1076,11 @@ export async function gitLogSinceBase(worktreePath, baseBranch, { limit = 100 } 
  * If remoteBranch is provided, resolves `origin/<remoteBranch>`; otherwise uses `@{u}`.
  * @returns {Promise<{ localSha: string|null, remoteSha: string|null }>}
  */
-export async function gitLocalAndRemoteSha(worktreePath, remoteBranch = null) {
+export async function gitLocalAndRemoteSha(worktreePath, remoteBranch = null, localRef = null) {
   const remoteRef = remoteBranch ? `origin/${remoteBranch}` : '@{u}';
+  const localRev = localRef || 'HEAD';
   const [localResult, remoteResult] = await Promise.allSettled([
-    execFileAsync('git', ['-C', worktreePath, 'rev-parse', '--short', 'HEAD'], {
+    execFileAsync('git', ['-C', worktreePath, 'rev-parse', '--short', localRev], {
       maxBuffer: 256,
     }),
     execFileAsync('git', ['-C', worktreePath, 'rev-parse', '--short', remoteRef], {
@@ -2248,7 +2453,7 @@ export function descriptionHasImage(markdown) {
 export function baguetteDescriptionLink(sessionId) {
   return (
     `Images not showing? ` +
-    `[Open the full description in Baguette](${PUBLIC_API_URL}/session/${sessionId}/description)`
+    `[Open the full description in Baguette](${PUBLIC_HOST}/session/${sessionId}/description)`
   );
 }
 

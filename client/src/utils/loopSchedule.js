@@ -46,6 +46,15 @@ export function scheduleFromLoop(loop) {
 
 /** The fields the server actually stores for this recurrence, with the unused ones nulled. */
 export function schedulePayload(schedule) {
+  if (schedule.schedule_type === 'manual') {
+    return {
+      schedule_type: 'manual',
+      interval_minutes: null,
+      time_of_day: null,
+      days_of_week: null,
+      timezone: schedule.timezone,
+    };
+  }
   const isInterval = schedule.schedule_type === 'interval';
   return {
     schedule_type: schedule.schedule_type,
@@ -58,6 +67,7 @@ export function schedulePayload(schedule) {
 }
 
 export function isScheduleComplete(schedule) {
+  if (schedule.schedule_type === 'manual') return true;
   if (schedule.schedule_type === 'interval') return !!schedule.interval_minutes;
   if (!schedule.time_of_day) return false;
   return schedule.schedule_type !== 'weekly' || schedule.days_of_week.length > 0;
@@ -76,6 +86,7 @@ function formatInterval(minutes) {
 /** Human summary of a loop's recurrence, e.g. "Every 2 hours" or "Mon, Wed at 09:00 (UTC)". */
 export function describeSchedule(loop) {
   if (!loop?.schedule_type) return '';
+  if (loop.schedule_type === 'manual') return 'Manually';
   if (loop.schedule_type === 'interval') {
     const text = formatInterval(Number(loop.interval_minutes));
     return text.charAt(0).toUpperCase() + text.slice(1);

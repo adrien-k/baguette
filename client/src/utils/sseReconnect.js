@@ -1,10 +1,5 @@
 const listeners = new Set();
-
-/** Debounce refetch fan-out so a flaky reconnect does not stampede the API. */
-const SSE_REFETCH_DEBOUNCE_MS = 250;
-
-/** @type {ReturnType<typeof setTimeout> | null} */
-let notifyTimer = null;
+const pauseListeners = new Set();
 
 function flushSseReconnectListeners() {
   for (const listener of listeners) {
@@ -22,19 +17,31 @@ export function subscribeSseReconnect(listener) {
   return () => listeners.delete(listener);
 }
 
-export function notifySseReconnect() {
-  if (notifyTimer != null) clearTimeout(notifyTimer);
-  notifyTimer = setTimeout(() => {
-    notifyTimer = null;
-    flushSseReconnectListeners();
-  }, SSE_REFETCH_DEBOUNCE_MS);
+function flushSseStreamPausedListeners() {
+  for (const listener of pauseListeners) {
+    try {
+      listener();
+    } catch {
+      /* listener errors must not break pause handling */
+    }
+  }
 }
 
-/** @internal Test helper — runs pending debounced notifications immediately. */
-export function flushSseReconnectNotifyForTests() {
-  if (notifyTimer != null) {
-    clearTimeout(notifyTimer);
-    notifyTimer = null;
-  }
+/**
+ * Subscribe when the SSE stream is paused (hidden tab or offline). Listeners
+ * usually mark cached server state stale so the next mount or reconnect reloads it.
+ */
+export function subscribeSseStreamPaused(listener) {
+  pauseListeners.add(listener);
+  return () => pauseListeners.delete(listener);
+}
+
+/** @internal Called when the fetch SSE stream is aborted due to hidden tab or offline. */
+export function notifySseStreamPaused() {
+  flushSseStreamPausedListeners();
+}
+
+/** @internal Called when the SSE stream opens after it had already connected once. */
+export function notifySseReconnect() {
   flushSseReconnectListeners();
 }

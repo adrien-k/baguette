@@ -1,57 +1,56 @@
 config:
-  session:
-    env:
-      # Per-session SQLite/migrations — not the Baguette server DATA_DIR (~/.baguette).
-      # Hardcoded for local preview sessions only — not used in production.
-      DATA_DIR: './.data'
-      ENCRYPTION_KEY: 'baguette-local-preview-encryption-key-not-for-prod'
-      # Mock agent SDK (server + Vite client); slower pacing than e2e/start-dev.sh — preview/dogfood only.
-      ENABLE_MOCK_AGENT: 'true'
-      MOCK_AGENT_SLEEP_MS: '0'
-      MOCK_AGENT_STEP_DELAY_MS: '2000'
-      DEV_USER_GH_KEY: '${{ baguette.secrets.DEV_USER_GH_KEY }}'
-      PUBLIC_HOST: '${{ baguette.services.app.public_uri }}'
-      SOCKET_PATH: '/_baguette/ws/${{ baguette.session.short_id }}'
-    init: |
-      mkdir -p .data ../../../dev-data-dir
-      pnpm install:all
-      .baguette/scripts/dev-data-load.sh
-    tasks:
-      run-tests:
-        run: pnpm test
-      run-e2e:
-        run: bash .baguette/scripts/run-e2e.sh
-        ports: [E2E_PORT]
-      lint:
-        run: pnpm run lint
-      lint-exports:
-        run: pnpm run lint:exports
-        description: Scans the full JS/TS module graph resolver — typically ~45–60s and high CPU/RAM
-      agents-integration-test:
-        description: Live SDK suite — listModels, connectivity, builder + reviewer turns (~$0.02/run as of 2026-10-31). Not part of run-tests.
-        run: pnpm vitest run server/agent-sdks/pi/__tests__/pi.live.test.js server/agent-sdks/claude/__tests__/claude.live.test.js server/agent-sdks/cursor/__tests__/cursor.live.test.js
-        env:
-          SDK_TESTS_CURSOR_API_KEY: '${{ baguette.secrets.CURSOR_API_KEY }}'
-          SDK_TESTS_CURSOR_MODEL: glm-5p3-flash
-          SDK_TESTS_PI_API_KEY: '${{ baguette.secrets.OPEN_CODE_GO_API_KEY }}'
-          SDK_TESTS_PI_MODEL: opencode-go/glm-5.3-flash
-          SDK_TESTS_PI_API_KEY_ENV_VAR: OPENCODE_GO_API_KEY
-          SDK_TESTS_CLAUDE_AUTH_TOKEN: '${{ baguette.secrets.OPEN_CODE_GO_API_KEY }}'
-          SDK_TESTS_CLAUDE_API_URL: 'https://opencode.ai/inference/go/anthropic'
-          SDK_TESTS_CLAUDE_MODEL: claude-haiku-5-5
-      migrate-dev-environment:
-        run: pnpm run migrate
-      dev-data:load:
-        run: .baguette/scripts/dev-data-load.sh
-      dev-data:persist:
-        run: .baguette/scripts/dev-data-persist.sh
-        confirm: true
-        description: Overwrite shared dev-data-dir with this session’s entire .data directory. repos.repo_path in the DB is relative to DATA_DIR so it survives load/persist across worktrees.
-      dev-server:
-        # Starts Express (on $PORT) + Vite dev server (on $VITE_PORT) concurrently.
-        # Vite proxies /api, /auth, /socket.io to Express.
-        run: pnpm run dev
-        ports: [PORT, VITE_PORT]
+  env:
+    # Per-session SQLite/migrations — not the Baguette server DATA_DIR (~/.baguette).
+    # Hardcoded for local preview sessions only — not used in production.
+    DATA_DIR: './.data'
+    ENCRYPTION_KEY: 'baguette-local-preview-encryption-key-not-for-prod'
+    # Mock agent SDK (server + Vite client); slower pacing than e2e/start-dev.sh — preview/dogfood only.
+    ENABLE_MOCK_AGENT: 'true'
+    MOCK_AGENT_SLEEP_MS: '0'
+    MOCK_AGENT_STEP_DELAY_MS: '2000'
+    DEV_USER_GH_KEY: '${{ baguette.secrets.DEV_USER_GH_KEY }}'
+    PUBLIC_HOST: '${{ baguette.services.app.public_uri }}'
+    SOCKET_PATH: '/_baguette/ws/${{ baguette.session.short_id }}'
+  init: |
+    mkdir -p .data ../../../dev-data-dir
+    pnpm install
+    .baguette/scripts/dev-data-load.sh
+  tasks:
+    run-tests:
+      run: pnpm test
+    run-e2e:
+      run: bash .baguette/scripts/run-e2e.sh
+      ports: [E2E_PORT]
+    lint:
+      run: pnpm run lint
+    lint-exports:
+      run: pnpm run lint:exports
+      description: Scans the full JS/TS module graph resolver — typically ~45–60s and high CPU/RAM
+    agents-integration-test:
+      description: Live SDK suite — listModels, connectivity, builder + reviewer turns (~$0.02/run as of 2026-10-31). Not part of run-tests.
+      run: pnpm vitest run server/agent-sdks/pi/__tests__/pi.live.test.js server/agent-sdks/claude/__tests__/claude.live.test.js server/agent-sdks/cursor/__tests__/cursor.live.test.js
+      env:
+        SDK_TESTS_CURSOR_API_KEY: '${{ baguette.secrets.CURSOR_API_KEY }}'
+        SDK_TESTS_CURSOR_MODEL: composer-2.5
+        SDK_TESTS_PI_API_KEY: '${{ baguette.secrets.OPEN_CODE_GO_API_KEY }}'
+        SDK_TESTS_PI_MODEL: opencode-go/glm-5.3-flash
+        SDK_TESTS_PI_API_KEY_ENV_VAR: OPENCODE_GO_API_KEY
+        SDK_TESTS_CLAUDE_AUTH_TOKEN: '${{ baguette.secrets.OPEN_CODE_GO_API_KEY }}'
+        SDK_TESTS_CLAUDE_API_URL: 'https://opencode.ai/inference/go/anthropic'
+        SDK_TESTS_CLAUDE_MODEL: claude-haiku-5-5
+    migrate-dev-environment:
+      run: pnpm run migrate
+    dev-data:load:
+      run: .baguette/scripts/dev-data-load.sh
+    dev-data:persist:
+      run: .baguette/scripts/dev-data-persist.sh
+      confirm: true
+      description: Overwrite shared dev-data-dir with this session’s entire .data directory. repos.repo_path in the DB is relative to DATA_DIR so it survives load/persist across worktrees.
+    dev-server:
+      # Starts Express (on $PORT) + Vite dev server (on $VITE_PORT) concurrently.
+      # Vite proxies /api, /auth, /socket.io to Express.
+      run: pnpm run dev
+      ports: [PORT, VITE_PORT]
   services:
     app:
       task: dev-server

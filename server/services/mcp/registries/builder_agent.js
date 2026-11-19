@@ -42,6 +42,8 @@ import { createEditPlanTool } from '../tools/edit-plan.js';
 import { createReadPlanTool } from '../tools/read-plan.js';
 import { createCompletePlanTool } from '../tools/complete-plan.js';
 import { createConfigureMcpServerTool } from '../tools/configure-mcp-server.js';
+import { createStartReviewTool } from '../tools/start-review.js';
+import { createContinueReviewTool } from '../tools/continue-review.js';
 
 function buildBuilderIssueTools(ctx, session, app, agent) {
   const handlers = createIssueHandlers(session, app, agent ?? {});
@@ -95,6 +97,8 @@ export function buildBuilderAgentTools(session, app, { slackApps = [], agent = n
     createConfigRepoPromptTool(ctx),
     createUploadImageTool(ctx),
     createConfigureMcpServerTool(ctx),
+    createStartReviewTool(ctx),
+    createContinueReviewTool(ctx),
   ];
   if (slackApps.length) {
     tools.push(createSlackPostMessageTool(ctx));

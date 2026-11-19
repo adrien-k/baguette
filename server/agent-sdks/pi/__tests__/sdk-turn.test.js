@@ -190,6 +190,32 @@ describe('processPiSessionStream', () => {
       expect(verdicts).toEqual([]);
     });
 
+    it('backfills thinking from message_end when no thinking_delta streamed', async () => {
+      const writer = makeWriter();
+      await processPiSessionStream({
+        writer,
+        subscribe: (listener) => {
+          listener({
+            type: 'message_end',
+            message: {
+              role: 'assistant',
+              stopReason: 'stop',
+              content: [
+                { type: 'thinking', thinking: 'brief reasoning' },
+                { type: 'text', text: 'THINK_OK' },
+              ],
+            },
+          });
+          listener({ type: 'agent_settled' });
+          return () => {};
+        },
+        runPrompt: async () => {},
+      });
+      expect(writer.apply).toHaveBeenCalledWith([
+        expect.objectContaining({ op: 'assistant_thinking', text: 'brief reasoning' }),
+      ]);
+    });
+
     it('aborted turn still persists partial assistant and tool output', async () => {
       const writer = makeWriter();
       const controller = new AbortController();

@@ -100,6 +100,17 @@ export default function GitPushToolBlock({
   const reason =
     typeof mcpResult?.reason === 'string' && mcpResult.reason ? mcpResult.reason : argsReason;
   const autoPushOff = mcpResult?.auto_push_off === true;
+  const argsSourceBranch =
+    typeof args.source_branch === 'string' && args.source_branch.trim()
+      ? args.source_branch.trim()
+      : null;
+  const autoPushOffOnlyReason =
+    autoPushOff &&
+    !force &&
+    !argsSourceBranch &&
+    (!args.branch ||
+      args.branch === session?.remote_branch ||
+      args.branch === session?.local_branch);
 
   const showApprovalWait =
     (running && needsApproval && !directPushInProgress) || (requested && outcome !== 'pushing');
@@ -160,12 +171,18 @@ export default function GitPushToolBlock({
             {reason}
           </p>
         ) : null}
-        {autoPushOff && (
+        {autoPushOffOnlyReason && (requested || showApprovalWait) ? (
+          <p className="text-fg-muted leading-snug">
+            Confirmation is required because auto-push is off for this session — this is a one-time
+            manual push.
+          </p>
+        ) : null}
+        {autoPushOff && !autoPushOffOnlyReason ? (
           <p className="flex items-start gap-1.5 text-warning leading-snug">
             <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
-            Auto-push is off — the user is asked whether to push once anyway.
+            Auto-push is off for this session — confirm to push once manually.
           </p>
-        )}
+        ) : null}
         {showApprovalWait && (
           <p className="text-faint leading-snug">
             Waiting for the user to confirm or cancel in the Push modal.

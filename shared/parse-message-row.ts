@@ -100,7 +100,12 @@ export function parseMessageRow(row: SessionMessageRow): ChatMessageView {
 
   if (payloadType === 'assistant' && Array.isArray(payload.blocks)) {
     const typed = payload as unknown as AssistantMessagePayload;
-    return { ...meta, type: 'assistant', blocks: typed.blocks };
+    return {
+      ...meta,
+      type: 'assistant',
+      blocks: typed.blocks,
+      ...(typed.turn_reply === true ? { turn_reply: true } : {}),
+    };
   }
 
   if (
@@ -133,6 +138,7 @@ export function parseMessageRow(row: SessionMessageRow): ChatMessageView {
         title: normalized.title,
         subtype: row.subtype ?? normalized.subtype ?? null,
         answers: (payload as { answers?: { question?: string; value?: string }[] }).answers,
+        mcp_sender: normalized.mcp_sender,
       };
     }
     if (Array.isArray(normalized.content)) {
@@ -143,6 +149,7 @@ export function parseMessageRow(row: SessionMessageRow): ChatMessageView {
         source: normalized.source,
         title: normalized.title,
         subtype: row.subtype ?? normalized.subtype ?? null,
+        mcp_sender: normalized.mcp_sender,
       };
     }
   }

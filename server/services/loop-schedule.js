@@ -6,7 +6,7 @@
  * firing at 09:00 local across DST changes; interval schedules are plain elapsed time.
  */
 
-const SCHEDULE_TYPES = ['interval', 'daily', 'weekly'];
+const SCHEDULE_TYPES = ['interval', 'daily', 'weekly', 'manual'];
 const MIN_INTERVAL_MINUTES = 15;
 const MAX_INTERVAL_MINUTES = 60 * 24 * 30;
 
@@ -76,6 +76,16 @@ export function normalizeSchedule(input) {
     throw new Error(`schedule_type must be one of: ${SCHEDULE_TYPES.join(', ')}`);
   }
   const timezone = isValidTimezone(input?.timezone) ? input.timezone : 'UTC';
+
+  if (type === 'manual') {
+    return {
+      type,
+      interval_minutes: null,
+      time_of_day: null,
+      days_of_week: null,
+      timezone,
+    };
+  }
 
   if (type === 'interval') {
     const minutes = Number(input?.interval_minutes);
@@ -147,6 +157,7 @@ export function parseDaysOfWeek(value) {
  */
 export function computeNextRun(schedule, fromMs = Date.now()) {
   const s = normalizeSchedule(schedule);
+  if (s.type === 'manual') return null;
   if (s.type === 'interval') {
     return new Date(fromMs + s.interval_minutes * 60_000).toISOString();
   }
