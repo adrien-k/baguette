@@ -4,7 +4,7 @@
 
 ## What is Baguette?
 
-Baguette is a self-hosted orchestrator for AI coding agents that runs in the cloud, giving you AI-powered coding sessions with GitHub integration, isolated test environments, and the ability to review and merge changes — from any device, including your phone. It supports both [Claude Code](https://platform.claude.com/docs/en/agent-sdk/typescript) and [Cursor](https://cursor.com) as agent backends.
+Baguette is a self-hosted orchestrator for AI coding agents that runs in the cloud, giving you AI-powered coding sessions with GitHub integration, isolated test environments, and the ability to review and merge changes — from any device, including your phone. It supports [Claude Code](https://platform.claude.com/docs/en/agent-sdk/typescript), [Cursor](https://cursor.com), and [Pi](https://pi.dev) (OpenRouter, OpenCode Zen, ZAI, and many other LLM providers).
 
 - **Runs in the cloud, accessible anywhere** -- Deploy to your own VPS or EC2 instance and develop from any device, including your phone.
 - **Tests and dev servers for every session** -- Baguette configures the host to run databases, tests, and whatever else your project needs, isolated per session.
@@ -12,13 +12,13 @@ Baguette is a self-hosted orchestrator for AI coding agents that runs in the clo
 
 **What it isn't:**
 
-- **An isolated environment to run agents** -- Baguette runs agents with full shell access on the host. The good news is you can run it on a dedicated machine with limited access.
+- **An isolated environment to run agents** -- Baguette runs agents with full shell access on the host. Run it on a dedicated non-sensitive machine or VM.
 - **A secured multi-tenant platform** -- This is primarily intended for a single user or a close group of builders who don't mind sharing the code (no filesystem isolation) they work on and the machine resources (CPU, memory, database servers, etc.).
 
 ## Features
 
 - **GitHub sign-in (optional)** -- Sign in through your own GitHub App to create branches and PRs on your behalf. Baguette is scoped to the repositories you grant the App -- down to a single one. You can skip the App and use passkeys and/or a personal access token instead.
-- **Claude & Cursor agents** -- Choose between Claude Code and Cursor as the agent backend when creating a session. Both support Start (agent) and Plan modes.
+- **Claude, Cursor & Pi agents** -- Choose Claude Code, Cursor, or Pi as the agent backend when creating a session. All support Start (agent) and Plan modes.
 - **Session management** -- Spin up sessions from any branch of any repo. Each session gets its own git worktree.
 - **Multi-session orchestration** -- Run several sessions in parallel from a global session: agents subscribe to child-session turn-end notifications and report progress as it happens ([read more](docs/sessions-and-agents.md)).
 - **Live preview** -- Test your session's changes live in the browser. Each session gets a subdomain hooked to its development server, its own database, and the rest of its isolated stack ([read more](docs/session-management.md#web-server-preview)).
@@ -26,7 +26,7 @@ Baguette is a self-hosted orchestrator for AI coding agents that runs in the clo
 - **Task execution** -- Run arbitrary commands within a session's working directory. Tail logs, kill processes, and track running tasks per-session and globally.
 - **Diff view** -- Browse the session's current git diff with per-file sections and inline/split toggle.
 - **File attachments** -- Attach images and files to any chat message.
-- **Cost tracking** -- Track session costs on session cards, with a daily chart and usage breakdown per repo (Claude and Cursor costs tracked separately).
+- **Cost tracking** -- Track session costs on session cards, with a daily chart and usage breakdown per repo (per agent backend).
 - **Slack** -- Connect one or more Slack bots at the admin level and agents can post updates to a channel ([read more](docs/slack.md)).
 - **Secrets** -- Inject global secrets into all sessions and tasks via Baguette config placeholders.
 - **Session config (`.baguette.yaml`)** -- Define per-session env vars, init commands, tasks with port allocation and dependencies, and cleanup in your repo. See **[docs/project-configuration.md](docs/project-configuration.md)**.
@@ -34,25 +34,25 @@ Baguette is a self-hosted orchestrator for AI coding agents that runs in the clo
 
 ## Quick start
 
-**Prerequisites:** [Node.js](https://nodejs.org/) 22+. No `.env` file is required for a first run.
+**Prerequisites:** [Node.js](https://nodejs.org/) 22+.
 
 ```bash
 npm install -g baguette-ai
 baguette
 ```
 
-The `baguette` command runs database migrations, then starts the server (default port **3000**). Open [http://www.127.0.0.1.traefik.me:3000](http://www.127.0.0.1.traefik.me:3000) (default public URL; matches WebAuthn and GitHub callback hosts), claim the instance as the first visitor (admin), and finish the wizard: create a GitHub App (manifest) or skip (passkey). Configure agents in **Settings → Agent** with your Anthropic and/or Cursor credentials.
+The `baguette` command runs database migrations, then starts the server (default port **3000**). Open [http://www.127.0.0.1.traefik.me:3000](http://www.127.0.0.1.traefik.me:3000), claim the instance as the first visitor (admin), and finish the wizard: create a GitHub App (manifest) or skip (passkey). Configure agents in **Settings → Agent** (see [Configuring agents](#configuring-agents)).
 
-For a real deployment, run with **`NODE_ENV=production`** and configure the public URL with either **`PUBLIC_HOST`** (full URL) or **`DOMAIN`** (apex hostname). `npm start` sets `NODE_ENV=production`; the global `baguette` CLI does not — export both vars yourself when deploying that way.
+For production, set **`NODE_ENV=production`** and configure the public URL with **`PUBLIC_HOST`** or **`DOMAIN`** — see [Environment variables](#environment-variables).
 
-Persistent data (SQLite, encryption key, repo clones, worktrees) is stored under **`~/.baguette`** by default. On first boot, Baguette creates `encryption.key` there (mode `0600`) — back up that directory across restarts.
+Persistent data (database, repo clones, worktrees) lives under **`~/.baguette`** by default. Back up that directory across restarts.
 
 **Optional on the host:**
 
 - [Claude Code](https://claude.ai/install.sh) for Claude agent sessions: `curl -fsSL https://claude.ai/install.sh | bash`
 - [code-server](https://coder.com/docs/code-server/install) for the **VS Code** button on sessions
 
-To set a public hostname, bootstrap password, custom data directory, or other server options, see **[Environment variables](#environment-variables)** (or export vars in your process manager / container platform — no `.env` file needed).
+To set a public hostname, bootstrap password, custom data directory, or other server options, see **[Environment variables](#environment-variables)**.
 
 To work on Baguette itself (Vite dev server, tests, optional `.env`), see **[CONTRIBUTING.md — Development setup](CONTRIBUTING.md#development-setup)**.
 
@@ -63,6 +63,8 @@ Configure your agent(s) in **Settings → Agent**.
 **Claude:** Enter a Console API key (`sk-ant-api…`) in **API key**, or a subscription token from `claude setup-token` (`sk-ant-oat…`) in **Auth token**. For an Anthropic-compatible gateway, set **API base URL** with the **Auth token** or **API key** your gateway expects. **Test connection** calls the gateway’s `/v1/models` API — it does not run Claude Code. Claude Code must be installed on the host for agent sessions.
 
 **Cursor:** Enter your Cursor API key and optionally set a default model and variant. No additional CLI installation required.
+
+**Pi:** Use Pi when you want models from providers other than Anthropic or Cursor — for example [OpenRouter](https://openrouter.ai/), [OpenCode Zen](https://opencode.ai/), [ZAI](https://z.ai/), Groq, or DeepSeek. Pi supports [many providers](https://pi.dev/docs/latest/providers); each maps to an API-key environment variable (e.g. `OPENROUTER_API_KEY`, `OPENCODE_API_KEY`, `ZAI_API_KEY`). In **Settings → Agent**, add a configuration, choose **Pi** as the agent type, select the matching **API key env var**, paste your provider API key, and run **Test connection** to load models. Set a default model for new sessions. You can add multiple Pi configurations for different providers. No extra CLI installation is required on the host.
 
 ### GitHub App (optional)
 
@@ -114,11 +116,13 @@ Repository contributors can copy [`.env.dev.example`](.env.dev.example) to `.env
 
 - **Backend**: Express, Feathers.js, SQLite (via Knex), Socket.io
 - **Frontend**: Vite, React, Tailwind CSS
-- **AI**: `@anthropic-ai/claude-agent-sdk`, `@cursor/sdk`
+- **AI**: `@anthropic-ai/claude-agent-sdk`, `@cursor/sdk`, `@earendil-works/pi-coding-agent`
 
 ## Configuring your project
 
 Add a `.baguette.yaml` file so Baguette can run tests, dev servers, and other tasks across parallel sessions without database or port conflicts. The config defines per-session environment variables, initialization commands, named tasks with automatic port allocation, and a dev server preview.
+
+The easiest way to get started is to open a Baguette session on the repository and ask it to **configure the repo for Baguette** — it can generate `.baguette.yaml` (and optional `.baguette/` helpers) from your codebase.
 
 See **[docs/project-configuration.md](docs/project-configuration.md)** for the full schema, task dependencies, and framework-specific examples.
 

@@ -4,7 +4,7 @@ Baguette uses **`.baguette.yaml`** at the repository root to configure per-sessi
 
 Top-level keys under `config` are **`env`**, **`init`**, **`cleanup`**, **`tasks`**, plus **`services`** and **`recipes`**.
 
-> **Tip:** The easiest way to configure your project is to ask Baguette directly. It has full context about your repo and can generate **`.baguette.yaml`** for you (including `type: docker` tasks for databases and caches) and optional **`.baguette/`** helper files when needed.
+> **Tip:** The easiest way to configure your project is to open a Baguette session on the repository and ask it to **configure the repo for Baguette**. It has full context about your codebase and can generate **`.baguette.yaml`** for you (including `type: docker` tasks for databases and caches) and optional **`.baguette/`** helper files when needed.
 
 ## Docker services (PostgreSQL, Redis, etc.)
 
