@@ -36,7 +36,7 @@ export function createStartReviewTool(ctx) {
         .boolean()
         .optional()
         .describe(
-          'When true, Baguette posts the reviewer’s turn result back to you as a new user message when its turn finishes or waits for input. Use when ending your turn before the review completes; skip if you will AwaitAgent yourself.'
+          'When true, Baguette posts the reviewer’s turn result back to you once when its turn finishes or waits for input (one-shot subscription). Use when ending your turn before the review completes; skip if you will AwaitAgent yourself.'
         ),
     },
     handler: async (args) => {

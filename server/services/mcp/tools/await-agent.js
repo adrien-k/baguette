@@ -2,10 +2,11 @@ import { z } from 'zod';
 import { mcpAwaitTimeoutMinutes } from '../../../../shared/mcp-await-timeout.js';
 import { ok, fail } from '../lib/result.js';
 import { requireOwnedSessionById } from '../lib/session-resolution.js';
+import { isParentAncestorOf } from '../../agents-db.js';
 import { resolveAgentInSession } from '../lib/subagent-resolution.js';
 
 export function createAwaitAgentTool(ctx) {
-  const { app, userId, callerSession } = ctx;
+  const { app, userId, callerSession, callerAgent } = ctx;
   const userParams = ctx.userParams ?? { provider: 'rest', user: { id: userId } };
   const waitMinutes = mcpAwaitTimeoutMinutes();
   return {
@@ -48,11 +49,22 @@ export function createAwaitAgentTool(ctx) {
         agent_ref,
       });
       if (!agent) return fail('Agent not found');
+      if (callerAgent?.id != null && callerAgent.id === agent.id) {
+        return fail(
+          'Cannot AwaitAgent on yourself — your turn is still running while this tool executes.'
+        );
+      }
+      if (callerAgent?.id != null && (await isParentAncestorOf(db, agent.id, callerAgent.id))) {
+        return fail(
+          'Cannot AwaitAgent on a parent agent while your turn is running — that deadlocks with attach.'
+        );
+      }
       try {
         const result = await app.service('agents').awaitAgent(
           {
             session_id: targetSessionId,
             agent_id: agent.id,
+            ...(callerAgent?.id != null ? { caller_agent_id: callerAgent.id } : {}),
           },
           userParams
         );

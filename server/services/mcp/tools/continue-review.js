@@ -26,7 +26,7 @@ export function createContinueReviewTool(ctx) {
         .boolean()
         .optional()
         .describe(
-          'When true, Baguette posts the reviewer’s turn result back to you when this queued review turn finishes or waits for input.'
+          'When true, Baguette posts the reviewer’s turn result back to you once when this queued review turn finishes or waits for input (one-shot subscription).'
         ),
     },
     handler: async (args) => {

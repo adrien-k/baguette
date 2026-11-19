@@ -21,13 +21,18 @@ import {
   resolveMcpReviewerModel,
   resolveMcpStartSubagentModel,
 } from '../agent-mcp-model-resolver.js';
-import { assertReviewNotInProgress } from '../review-mcp.js';
+import { assertReviewNotInProgress, assertReviewNotifyObserver } from '../review-mcp.js';
 import {
   BAGUETTE_REVIEW_LATEST_TITLE,
   buildReviewLatestChangesContent,
 } from '../../../shared/review-latest-changes-prompt.js';
 import { waitForAgentTurnEnd } from '../wait-for-agent-turn.js';
-import { insertAgentObserver, notifyParentAgentIds } from '../agents-db.js';
+import {
+  insertAgentObserver,
+  isParentAncestorOf,
+  notifyParentAgentIds,
+  upsertReviewNotifyObserver,
+} from '../agents-db.js';
 import {
   buildMcpUserMessageJson,
   summarizeAssistantMessage,
@@ -364,6 +369,19 @@ class AgentsService extends KnexService {
     await this.app.service('sessions').get(sessionId, { user: params.user });
     const db = this.app.get('db');
     const agent = await this._resolveAwaitAgentTarget(db, sessionId, data);
+    const callerAgentId = data?.caller_agent_id != null ? Number(data.caller_agent_id) : null;
+    if (Number.isFinite(callerAgentId)) {
+      if (callerAgentId === agent.id) {
+        throw new BadRequest(
+          'Cannot await your own agent while its turn is running — end the wait or use a different tool.'
+        );
+      }
+      if (await isParentAncestorOf(db, agent.id, callerAgentId)) {
+        throw new BadRequest(
+          'Cannot await a parent agent while your turn is running — that deadlocks with attach.'
+        );
+      }
+    }
     if (agent.status === 'running') {
       await waitForAgentTurnEnd(db, agent.id);
     }
@@ -434,6 +452,13 @@ class AgentsService extends KnexService {
     if (notifyParent && !Number.isFinite(observerAgentId)) {
       throw new BadRequest('observer_agent_id is required when notify_parent is true');
     }
+    if (notifyParent) {
+      await assertReviewNotifyObserver(db, {
+        reviewedSessionId: sessionId,
+        observerAgentId,
+        userId: params.user.id,
+      });
+    }
     const resolved = await resolveMcpReviewerModel(db, params.user.id);
     const initialPrompt =
       data?.initial_prompt != null ? String(data.initial_prompt).trim() || null : null;
@@ -485,17 +510,15 @@ class AgentsService extends KnexService {
       throw new BadRequest('observer_agent_id is required when notify_parent is true');
     }
     if (notifyParent) {
-      try {
-        await insertAgentObserver(db, {
-          agentId: reviewer.id,
-          observerAgentId,
-        });
-      } catch (err) {
-        logger.warn(
-          { agentId: reviewer.id, observerAgentId, err: err?.message },
-          'Failed to insert review notify_parent observer row'
-        );
-      }
+      await assertReviewNotifyObserver(db, {
+        reviewedSessionId: sessionId,
+        observerAgentId,
+        userId: params.user.id,
+      });
+      await upsertReviewNotifyObserver(db, {
+        agentId: reviewer.id,
+        observerAgentId,
+      });
     }
     let content = buildReviewLatestChangesContent(session.base_branch);
     const extra =
@@ -758,17 +781,10 @@ async function afterReviewerCreate(context) {
   if (!session) throw new NotFound('Session not found');
   const observerAgentId = context.params._reviewObserverAgentId;
   if (observerAgentId != null) {
-    try {
-      await insertAgentObserver(context.app.get('db'), {
-        agentId: agent.id,
-        observerAgentId: Number(observerAgentId),
-      });
-    } catch (err) {
-      logger.warn(
-        { agentId: agent.id, observerAgentId, err: err?.message },
-        'Failed to insert StartReview notify_parent observer row'
-      );
-    }
+    await upsertReviewNotifyObserver(context.app.get('db'), {
+      agentId: agent.id,
+      observerAgentId: Number(observerAgentId),
+    });
   }
   try {
     await dispatchReviewerAfterCreate(

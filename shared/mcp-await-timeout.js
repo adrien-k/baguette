@@ -24,13 +24,13 @@ export function agentTurnWaitTimeoutMessage(agent) {
   const minutes = mcpAwaitTimeoutMinutes();
   const stopHint =
     agent?.agent_type === 'subagent'
-      ? 'Use StopSubagent only if it looks stuck for no good reason.'
-      : 'Use StopSubagent for subagents stuck without reason.';
+      ? ' Use StopSubagent only if it looks stuck for no good reason.'
+      : '';
   return (
     `Timed out after ${minutes} minutes waiting for ${idPart}${refPart} to finish. ` +
     'The agent was not cancelled — the wait is detached and the turn keeps running in the background. ' +
     'Read its last assistant message in the session (GetAgentMessages for that agent) to check progress, ' +
-    'then call AwaitAgent again to continue waiting. ' +
+    'then call AwaitAgent again to continue waiting.' +
     stopHint
   );
 }
