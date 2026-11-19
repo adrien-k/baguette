@@ -7,7 +7,7 @@ import { createListModelsTool } from '../tools/list-models.js';
 import { createListPresetModelsTool } from '../tools/list-preset-models.js';
 import { createStartSubagentTool } from '../tools/start-subagent.js';
 import { createListAgentsTool } from '../tools/list-agents.js';
-import { createAwaitSubagentTool } from '../tools/await-subagent.js';
+import { createAwaitAgentTool } from '../tools/await-agent.js';
 import { createStopSubagentTool } from '../tools/stop-subagent.js';
 import { createCreateSessionTool } from '../tools/create-session.js';
 import { createSearchSessionsTool } from '../tools/search-sessions.js';
@@ -92,7 +92,7 @@ export function buildBaseAgentTools(user, app, { callerSession = null, callerAge
     createListPresetModelsTool(ctx),
     createStartSubagentTool(ctx),
     createListAgentsTool(ctx),
-    createAwaitSubagentTool(ctx),
+    createAwaitAgentTool(ctx),
     createStopSubagentTool(ctx),
     createCreateSessionTool(ctx),
     createListMissingModelPricesTool(ctx),

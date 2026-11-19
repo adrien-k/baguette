@@ -183,7 +183,7 @@ export const SUBAGENT_EXCLUDED_MCP_TOOLS = [
  */
 export const EXTERNAL_MCP_EXCLUDED_TOOLS = [
   'StartSubagent',
-  'AwaitSubagent',
+  'AwaitAgent',
   'StopSubagent',
   'StopSession',
   'WatchSession',

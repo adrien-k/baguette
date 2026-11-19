@@ -2,25 +2,26 @@ import { z } from 'zod';
 import { mcpAwaitTimeoutMinutes } from '../../../../shared/mcp-await-timeout.js';
 import { ok, fail } from '../lib/result.js';
 import { requireOwnedSessionById } from '../lib/session-resolution.js';
-import { resolveSubagentInSession } from '../lib/subagent-resolution.js';
+import { resolveAgentInSession } from '../lib/subagent-resolution.js';
 
-export function createAwaitSubagentTool(ctx) {
-  const { app, userId, userParams, callerSession } = ctx;
+export function createAwaitAgentTool(ctx) {
+  const { app, userId, callerSession } = ctx;
+  const userParams = ctx.userParams ?? { provider: 'rest', user: { id: userId } };
   const waitMinutes = mcpAwaitTimeoutMinutes();
   return {
-    name: 'AwaitSubagent',
+    name: 'AwaitAgent',
     description:
-      `Block until a subagent turn finishes (up to ${waitMinutes} minutes per call), then return status, error_message when failed, and the last assistant message. ` +
-      'On timeout the subagent is NOT cancelled — the wait is virtually detached and the turn keeps running: read its last assistant message (GetAgentMessages) to check progress, then AwaitSubagent again to continue waiting, or StopSubagent only if it looks stuck for no good reason. ' +
-      'Use after StartSubagent with attach: false, or to wait on a subagent started earlier. ' +
-      'Identify the subagent by agent_id or agent_ref from ListAgents / StartSubagent.',
+      `Block until an agent turn finishes (up to ${waitMinutes} minutes per call), then return status, error_message when failed, and the last assistant message. ` +
+      'On timeout the agent is NOT cancelled — the wait is virtually detached and the turn keeps running: read its last assistant message (GetAgentMessages) to check progress, then call AwaitAgent again to continue waiting, or StopSubagent only if it looks stuck for no good reason. ' +
+      'Use after StartSubagent with attach: false, StartReview / ContinueReview (reviewer), or to wait on any session agent started earlier. ' +
+      'Identify the agent by agent_id or agent_ref from ListAgents.',
     schema: {
       session_id: z
         .number()
         .int()
         .optional()
         .describe('Session id (default: current session when running in a repo session)'),
-      agent_id: z.number().int().optional().describe('Subagent database id'),
+      agent_id: z.number().int().optional().describe('Agent database id'),
       agent_ref: z
         .number()
         .int()
@@ -42,13 +43,13 @@ export function createAwaitSubagentTool(ctx) {
         return fail('agent_id or agent_ref is required');
       }
       const db = app.get('db');
-      const agent = await resolveSubagentInSession(db, targetSessionId, {
+      const agent = await resolveAgentInSession(db, targetSessionId, {
         agent_id,
         agent_ref,
       });
-      if (!agent) return fail('Subagent not found');
+      if (!agent) return fail('Agent not found');
       try {
-        const result = await app.service('agents').awaitSubagent(
+        const result = await app.service('agents').awaitAgent(
           {
             session_id: targetSessionId,
             agent_id: agent.id,

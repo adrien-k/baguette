@@ -15,7 +15,7 @@ export function createListAgentsTool(ctx) {
       'omit it to include all types (e.g. `["reviewer"]` to see whether a review is running). ' +
       'Each row includes status and error_message when failed. Subagent rows also include notify_parent and isolated worktree fields. ' +
       'Omit session_id in a repo session for the current session. ' +
-      'Use with AwaitSubagent / StopSubagent (subagents) and CreateSessionMessage (agent_ref).',
+      'Use with AwaitAgent / StopSubagent and CreateSessionMessage (agent_ref).',
     schema: {
       session_id: z
         .number()

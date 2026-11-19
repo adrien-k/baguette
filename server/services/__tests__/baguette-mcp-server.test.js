@@ -403,7 +403,7 @@ describe('builder MCP tool registry', () => {
     expect(names).toContain('EditPlan');
     expect(names).toContain('CompletePlan');
     expect(names).toContain('ListAgents');
-    expect(names).toContain('AwaitSubagent');
+    expect(names).toContain('AwaitAgent');
     expect(names).toContain('StopSubagent');
     expect(names).toContain('CurrentSessionInfo');
     expect(names).toContain('PrRead');

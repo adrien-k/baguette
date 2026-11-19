@@ -489,7 +489,7 @@ export class SessionsService extends KnexService {
       '',
       'Other agents in this session were also interrupted by the restart:',
       ...lines,
-      'Re-synchronize with ListAgents / AwaitSubagent as needed, and do not redo work a resumed subagent is already doing.',
+      'Re-synchronize with ListAgents / AwaitAgent as needed, and do not redo work a resumed subagent is already doing.',
     ].join('\n');
   }
 

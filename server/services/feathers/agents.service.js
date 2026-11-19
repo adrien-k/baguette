@@ -82,6 +82,9 @@ function mapListedAgentRow(row, watching) {
       ...subagentWorktreePayload(row),
     };
   }
+  if (row.agent_type === 'reviewer') {
+    return { ...base, notify_parent: watching.has(row.id) };
+  }
   return base;
 }
 
@@ -99,7 +102,7 @@ async function resolveStartSubagentParentId(db, sessionId, parentAgentId) {
   return id;
 }
 
-async function subagentTurnResult(app, sessionId, agentId) {
+async function awaitAgentTurnResult(app, sessionId, agentId) {
   const db = app.get('db');
   const agent = await getAgentById(db, agentId);
   await hydrateAgentFailureErrors(db, [agent]);
@@ -110,11 +113,12 @@ async function subagentTurnResult(app, sessionId, agentId) {
   return {
     agent_id: agent.id,
     ref: agent.ref,
+    agent_type: agent.agent_type,
     status: agent.status,
     error_message: agentFailureError(agent),
     session_id: sessionId,
     last_assistant_message: summarizeAssistantMessage(lastAssistant),
-    ...subagentWorktreePayload(agent),
+    ...(agent.agent_type === 'subagent' ? subagentWorktreePayload(agent) : {}),
   };
 }
 
@@ -351,22 +355,22 @@ class AgentsService extends KnexService {
     }
 
     await waitForAgentTurnEnd(this.app.get('db'), agent.id);
-    return subagentTurnResult(this.app, sessionId, agent.id);
+    return awaitAgentTurnResult(this.app, sessionId, agent.id);
   }
 
-  async awaitSubagent(data, params) {
+  async awaitAgent(data, params) {
     const sessionId = Number(data?.session_id);
     if (!Number.isFinite(sessionId)) throw new BadRequest('session_id is required');
     await this.app.service('sessions').get(sessionId, { user: params.user });
     const db = this.app.get('db');
-    const agent = await this._resolveSubagentTarget(db, sessionId, data);
+    const agent = await this._resolveAwaitAgentTarget(db, sessionId, data);
     if (agent.status === 'running') {
       await waitForAgentTurnEnd(db, agent.id);
     }
-    return subagentTurnResult(this.app, sessionId, agent.id);
+    return awaitAgentTurnResult(this.app, sessionId, agent.id);
   }
 
-  async _resolveSubagentTarget(db, sessionId, data) {
+  async _resolveAwaitAgentTarget(db, sessionId, data) {
     const agentId = data?.agent_id != null ? Number(data.agent_id) : null;
     const agentRef = data?.agent_ref != null ? Number(data.agent_ref) : null;
     if (!Number.isFinite(agentId) && !Number.isFinite(agentRef)) {
@@ -378,8 +382,11 @@ class AgentsService extends KnexService {
     } else {
       agent = await db('agents').where({ session_id: sessionId, ref: agentRef }).first();
     }
-    if (!agent || agent.session_id !== sessionId || agent.agent_type !== 'subagent') {
-      throw new NotFound('Subagent not found');
+    if (!agent || agent.session_id !== sessionId) {
+      throw new NotFound('Agent not found');
+    }
+    if (!SESSION_AGENT_TYPES.includes(agent.agent_type)) {
+      throw new NotFound('Agent not found');
     }
     return agent;
   }
@@ -422,6 +429,11 @@ class AgentsService extends KnexService {
     if (existing) {
       await this.remove(existing.id, { user: params.user, provider: 'rest' });
     }
+    const notifyParent = data.notify_parent === true;
+    const observerAgentId = data.observer_agent_id != null ? Number(data.observer_agent_id) : null;
+    if (notifyParent && !Number.isFinite(observerAgentId)) {
+      throw new BadRequest('observer_agent_id is required when notify_parent is true');
+    }
     const resolved = await resolveMcpReviewerModel(db, params.user.id);
     const initialPrompt =
       data?.initial_prompt != null ? String(data.initial_prompt).trim() || null : null;
@@ -437,8 +449,13 @@ class AgentsService extends KnexService {
         initial_prompt: initialPrompt,
         ...(extraPrompt != null ? { extra_prompt: extraPrompt } : {}),
       },
-      { user: params.user, provider: 'rest' }
+      {
+        user: params.user,
+        provider: 'rest',
+        ...(notifyParent ? { _reviewObserverAgentId: observerAgentId } : {}),
+      }
     );
+    const watching = await notifyParentAgentIds(db, [agent.id]);
     return {
       ok: true,
       session_id: sessionId,
@@ -449,6 +466,7 @@ class AgentsService extends KnexService {
       model: agent.model,
       cleared_previous_reviewer: Boolean(existing),
       repo_full_name: session.repo_full_name ?? null,
+      notify_parent: watching.has(agent.id),
     };
   }
 
@@ -460,6 +478,24 @@ class AgentsService extends KnexService {
     const reviewer = await assertReviewNotInProgress(db, sessionId);
     if (!reviewer) {
       throw new BadRequest('Start a review first');
+    }
+    const notifyParent = data.notify_parent === true;
+    const observerAgentId = data.observer_agent_id != null ? Number(data.observer_agent_id) : null;
+    if (notifyParent && !Number.isFinite(observerAgentId)) {
+      throw new BadRequest('observer_agent_id is required when notify_parent is true');
+    }
+    if (notifyParent) {
+      try {
+        await insertAgentObserver(db, {
+          agentId: reviewer.id,
+          observerAgentId,
+        });
+      } catch (err) {
+        logger.warn(
+          { agentId: reviewer.id, observerAgentId, err: err?.message },
+          'Failed to insert review notify_parent observer row'
+        );
+      }
     }
     let content = buildReviewLatestChangesContent(session.base_branch);
     const extra =
@@ -488,6 +524,7 @@ class AgentsService extends KnexService {
       },
       { user: params.user, provider: 'rest' }
     );
+    const watching = await notifyParentAgentIds(db, [reviewer.id]);
     return {
       ok: true,
       session_id: sessionId,
@@ -495,6 +532,7 @@ class AgentsService extends KnexService {
       ref: reviewer.ref,
       queued: result?.queued === true,
       message_id: result?.id ?? null,
+      notify_parent: watching.has(reviewer.id),
     };
   }
 }
@@ -718,6 +756,20 @@ async function afterReviewerCreate(context) {
   if (!agent || agent.agent_type !== 'reviewer' || !context.params?.provider) return context;
   const session = await context.app.get('db')('sessions').where({ id: agent.session_id }).first();
   if (!session) throw new NotFound('Session not found');
+  const observerAgentId = context.params._reviewObserverAgentId;
+  if (observerAgentId != null) {
+    try {
+      await insertAgentObserver(context.app.get('db'), {
+        agentId: agent.id,
+        observerAgentId: Number(observerAgentId),
+      });
+    } catch (err) {
+      logger.warn(
+        { agentId: agent.id, observerAgentId, err: err?.message },
+        'Failed to insert StartReview notify_parent observer row'
+      );
+    }
+  }
   try {
     await dispatchReviewerAfterCreate(
       context.app,
@@ -855,7 +907,7 @@ export function registerAgentsService(app, path = 'agents') {
       'stop',
       'generateName',
       'startSubagent',
-      'awaitSubagent',
+      'awaitAgent',
       'listAgents',
       'startReview',
       'continueReview',
