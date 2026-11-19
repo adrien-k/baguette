@@ -27,6 +27,7 @@ import AgentMessageComposer from './AgentMessageComposer.jsx';
 import ComposerPrimaryMenuAddon from './ComposerPrimaryMenuAddon.jsx';
 import FileAttachmentPicker from './FileAttachmentPicker.jsx';
 import SearchableSelect from './SearchableSelect';
+import SkillPreloadSelect from './SkillPreloadSelect.jsx';
 import RepoPicker from './RepoPicker.jsx';
 import { autoPushEnabledForRepo, isLocalRepo } from '../utils/repoDisplayName.js';
 import { isMobile } from '../utils/isMobile.js';
@@ -812,35 +813,12 @@ export default function BuilderForm({
           <p className="text-xs text-faint mb-2">
             Inject selected skills into the agent system prompt for every turn in this session.
           </p>
-          <div className="space-y-1.5 max-h-48 overflow-y-auto">
-            {skillCatalog.map((skill) => (
-              <label
-                key={skill.label}
-                className="flex cursor-pointer items-start gap-2 rounded-md border border-strong/80 bg-control/40 px-3 py-2"
-              >
-                <input
-                  type="checkbox"
-                  checked={selectedAutoLoadSkills.includes(skill.label)}
-                  onChange={(e) =>
-                    setSelectedAutoLoadSkills((prev) =>
-                      e.target.checked
-                        ? [...prev, skill.label]
-                        : prev.filter((label) => label !== skill.label)
-                    )
-                  }
-                  disabled={loopReadOnly}
-                  className="mt-0.5 rounded border-strong text-accent focus:ring-brand/50"
-                />
-                <span className="text-sm text-secondary leading-tight min-w-0">
-                  <span className="font-medium text-heading">{skill.label}</span>
-                  <span className="block text-xs font-normal text-faint mt-0.5">
-                    {skill.source}
-                    {skill.description ? ` · ${skill.description}` : ''}
-                  </span>
-                </span>
-              </label>
-            ))}
-          </div>
+          <SkillPreloadSelect
+            skills={skillCatalog}
+            value={selectedAutoLoadSkills}
+            onChange={setSelectedAutoLoadSkills}
+            disabled={loopReadOnly}
+          />
         </div>
       )}
 
