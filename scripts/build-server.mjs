@@ -3,11 +3,10 @@
  * Compile server/ + shared/ to dist/ (TypeScript → JavaScript, .ts imports → .js).
  * Static assets (migrations, prompts, views) are copied alongside.
  */
-import fs from 'node:fs/promises';
+import fs, { glob as fsGlob } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import esbuild from 'esbuild';
-import { glob } from 'glob';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const distRoot = path.join(root, 'dist');
@@ -23,6 +22,14 @@ const ASSET_DIRS = [
 
 async function rmDist() {
   await fs.rm(distRoot, { recursive: true, force: true });
+}
+
+async function globAbsolute(pattern, cwd, exclude = []) {
+  const matches = [];
+  for await (const entry of fsGlob(pattern, { cwd, exclude })) {
+    matches.push(path.resolve(cwd, entry));
+  }
+  return matches;
 }
 
 async function copyAssetTree(relPath) {
@@ -42,7 +49,7 @@ async function main() {
   const patterns = ['server/**/*.{js,ts}', 'shared/**/*.{js,ts}'];
   const entryPoints = [];
   for (const pattern of patterns) {
-    const matches = await glob(pattern, { cwd: root, ignore: IGNORE, absolute: true });
+    const matches = await globAbsolute(pattern, root, IGNORE);
     entryPoints.push(...matches);
   }
 
@@ -57,7 +64,7 @@ async function main() {
     outbase: root,
     platform: 'node',
     format: 'esm',
-    target: 'node20',
+    target: 'node22',
     packages: 'external',
     logLevel: 'info',
   });
@@ -73,7 +80,7 @@ async function main() {
 
 /** esbuild leaves `.ts` extensions on external self-imports; Node needs `.js`. */
 async function fixTypeScriptImportSpecifiers(dir) {
-  const files = await glob('**/*.js', { cwd: dir, absolute: true });
+  const files = await globAbsolute('**/*.js', dir);
   for (const file of files) {
     const code = await fs.readFile(file, 'utf8');
     const fixed = code

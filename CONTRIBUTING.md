@@ -18,8 +18,8 @@ Run Baguette from a git checkout when you are changing the server, client, or te
 
 ### Prerequisites
 
-- **Node.js 20+** — matches `package.json` `engines`. Enough for the client, tests, migrations, and for running the **compiled** backend (`npm run build:server`, then `npm start` or `scripts/start-server.mjs`).
-- **Node.js 22.6+** — required to run the backend from **source** without `build:server`, because agent SDK code under `server/` and `shared/` is TypeScript loaded via `.ts` import specifiers. Node must run with [**type stripping**](https://nodejs.org/api/typescript.html) enabled (`--experimental-strip-types`). `npm run dev` passes that flag via `dev:server`; for ad-hoc `node server/index.js`, use the same flag or set `NODE_OPTIONS=--experimental-strip-types`. On Node 20.x–22.5.x, use the compiled backend instead of raw source.
+- **Node.js 22+** — matches `package.json` `engines` (client, tests, migrations, `build:server`, production start).
+- **Node.js 22.6+** — required to run the backend from **source** without `build:server`, because agent SDK code under `server/` and `shared/` is TypeScript loaded via `.ts` import specifiers. Node must run with [**type stripping**](https://nodejs.org/api/typescript.html) enabled (`--experimental-strip-types`). `npm run dev` passes that flag via `dev:server`; for ad-hoc `node server/index.js`, use the same flag or set `NODE_OPTIONS=--experimental-strip-types`. On Node 22.0.x–22.5.x, use the compiled backend instead of raw source.
 - An [Anthropic API key](https://console.anthropic.com/) and/or a [Cursor](https://cursor.com) API key (configured in **Settings → Agent** after the first sign-in)
 - Optional: a [GitHub App](https://github.com/settings/apps) — create one in the first-user wizard or later from **Admin → GitHub App** (see [GitHub App setup](#setting-up-the-github-app) below)
 

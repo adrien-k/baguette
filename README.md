@@ -34,7 +34,7 @@ Baguette is a self-hosted orchestrator for AI coding agents that runs in the clo
 
 ## Quick start
 
-**Prerequisites:** [Node.js](https://nodejs.org/) 20+. No `.env` file is required for a first run.
+**Prerequisites:** [Node.js](https://nodejs.org/) 22+. No `.env` file is required for a first run.
 
 ```bash
 npm install -g baguette-ai

@@ -21,7 +21,7 @@
     "scripts/start-server.mjs"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "publishConfig": {
     "access": "public"
@@ -72,7 +72,7 @@
       "react-dom": "$react-dom"
     },
     "fast-uri": "^3.1.9",
-    "glob": "$glob",
+    "glob": "^13.0.7",
     "hono": "^4.13.16",
     "ip-address": "^10.7.4",
     "@earendil-works/pi-coding-agent": {
@@ -112,7 +112,6 @@
   "devDependencies": {
     "@eslint/js": "^9.39.5",
     "@floating-ui/react": "^0.27.20",
-    "@lobehub/icons": "^6.13.0",
     "@lobehub/icons-static-avatar": "2.9.0",
     "@playwright/test": "^1.55.0",
     "@resvg/resvg-js": "^2.6.2",
@@ -135,7 +134,6 @@
     "eslint-plugin-import-x": "^4.18.1",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "glob": "^14.0.2",
     "globals": "^17.9.0",
     "highlight.js": "^11.12.0",
     "husky": "^9.1.7",
