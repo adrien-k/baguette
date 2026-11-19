@@ -22,6 +22,7 @@ import { repoDisplayName, repoAccessModeLabel } from '../utils/repoDisplayName.j
 import McpAccessSection from '../components/McpAccessSection.jsx';
 import McpServersSection from '../components/McpServersSection.jsx';
 import RepoSearchInput from '../components/RepoSearchInput.jsx';
+import PublicRepoSearchInput from '../components/PublicRepoSearchInput.jsx';
 import { SecretsTab, SkillsTab, PluginsTab } from './settings/GlobalSettingsSections.jsx';
 import AgentSettingsTab from './settings/AgentSettingsTab.jsx';
 import AccountSettingsTab from './settings/AccountSettingsTab.jsx';
@@ -69,7 +70,9 @@ function RepositoriesTab({ settings, onSave }) {
 
   // GitHub repo state
   const [selectedRepo, setSelectedRepo] = useState('');
+  const [selectedPublicRepo, setSelectedPublicRepo] = useState('');
   const [adding, setAdding] = useState(false);
+  const [addingPublic, setAddingPublic] = useState(false);
   const [addResult, setAddResult] = useState(null);
   const [unlinkingId, setUnlinkingId] = useState(null);
   const [confirmUnlink, setConfirmUnlink] = useState(null);
@@ -82,20 +85,37 @@ function RepositoriesTab({ settings, onSave }) {
   // New local repo state
   const [localName, setLocalName] = useState('');
   const [addingLocal, setAddingLocal] = useState(false);
-  const handleAdd = async (e) => {
-    e.preventDefault();
-    if (!selectedRepo) return;
-    setAdding(true);
+  const addGithubRepo = async (fullName, { onSuccess }) => {
     setAddResult(null);
     try {
-      const result = await reposService.create({ fullName: selectedRepo });
-      setSelectedRepo('');
+      const result = await reposService.create({ fullName });
+      onSuccess();
       setAddResult(result);
       await refetchRepos();
     } catch (err) {
       toastError('Failed to add repository', err);
+    }
+  };
+
+  const handleAdd = async (e) => {
+    e.preventDefault();
+    if (!selectedRepo) return;
+    setAdding(true);
+    try {
+      await addGithubRepo(selectedRepo, { onSuccess: () => setSelectedRepo('') });
     } finally {
       setAdding(false);
+    }
+  };
+
+  const handleAddPublic = async (e) => {
+    e.preventDefault();
+    if (!selectedPublicRepo) return;
+    setAddingPublic(true);
+    try {
+      await addGithubRepo(selectedPublicRepo, { onSuccess: () => setSelectedPublicRepo('') });
+    } finally {
+      setAddingPublic(false);
     }
   };
 
@@ -251,6 +271,26 @@ function RepositoriesTab({ settings, onSave }) {
                     className={`${PRIMARY_BUTTON_SIZED} py-2.5 shrink-0`}
                   >
                     {adding ? 'Adding…' : 'Add'}
+                  </button>
+                }
+              />
+            </form>
+          </div>
+
+          <div>
+            <h4 className="text-xs font-medium text-fg-muted mb-2">Add a public repository</h4>
+            <form onSubmit={handleAddPublic}>
+              <PublicRepoSearchInput
+                value={selectedPublicRepo}
+                onSelect={setSelectedPublicRepo}
+                addedNames={addedNames}
+                trailing={
+                  <button
+                    type="submit"
+                    disabled={addingPublic || !selectedPublicRepo}
+                    className={`${PRIMARY_BUTTON_SIZED} py-2.5 shrink-0`}
+                  >
+                    {addingPublic ? 'Adding…' : 'Add'}
                   </button>
                 }
               />

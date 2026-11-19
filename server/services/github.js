@@ -210,21 +210,14 @@ export async function searchPublicRepositories(token, query) {
   return (data.items ?? []).filter((r) => !r.private).map(mapRepo);
 }
 
-/**
- * Augment installation/PAT picker results with public repos that match the query
- * but are not granted to the GitHub App installation.
- */
-export async function supplementRemotePickerWithPublicRepos(
-  token,
-  repos,
-  { org = '', query = '' } = {}
-) {
+/** Search public GitHub repos by name or exact `owner/repo` (up to 20 results). */
+export async function findPublicRemoteRepos(token, { query = '', org = '' } = {}) {
   const q = query.trim();
-  if (!q || !token) return repos;
+  if (!q || !token) return [];
 
   const orgPrefix = org ? `${org.toLowerCase()}/` : '';
-  const seen = new Set(repos.map((r) => r.full_name.toLowerCase()));
-  const extras = [];
+  const seen = new Set();
+  const results = [];
 
   const maybeAdd = (repo) => {
     if (!repo || repo.private) return;
@@ -232,7 +225,7 @@ export async function supplementRemotePickerWithPublicRepos(
     if (seen.has(key)) return;
     if (orgPrefix && !key.startsWith(orgPrefix)) return;
     seen.add(key);
-    extras.push(repo);
+    results.push(repo);
   };
 
   if (GITHUB_REPO_FULL_NAME_RE.test(q)) {
@@ -241,11 +234,11 @@ export async function supplementRemotePickerWithPublicRepos(
   }
 
   if (q.length >= 2) {
-    const results = await searchPublicRepositories(token, q);
-    for (const repo of results) maybeAdd(repo);
+    const searchResults = await searchPublicRepositories(token, q);
+    for (const repo of searchResults) maybeAdd(repo);
   }
 
-  return extras.length === 0 ? repos : [...repos, ...extras];
+  return results.slice(0, 20);
 }
 
 // Refreshing installation and repo lists is manual, so we can cache them indefinitely

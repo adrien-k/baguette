@@ -21,7 +21,7 @@ import {
   initLocalRepo,
   ensureLocalClone,
   toStrippedName,
-  supplementRemotePickerWithPublicRepos,
+  findPublicRemoteRepos,
 } from '../github.js';
 import { loadBaguetteConfig } from '../baguette-config.js';
 import { requireUser, requireAdmin } from './hooks.js';
@@ -385,10 +385,7 @@ class ReposService extends KnexService {
         ? allRepos.filter((r) => r.full_name.toLowerCase().startsWith(orgPrefix))
         : allRepos;
       const filtered = q ? scoped.filter((r) => r.full_name.toLowerCase().includes(q)) : scoped;
-      const withPublic = q
-        ? await supplementRemotePickerWithPublicRepos(token, filtered, { org, query: q })
-        : filtered;
-      return { repos: withPublic.slice(0, 20), hasMore: withPublic.length > 20 };
+      return { repos: filtered.slice(0, 20), hasMore: filtered.length > 20 };
     }
 
     // `org` is the installation account login; resolve it to an installation id. The
@@ -397,10 +394,16 @@ class ReposService extends KnexService {
     const installation = installations.find((i) => i.login === org);
     const allRepos = installation ? await listInstallationRepos(token, scope, installation.id) : [];
     const filtered = q ? allRepos.filter((r) => r.full_name.toLowerCase().includes(q)) : allRepos;
-    const withPublic = q
-      ? await supplementRemotePickerWithPublicRepos(token, filtered, { org, query: q })
-      : filtered;
-    return { repos: withPublic.slice(0, 20), hasMore: withPublic.length > 20 };
+    return { repos: filtered.slice(0, 20), hasMore: filtered.length > 20 };
+  }
+
+  /** Search public GitHub repositories (not limited to App-granted repos). */
+  async findPublicRemote(data, params) {
+    const { query = '', org = '' } = typeof data === 'string' ? { query: data } : data || {};
+    const user = await this._loadUserForGithub(params);
+    const token = getGithubToken(user);
+    const repos = await findPublicRemoteRepos(token, { query, org });
+    return { repos, hasMore: repos.length >= 20 };
   }
 
   async refresh(data, params) {
@@ -554,6 +557,7 @@ export function registerReposService(app, path = 'repos') {
       'create',
       'remove',
       'findRemote',
+      'findPublicRemote',
       'findOrgs',
       'branches',
       'refresh',

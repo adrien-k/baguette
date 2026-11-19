@@ -2,23 +2,12 @@ import { useState, useEffect, useCallback } from 'react';
 import { reposService } from '../feathers.js';
 import { toastError } from '../utils/toastError.jsx';
 import SearchableSelect from './SearchableSelect/index.jsx';
+import { sortRemoteReposForPicker } from '../utils/remoteRepoPickerSort.js';
 
 /** Sends the user to GitHub to install the App or change which repos it can access. */
 function installHref() {
   const back = window.location.pathname + window.location.search;
   return `/auth/github/install?redirectTo=${encodeURIComponent(back)}`;
-}
-
-/** Repos not yet linked to the account sort above already-added ones; names break ties. */
-function sortRemoteReposForPicker(repos, addedNames) {
-  return [...repos].sort((a, b) => {
-    const aAdded = addedNames.has(a.full_name);
-    const bAdded = addedNames.has(b.full_name);
-    if (aAdded !== bAdded) {
-      return aAdded ? 1 : -1;
-    }
-    return a.full_name.localeCompare(b.full_name);
-  });
 }
 
 export default function RepoSearchInput({ value, onSelect, addedNames, trailing }) {
@@ -165,9 +154,8 @@ export default function RepoSearchInput({ value, onSelect, addedNames, trailing 
       </div>
       <p className="text-xs text-faint mt-2 max-w-xl leading-relaxed">
         Lists up to <span className="text-fg-muted">20</span> repos per load. Empty field shows the
-        20 most recently updated you can access via the App; type a fragment of{' '}
-        <span className="font-mono text-fg-muted">owner/repo</span> to search that list and public
-        repositories on GitHub.{' '}
+        20 most recently updated you granted the App; type a fragment of{' '}
+        <span className="font-mono text-fg-muted">owner/repo</span> to filter that list.{' '}
         <a href={installHref()} className="text-accent hover:text-accent">
           Manage repository access ↗
         </a>
