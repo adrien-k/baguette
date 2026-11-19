@@ -89,7 +89,8 @@ async function loadRoleAndEndOfTurn(role, snippets, { agent = null } = {}) {
   const repoConfigPrompt =
     role === 'builder' ? await loadPrompt('build-prompt-repo-config-prompt', {}) : '';
   const builderEndOfTurnPrompt = role === 'builder' ? await loadPrompt(snippets.endOfTurn, {}) : '';
-  return { builderRolePrompt, repoConfigPrompt, builderEndOfTurnPrompt };
+  const runningCommandsPrompt = await loadPrompt('running-commands-prompt', {});
+  return { builderRolePrompt, repoConfigPrompt, builderEndOfTurnPrompt, runningCommandsPrompt };
 }
 
 /**
@@ -142,7 +143,7 @@ export async function buildSystemPromptAppend(
 
   const sessionPath = sessionRow?.session_path ?? null;
   const role = buildPromptRole(agent);
-  const { builderRolePrompt, repoConfigPrompt, builderEndOfTurnPrompt } =
+  const { builderRolePrompt, repoConfigPrompt, builderEndOfTurnPrompt, runningCommandsPrompt } =
     await loadRoleAndEndOfTurn(role, snippets, { agent });
   const buildTemplate = role === 'subagent' ? 'subagent-build-prompt' : 'build-prompt';
   const templateVars = {
@@ -151,6 +152,7 @@ export async function buildSystemPromptAppend(
     }),
     builder_role_prompt: builderRolePrompt,
     subagent_session_tools: snippets.subagentSessionTools,
+    running_commands_prompt: runningCommandsPrompt,
   };
   if (buildTemplate === 'build-prompt') {
     templateVars.repo_config_prompt = repoConfigPrompt;
@@ -169,13 +171,14 @@ async function loadBaseSessionPromptTemplate() {
 export async function loadFullSessionPromptTemplate() {
   const snippets = promptSnippetsForAccess('github');
   const basePrompt = await loadBaseSessionPromptTemplate();
-  const { builderRolePrompt, repoConfigPrompt, builderEndOfTurnPrompt } =
+  const { builderRolePrompt, repoConfigPrompt, builderEndOfTurnPrompt, runningCommandsPrompt } =
     await loadRoleAndEndOfTurn('builder', snippets);
   return loadPrompt('build-prompt', {
     base_prompt: basePrompt,
     builder_role_prompt: builderRolePrompt,
     repo_config_prompt: repoConfigPrompt,
     builder_end_of_turn_prompt: builderEndOfTurnPrompt,
+    running_commands_prompt: runningCommandsPrompt,
   });
 }
 
@@ -193,6 +196,7 @@ export async function loadFullSubagentPromptTemplate() {
     base_prompt: basePrompt,
     builder_role_prompt: builderRolePrompt,
     subagent_session_tools: snippets.subagentSessionTools,
+    running_commands_prompt: await loadPrompt('running-commands-prompt', {}),
   });
 }
 

@@ -3,6 +3,7 @@ import { createTestDb } from '../../test-utils/db.js';
 import {
   buildSystemPromptAppend,
   buildReviewSystemPromptAppend,
+  loadFullSessionPromptTemplate,
   loadFullSubagentPromptTemplate,
 } from '../session-prompt.js';
 
@@ -203,9 +204,20 @@ describe('buildSystemPromptAppend', () => {
   it('loadFullSubagentPromptTemplate includes subagent role rules', async () => {
     const result = await loadFullSubagentPromptTemplate();
     expect(result).toContain('Subagent role');
-    expect(result).not.toContain('End-of-turn shipping (required every turn)');
     expect(result).not.toContain('{{image:');
+    expect(result).not.toContain('{{running_commands_prompt}}');
     expect(result).not.toContain('Baguette repo configuration');
+  });
+
+  it('shares the running-commands block between builder and subagent prompts', async () => {
+    const builder = await loadFullSessionPromptTemplate();
+    const subagent = await loadFullSubagentPromptTemplate();
+    for (const prompt of [builder, subagent]) {
+      expect(prompt).not.toContain('{{running_commands_prompt}}');
+      expect(prompt).toContain('Bash is the fallback, not the default');
+      expect(prompt).toContain('`depends_on`');
+      expect(prompt).toContain('## Running Tests');
+    }
   });
 
   it('keeps GitHub PR instructions for github remotes', async () => {
