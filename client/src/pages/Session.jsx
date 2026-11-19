@@ -1414,7 +1414,12 @@ export default function Session() {
               !awaitingSession &&
               session &&
               activeView === 'plan' && (
-                <PlanView key={session.id} session={session} readonly={isReadonly} />
+                <PlanView
+                  key={session.id}
+                  session={session}
+                  readonly={isReadonly}
+                  runPlanAgentId={primaryBuilder?.id ?? null}
+                />
               )}
             {!isLoopsView &&
               !isNewSessionRoute &&

@@ -504,6 +504,21 @@ export async function e2eNumericSessionId(routeId) {
   }
 }
 
+/** Persist a session plan row (mock CreatePlan only streams UI — does not write the DB). */
+export async function seedE2eSessionPlan(page, { markdown } = {}) {
+  const { MOCK_E2E_PLAN_MARKDOWN } = await import('../shared/mock-agent-sdk.js');
+  const routeId = parseSessionIdFromUrl(page.url());
+  const sessionId = await e2eNumericSessionId(routeId);
+  const res = await page.request.post('/api/session-plans', {
+    data: {
+      session_id: sessionId,
+      markdown: markdown ?? MOCK_E2E_PLAN_MARKDOWN,
+    },
+  });
+  expect(res.ok()).toBe(true);
+  return res.json();
+}
+
 /** Insert an MCP-styled user row for UI tests (matches CreateSessionMessage storage). */
 export async function seedE2eMcpUserMessage({ targetSessionId, content, mcpSender }) {
   const { buildMcpUserMessageJson } =
