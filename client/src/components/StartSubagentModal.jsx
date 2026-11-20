@@ -68,7 +68,7 @@ export default function StartSubagentModal({
 
   return (
     <Modal maxWidth="max-w-lg">
-      <ModalHeader title="Start subagent" icon={Bot} onClose={busy ? undefined : onCancel} />
+      <ModalHeader title="Add builder" icon={Bot} onClose={busy ? undefined : onCancel} />
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -82,7 +82,7 @@ export default function StartSubagentModal({
                 type="text"
                 value={label}
                 onChange={(e) => setLabel(e.target.value)}
-                placeholder="Subagent name"
+                placeholder="Builder name"
                 maxLength={120}
                 autoFocus
                 disabled={busy}
@@ -124,7 +124,7 @@ export default function StartSubagentModal({
             Cancel
           </button>
           <button type="submit" disabled={!canStart} className={PRIMARY_BUTTON_SIZED}>
-            {saving ? 'Starting…' : 'Start subagent'}
+            {saving ? 'Adding…' : 'Add builder'}
           </button>
         </ModalActions>
       </form>

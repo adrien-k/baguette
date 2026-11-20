@@ -152,8 +152,19 @@ export default function Session() {
     if (parsedId != null && agentsForChat.some((a) => a.id === parsedId)) {
       return agentsForChat.find((a) => a.id === parsedId) ?? null;
     }
+    const pinnedId = sessionFromHook?.id === sessionId ? sessionFromHook?.pinned_agent_id : null;
+    if (pinnedId != null && agentsForChat.some((a) => a.id === pinnedId)) {
+      return agentsForChat.find((a) => a.id === pinnedId) ?? null;
+    }
     return primaryBuilderForChat ?? agentsForChat[0] ?? null;
-  }, [agentsForChat, agentParam, primaryBuilderForChat]);
+  }, [
+    agentsForChat,
+    agentParam,
+    primaryBuilderForChat,
+    sessionFromHook?.pinned_agent_id,
+    sessionFromHook?.id,
+    sessionId,
+  ]);
   const {
     messages: hookMessages,
     loading: messagesLoading,

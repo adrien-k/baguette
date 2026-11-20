@@ -2245,6 +2245,25 @@ function normalizeUsageLimitOnWrite(context) {
   return context;
 }
 
+async function validatePinnedAgentOnPatch(context) {
+  if (context.data?.pinned_agent_id === undefined) return context;
+  const raw = context.data.pinned_agent_id;
+  if (raw === null || raw === '') {
+    context.data.pinned_agent_id = null;
+    return context;
+  }
+  const agentId = Number(raw);
+  if (!Number.isFinite(agentId)) throw new BadRequest('Invalid pinned_agent_id');
+  const sessionId = Number(context.id);
+  if (!Number.isFinite(sessionId)) return context;
+  const agent = await getAgentById(context.app.get('db'), agentId);
+  if (!agent || agent.session_id !== sessionId) {
+    throw new BadRequest('pinned_agent_id must belong to this session');
+  }
+  context.data.pinned_agent_id = agentId;
+  return context;
+}
+
 async function clampAutoPushForLocalRepo(context) {
   if (!('auto_push' in context.data)) return context;
   const session = context.params.ownSession;
@@ -3238,6 +3257,7 @@ const sessionsHooks = {
       requireOwnSession,
       coerceIsSharedOnWrite,
       normalizeUsageLimitOnWrite,
+      validatePinnedAgentOnPatch,
       clampAutoPushForLocalRepo,
       touchPrMetadataUpdatedAtOnPatch,
       redirectAgentFieldsOnSessionPatch,

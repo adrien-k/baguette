@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { ChevronDown, Loader2, Pencil } from 'lucide-react';
+import { ChevronDown, Loader2, Pencil, Pin } from 'lucide-react';
 import AgentConfigLogo from './AgentConfigLogo.jsx';
 import AgentTypeIcon from './AgentTypeIcon.jsx';
 import Tooltip from './Tooltip.jsx';
 import { SessionStatusIcon } from './SessionCard.jsx';
-import { agentsService } from '../feathers.js';
+import { agentsService, sessionsService } from '../feathers.js';
 import { toastError } from '../utils/toastError.jsx';
 import { buildSessionAgentList } from '../utils/sessionAgentList.js';
 import {
@@ -100,6 +100,31 @@ function AgentTreeEdit({ agent, canManage, renaming, onRequestRename }) {
   );
 }
 
+function AgentTreePin({ agent, canManage, renaming, pinnedAgentId, pinSaving, onTogglePin }) {
+  if (!canManage || renaming) return null;
+  const isPinned =
+    pinnedAgentId != null && pinnedAgentId !== '' && Number(pinnedAgentId) === agent.id;
+  const title = isPinned ? 'Unpin agent' : 'Pin agent';
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={`${title} — ${agentDisplayTitle(agent)}`}
+      aria-pressed={isPinned}
+      disabled={pinSaving}
+      onClick={(e) => {
+        e.stopPropagation();
+        onTogglePin(agent);
+      }}
+      className={`shrink-0 p-0.5 rounded transition-opacity md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100 ${
+        isPinned ? 'text-accent' : 'text-faint hover:text-fg'
+      } disabled:opacity-40`}
+    >
+      <Pin className={`w-3 h-3 ${isPinned ? 'fill-current' : ''}`} aria-hidden />
+    </button>
+  );
+}
+
 function agentTreeCaretLabel(expanded, locked) {
   if (locked) return 'Other agents stay visible while this agent is open';
   if (expanded) return 'Hide agents';
@@ -164,6 +189,9 @@ function AgentTreeRow({ agent, ...rest }) {
     onCommitRename,
     onCancelRename,
     onRequestRename,
+    pinnedAgentId,
+    pinSaving,
+    onTogglePin,
     sessionHighlighted,
   } = rest;
   const isCurrent = currentAgentId != null && Number(currentAgentId) === agent.id;
@@ -228,6 +256,14 @@ function AgentTreeRow({ agent, ...rest }) {
           )}
           <AgentTreeStatus status={agent.status} />
         </button>
+        <AgentTreePin
+          agent={agent}
+          canManage={canManage}
+          renaming={renaming}
+          pinnedAgentId={pinnedAgentId}
+          pinSaving={pinSaving}
+          onTogglePin={onTogglePin}
+        />
         <AgentTreeEdit
           agent={agent}
           canManage={canManage}
@@ -267,17 +303,21 @@ function AgentTreeRow({ agent, ...rest }) {
  */
 export default function SessionAgentTree({
   agents,
+  sessionId,
+  pinnedAgentId = null,
   currentAgentId,
   canManage,
   onSelectAgent,
+  onPinnedAgentIdChange,
   autoExpanded = false,
   showOwnerGutter = false,
   sessionHighlighted = false,
 }) {
-  const list = buildSessionAgentList(agents);
+  const list = buildSessionAgentList(agents, pinnedAgentId);
   const [renamingAgentId, setRenamingAgentId] = useState(null);
   const [renameValue, setRenameValue] = useState('');
   const [renameSaving, setRenameSaving] = useState(false);
+  const [pinSaving, setPinSaving] = useState(false);
   // null = follow the auto-expanded default; true/false = manual caret override.
   const [manuallyExpanded, setManuallyExpanded] = useState(null);
 
@@ -307,6 +347,22 @@ export default function SessionAgentTree({
     if (renameSaving) return;
     setRenamingAgentId(null);
     setRenameValue('');
+  };
+
+  const togglePin = async (agent) => {
+    if (pinSaving || sessionId == null) return;
+    const isPinned =
+      pinnedAgentId != null && pinnedAgentId !== '' && Number(pinnedAgentId) === agent.id;
+    const nextId = isPinned ? null : agent.id;
+    setPinSaving(true);
+    try {
+      await sessionsService.patch(sessionId, { pinned_agent_id: nextId });
+      onPinnedAgentIdChange?.(nextId);
+    } catch (err) {
+      toastError(isPinned ? 'Failed to unpin agent' : 'Failed to pin agent', err);
+    } finally {
+      setPinSaving(false);
+    }
   };
 
   const commitRename = async (agent) => {
@@ -340,10 +396,24 @@ export default function SessionAgentTree({
     onCommitRename: commitRename,
     onCancelRename: cancelRename,
     onRequestRename: startRename,
+    pinnedAgentId,
+    pinSaving,
+    onTogglePin: togglePin,
     sessionHighlighted,
   };
 
-  const visibleAgents = [...(primary ? [primary] : []), ...(!grouped || expanded ? others : [])];
+  const pinnedAmongOthers =
+    pinnedAgentId != null && pinnedAgentId !== ''
+      ? others.find((a) => a.id === Number(pinnedAgentId))
+      : null;
+  const restOthers = pinnedAmongOthers
+    ? others.filter((a) => a.id !== pinnedAmongOthers.id)
+    : others;
+  const visibleAgents = [
+    ...(primary ? [primary] : []),
+    ...(pinnedAmongOthers ? [pinnedAmongOthers] : []),
+    ...(!grouped || expanded ? restOthers : []),
+  ];
 
   return (
     <div className="mt-0.5 flex items-start gap-2">

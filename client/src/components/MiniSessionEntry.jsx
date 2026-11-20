@@ -119,6 +119,8 @@ export default function MiniSessionEntry({
         {agentTree.length > 0 && (
           <SessionAgentTree
             agents={agentTree}
+            sessionId={s.id}
+            pinnedAgentId={s.pinned_agent_id ?? null}
             currentAgentId={routeAgentId}
             canManage={isOwner && !isArchived && !isArchiving}
             onSelectAgent={(agent) => navigate(agentChatUrl(agent.id))}

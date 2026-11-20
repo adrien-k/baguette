@@ -301,19 +301,19 @@ export async function waitForAgentNotRunning(page, name, timeout = 120_000) {
     .toBe(0);
 }
 
-/** Open **Start subagent** from the composer Send (Schedule) menu; composer text must already be set. */
+/** Open **Add builder** from the composer Send (Schedule) menu; composer text must already be set. */
 export async function openStartSubagentModalFromComposer(page) {
   await page.getByTitle('Schedule', { exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Start subagent' }).click();
-  await expect(page.getByRole('heading', { name: 'Start subagent' })).toBeVisible();
+  await page.getByRole('menuitem', { name: 'Add builder' }).click();
+  await expect(page.getByRole('heading', { name: 'Add builder' })).toBeVisible();
 }
 
 export async function confirmStartSubagentModal(page) {
-  await page.getByRole('button', { name: 'Start subagent' }).click();
+  await page.getByRole('button', { name: 'Add builder' }).click();
 }
 
 /**
- * Create an extra builder from the composer's Send menu ("Start subagent").
+ * Create an extra builder from the composer's Send menu ("Add builder").
  *
  * The start-subagent modal prefills the label from the prompt's first four words, so
  * `name` must be at most four words. The prompt sent to it appends the quick mock prompt

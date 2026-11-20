@@ -695,12 +695,17 @@ export default function ChatView({
     } catch (err) {
       setInput(text);
       setFiles(filesToSend);
-      toastFeathersError('Failed to start subagent', err);
+      toastFeathersError('Failed to add builder', err);
       setSending(false);
       return;
     }
     setShowStartSubagentModal(false);
     if (newAgent?.id != null) {
+      try {
+        await sessionsService.patch(session.id, { pinned_agent_id: newAgent.id });
+      } catch (err) {
+        toastError('Failed to pin new builder', err);
+      }
       onSelectAgent?.(newAgent);
     }
     try {
@@ -1143,7 +1148,7 @@ export default function ChatView({
                                 onClick={openStartSubagentModal}
                                 className="w-full text-left px-3 py-2 text-sm text-heading hover:bg-control disabled:opacity-50 disabled:pointer-events-none"
                               >
-                                Start subagent
+                                Add builder
                               </button>
                             ) : null}
                             <button
