@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, Crown, Loader2, Pencil, Pin, Plus } from 'lucide-react';
+import { ChevronDown, Crown, Loader2, Network, Pencil, Pin, Plus } from 'lucide-react';
 import AgentConfigLogo from './AgentConfigLogo.jsx';
 import AgentTypeIcon from './AgentTypeIcon.jsx';
 import Tooltip from './Tooltip.jsx';
@@ -181,14 +181,31 @@ function AgentTreeCaret({ expanded, onToggle, collapseLocked = false }) {
 }
 
 /**
- * Quiet pill behind the agent name: primary builder, reviewer, and subagent
- * tints match the composer switcher badges; secondary builders stay plain.
+ * Quiet pill behind the agent name: primary and extra builders share brand;
+ * reviewer uses merged tint. Subagents use a leading icon instead of fill.
  */
 function agentNameToneClass(agent) {
   if (isPrimaryAgent(agent) || isSecondaryBuilder(agent)) return 'bg-brand/15';
   if (isReviewerAgent(agent)) return 'bg-merged/10';
-  if (isSubagentBuilder(agent)) return 'bg-info/10';
   return '';
+}
+
+function AgentTreeRoleIcon({ agent }) {
+  if (isPrimaryAgent(agent)) {
+    return (
+      <Tooltip content={PRIMARY_BUILDER_ROW_TOOLTIP} wrap wide className="inline-flex shrink-0">
+        <Crown className="w-3 h-3 text-brand" aria-label="Primary builder" />
+      </Tooltip>
+    );
+  }
+  if (isSubagentBuilder(agent)) {
+    return (
+      <Tooltip content={SUBAGENT_ROW_TOOLTIP} wrap wide className="inline-flex shrink-0">
+        <Network className="w-3 h-3 text-info" aria-hidden />
+      </Tooltip>
+    );
+  }
+  return null;
 }
 
 function selectedAgentRowBorderClass(isCurrent, sessionHighlighted) {
@@ -204,22 +221,14 @@ function AgentTreeNameLabel({ agent, agentRef, title, isCurrent }) {
         agent
       )} ${isCurrent ? 'text-fg' : 'text-secondary'}`}
     >
-      {isPrimaryAgent(agent) ? <Crown className="w-3 h-3 shrink-0 text-brand" aria-hidden /> : null}
+      <AgentTreeRoleIcon agent={agent} />
       {agentRef != null ? (
         <span className="shrink-0 font-mono text-[10px] text-faint tabular-nums">#{agentRef}</span>
       ) : null}
       <span className="truncate">{title}</span>
     </span>
   );
-  let tooltip = null;
-  if (isPrimaryAgent(agent)) tooltip = PRIMARY_BUILDER_ROW_TOOLTIP;
-  else if (isSubagentBuilder(agent)) tooltip = SUBAGENT_ROW_TOOLTIP;
-  if (!tooltip) return nameLabel;
-  return (
-    <Tooltip content={tooltip} wrap wide className="min-w-0 max-w-full inline-flex">
-      {nameLabel}
-    </Tooltip>
-  );
+  return nameLabel;
 }
 
 function AgentTreeRow({ agent, ...rest }) {
