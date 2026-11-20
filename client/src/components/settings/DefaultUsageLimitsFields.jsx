@@ -11,13 +11,7 @@ export default function DefaultUsageLimitsFields({
   const effectiveAction = action ?? DEFAULT_USAGE_LIMIT_ACTION;
 
   return (
-    <div className="space-y-3 rounded-lg border border-line bg-control/30 p-4">
-      <div>
-        <h4 className="text-sm font-medium text-fg">Usage limits for new sessions and loops</h4>
-        <p className="text-xs text-faint mt-0.5">
-          Pre-fills the dashboard builder and applies when you omit usage-limit fields on create.
-        </p>
-      </div>
+    <div className="space-y-3">
       <div>
         <label className="block text-sm font-medium text-secondary mb-1">
           When a usage limit is reached
@@ -28,9 +22,7 @@ export default function DefaultUsageLimitsFields({
         <div>
           <label className="block text-sm font-medium text-secondary mb-1">
             Overage Usage limit{' '}
-            <span className="text-faint font-normal">
-              (USD of credits — empty for unlimited; saved as part of Agent defaults)
-            </span>
+            <span className="text-faint font-normal">(USD of credits — empty for unlimited)</span>
           </label>
           <UsageLimitInput value={limitText} onChange={onLimitTextChange} />
         </div>

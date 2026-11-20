@@ -20,12 +20,7 @@ export default function AgentSettingsTab({ settings, onSave }) {
           <AgentConfigsList />
         </SettingsSection>
 
-        <SettingsSection
-          title="Session defaults"
-          description="Default models, usage limits for new sessions and loops, and which models an agent may use when it creates a session, loop, or subagent."
-        >
-          <AgentDefaultsSection settings={settings} onSave={onSave} />
-        </SettingsSection>
+        <AgentDefaultsSection settings={settings} onSave={onSave} />
 
         <SettingsSection
           title="Preset models"

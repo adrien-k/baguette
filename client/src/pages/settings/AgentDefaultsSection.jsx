@@ -11,7 +11,7 @@ import {
   SUBAGENT_DEFAULT_INHERIT,
   normalizeSubagentDefaultMode,
 } from '@baguette/shared/subagent-default-mode.js';
-import { SettingsSaveRow } from '../../components/SettingsSection.jsx';
+import { SettingsSaveRow, SettingsSection } from '../../components/SettingsSection.jsx';
 import DefaultUsageLimitsFields from '../../components/settings/DefaultUsageLimitsFields.jsx';
 import {
   DEFAULT_USAGE_LIMIT_ACTION,
@@ -186,77 +186,98 @@ export default function AgentDefaultsSection({ settings, onSave }) {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-3 rounded-lg border border-line bg-control/30 p-4">
-        <div>
-          <h4 className="text-sm font-medium text-fg">Utility model</h4>
-          <p className="text-xs text-faint mt-0.5">
-            Cheap model for small jobs: naming sessions, branches, and secondary builders. Leave
-            unset to name with the session&apos;s builder model.
-          </p>
+    <div className="space-y-6">
+      <SettingsSection
+        title="Session models"
+        description="Default builder and reviewer models for the dashboard, and the utility model for naming sessions, branches, and other small jobs."
+      >
+        <div className="space-y-4">
+          <div className="space-y-3 rounded-lg border border-line bg-control/30 p-4">
+            <div>
+              <h4 className="text-sm font-medium text-fg">Utility model</h4>
+              <p className="text-xs text-faint mt-0.5">
+                Leave unset to name with the session&apos;s builder model.
+              </p>
+            </div>
+            <AgentDefaultModelPicker
+              configId={utilityConfigId}
+              onConfigIdChange={setUtilityConfigId}
+              model={utilityModel}
+              modelParamsJson={utilityModelParamsJson}
+              onModelChange={setUtilityModel}
+              onModelParamsJsonChange={setUtilityModelParamsJson}
+              inheritLabel="Session's builder model"
+              showInheritPlaceholder
+            />
+          </div>
+          <DefaultAgentPicker
+            title="Builder default"
+            description="Pre-fills the dashboard builder. MCP agents use it for new sessions and loops when MCP models is set to inherit the default."
+            inheritLabel="Use last session's model"
+            inheritModeDescription="No account default; pre-fill from your most recent session."
+            configId={agentConfigId}
+            onConfigIdChange={setAgentConfigId}
+            model={agentModel}
+            modelParamsJson={agentModelParamsJson}
+            onModelChange={setAgentModel}
+            onModelParamsJsonChange={setAgentModelParamsJson}
+            modelModeRadioName="builder-default-model-mode"
+          />
+          <DefaultAgentPicker
+            title="Reviewer default"
+            description="Pre-fills the Issues reviewer when a session has no review model yet."
+            inheritLabel="Inherit from session"
+            inheritModeDescription="No account default; pre-fill from the session's primary builder model."
+            configId={reviewerConfigId}
+            onConfigIdChange={setReviewerConfigId}
+            model={reviewerModel}
+            modelParamsJson={reviewerModelParamsJson}
+            onModelChange={setReviewerModel}
+            onModelParamsJsonChange={setReviewerModelParamsJson}
+            modelModeRadioName="reviewer-default-model-mode"
+          />
         </div>
-        <AgentDefaultModelPicker
-          configId={utilityConfigId}
-          onConfigIdChange={setUtilityConfigId}
-          model={utilityModel}
-          modelParamsJson={utilityModelParamsJson}
-          onModelChange={setUtilityModel}
-          onModelParamsJsonChange={setUtilityModelParamsJson}
-          inheritLabel="Session's builder model"
-          showInheritPlaceholder
+      </SettingsSection>
+
+      <SettingsSection
+        title="MCP models"
+        description="Which models agents may use when they create sessions, loops, or subagents through MCP tools."
+      >
+        <SubagentDefaultPicker
+          embedded
+          mode={subagentMode}
+          onModeChange={setSubagentMode}
+          configId={subagentConfigId}
+          onConfigIdChange={setSubagentConfigId}
+          model={subagentModel}
+          modelParamsJson={subagentModelParamsJson}
+          onModelChange={setSubagentModel}
+          onModelParamsJsonChange={setSubagentModelParamsJson}
         />
-      </div>
-      <DefaultAgentPicker
-        title="Builder default"
-        description="Pre-fills the dashboard builder. Agents use it for new sessions and loops when Agent-created sessions and subagents is set to inherit."
-        inheritLabel="Use last session's model"
-        inheritModeDescription="No account default; pre-fill from your most recent session."
-        configId={agentConfigId}
-        onConfigIdChange={setAgentConfigId}
-        model={agentModel}
-        modelParamsJson={agentModelParamsJson}
-        onModelChange={setAgentModel}
-        onModelParamsJsonChange={setAgentModelParamsJson}
-        modelModeRadioName="builder-default-model-mode"
-      />
-      <DefaultAgentPicker
-        title="Reviewer default"
-        description="Pre-fills the Issues reviewer when a session has no review model yet."
-        inheritLabel="Inherit from session"
-        inheritModeDescription="No account default; pre-fill from the session's primary builder model."
-        configId={reviewerConfigId}
-        onConfigIdChange={setReviewerConfigId}
-        model={reviewerModel}
-        modelParamsJson={reviewerModelParamsJson}
-        onModelChange={setReviewerModel}
-        onModelParamsJsonChange={setReviewerModelParamsJson}
-        modelModeRadioName="reviewer-default-model-mode"
-      />
-      <DefaultUsageLimitsFields
-        action={defaultUsageLimitAction}
-        onActionChange={(next) => {
-          setDefaultUsageLimitConfigured(true);
-          setDefaultUsageLimitAction(next);
-        }}
-        limitText={defaultUsageLimitText}
-        onLimitTextChange={(text) => {
-          setDefaultUsageLimitConfigured(true);
-          setDefaultUsageLimitText(text);
-        }}
-      />
-      <SubagentDefaultPicker
-        description="Limits which model an agent can use when it starts a subagent or creates a session or loop."
-        mode={subagentMode}
-        onModeChange={setSubagentMode}
-        configId={subagentConfigId}
-        onConfigIdChange={setSubagentConfigId}
-        model={subagentModel}
-        modelParamsJson={subagentModelParamsJson}
-        onModelChange={setSubagentModel}
-        onModelParamsJsonChange={setSubagentModelParamsJson}
-      />
-      <div className="flex flex-wrap items-center gap-3">
-        <SettingsSaveRow saving={saving} saved={saved} onSave={handleSave} />
+      </SettingsSection>
+
+      <SettingsSection
+        title="Session options"
+        description="Default usage-limit policy for new sessions and loops in the dashboard and via MCP when usage fields are omitted."
+      >
+        <DefaultUsageLimitsFields
+          action={defaultUsageLimitAction}
+          onActionChange={(next) => {
+            setDefaultUsageLimitConfigured(true);
+            setDefaultUsageLimitAction(next);
+          }}
+          limitText={defaultUsageLimitText}
+          onLimitTextChange={(text) => {
+            setDefaultUsageLimitConfigured(true);
+            setDefaultUsageLimitText(text);
+          }}
+        />
+      </SettingsSection>
+
+      <div className="flex flex-wrap items-center gap-3 -mt-2">
+        <SettingsSaveRow saving={saving} saved={saved} onSave={handleSave}>
+          Save session &amp; MCP defaults
+        </SettingsSaveRow>
         <button
           type="button"
           onClick={handleClear}
