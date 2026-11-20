@@ -26,8 +26,8 @@ const execFileAsync = promisify(execFile);
 
 export const DEV_SEED_EMAIL = 'dev@baguette.local';
 export const DEV_SEED_USERNAME = 'dev';
-export const DEV_REPO_FULL_NAME = 'baguette-dev';
-export const DEV_REPO_STRIPPED = 'baguette-dev';
+export const DEV_REPO_FULL_NAME = 'local-repo-example';
+export const DEV_REPO_STRIPPED = 'local-repo-example';
 
 const LIVE_SDKS = ['claude', 'cursor', 'pi'];
 
