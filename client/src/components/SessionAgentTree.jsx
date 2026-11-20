@@ -35,7 +35,7 @@ import { useAgentConfigModels } from '../hooks/useAgentConfigModels.js';
 import { parseModelField } from '../utils/models.js';
 
 const PRIMARY_BUILDER_ROW_TOOLTIP =
-  'This session’s primary builder. Messages you send without picking another agent are delivered here by default.';
+  'This session’s primary builder. Messages sent without picking an agent are delivered here by default.';
 
 const SECONDARY_BUILDER_ROW_TOOLTIP =
   'Extra builder added from the UI. Shares this session’s worktree — you can chat, pin, and rename it.';
