@@ -11,7 +11,7 @@ export PORT="${E2E_PORT:-${PORT:-3010}}"
 rm -rf "$DATA_DIR"
 mkdir -p "$DATA_DIR"
 pnpm run migrate
-pnpm run seed:dev
+pnpm run seed:e2e
 pnpm run build
 unset VITE_SERVER_ENABLED
 exec node server/index.js

@@ -212,24 +212,26 @@ export function createAuthRoutes(app) {
           }
         }
 
-        if (identity.username !== 'dev') {
+        if (isMockAgentSdkEnabled()) {
           const mockConfigId = await ensureMockAgentConfig(db, user.id);
-          if (mockConfigId && isMockAgentSdkEnabled()) {
-            const mockDefaultModel = {
-              model: MOCK_STANDARD_MODEL_ID,
-              model_params: null,
-            };
+          if (mockConfigId) {
             const devUser = await db('users').where({ id: user.id }).first();
-            await app.service('users').patch(
-              user.id,
-              {
-                agent_default_config_id: mockConfigId,
-                agent_default_model: mockDefaultModel,
-                reviewer_default_config_id: mockConfigId,
-                reviewer_default_model: mockDefaultModel,
-              },
-              { user: devUser }
-            );
+            if (!devUser.agent_default_config_id) {
+              const mockDefaultModel = {
+                model: MOCK_STANDARD_MODEL_ID,
+                model_params: null,
+              };
+              await app.service('users').patch(
+                user.id,
+                {
+                  agent_default_config_id: mockConfigId,
+                  agent_default_model: mockDefaultModel,
+                  reviewer_default_config_id: mockConfigId,
+                  reviewer_default_model: mockDefaultModel,
+                },
+                { user: devUser }
+              );
+            }
           }
         }
 

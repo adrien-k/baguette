@@ -39,6 +39,7 @@
     "start": "NODE_ENV=production node scripts/start-server.mjs",
     "migrate": "node scripts/migrate-latest.js",
     "seed:dev": "node scripts/seed-dev-data.mjs",
+    "seed:e2e": "node scripts/seed-e2e-data.mjs",
     "dev-data:reset": "bash .baguette/scripts/dev-data-reset.sh",
     "migrate:make": "knex migrate:make --knexfile knexfile.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",

@@ -221,7 +221,7 @@ function pickDefaultConfig(configs) {
   return null;
 }
 
-async function insertDevUser(db, devGhKey) {
+export async function insertDevUser(db, devGhKey) {
   const [userId] = await db('users').insert({
     github_id: 0,
     username: DEV_SEED_USERNAME,
