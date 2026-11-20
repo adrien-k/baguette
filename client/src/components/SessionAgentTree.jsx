@@ -221,10 +221,10 @@ function AgentTreeNameLabel({ agent, agentRef, title, isCurrent }) {
         agent
       )} ${isCurrent ? 'text-fg' : 'text-secondary'}`}
     >
-      <AgentTreeRoleIcon agent={agent} />
       {agentRef != null ? (
         <span className="shrink-0 font-mono text-[10px] text-faint tabular-nums">#{agentRef}</span>
       ) : null}
+      <AgentTreeRoleIcon agent={agent} />
       <span className="truncate">{title}</span>
     </span>
   );
