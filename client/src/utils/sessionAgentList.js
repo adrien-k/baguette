@@ -9,9 +9,9 @@ import {
  * reviewer, extra builders, and subagents all sit at the same level (no
  * nesting; `parent_agent_id` is ignored for display ordering).
  *
- * The head row is the session `pinned_agent_id` when set and valid; otherwise
- * the primary builder. Everyone else follows in last-activity order (primary
- * included when a different agent is pinned). Ref-ascending order breaks ties.
+ * The head row is the session `pinned_agent_id` when set and points at a
+ * builder; otherwise the primary builder. Everyone else follows in last-activity
+ * order (primary included when a different agent is pinned). Ref-ascending order breaks ties.
  *
  * @param {Array<object>} agents
  * @param {number | null | undefined} [pinnedAgentId]
@@ -23,7 +23,7 @@ export function buildSessionAgentList(agents, pinnedAgentId) {
   const pinnedId = pinnedAgentId != null && pinnedAgentId !== '' ? Number(pinnedAgentId) : null;
   const pinned =
     pinnedId != null && Number.isFinite(pinnedId)
-      ? (sorted.find((a) => a.id === pinnedId) ?? null)
+      ? (sorted.find((a) => a.id === pinnedId && a.agent_type === 'builder') ?? null)
       : null;
 
   const head = pinned ?? primary;

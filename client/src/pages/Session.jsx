@@ -155,7 +155,10 @@ export default function Session() {
       return agentsForChat.find((a) => a.id === parsedId) ?? null;
     }
     const pinnedId = sessionFromHook?.id === sessionId ? sessionFromHook?.pinned_agent_id : null;
-    if (pinnedId != null && agentsForChat.some((a) => a.id === pinnedId)) {
+    if (
+      pinnedId != null &&
+      agentsForChat.some((a) => a.id === pinnedId && a.agent_type === 'builder')
+    ) {
       return agentsForChat.find((a) => a.id === pinnedId) ?? null;
     }
     return primaryBuilderForChat ?? agentsForChat[0] ?? null;

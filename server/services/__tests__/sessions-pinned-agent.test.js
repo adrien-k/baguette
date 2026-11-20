@@ -88,6 +88,25 @@ describe('sessions pinned_agent_id', () => {
     ).rejects.toThrow(/pinned_agent_id must belong/);
   });
 
+  it('rejects pinned_agent_id when the agent is not a builder', async () => {
+    const [subagentId] = await db('agents')
+      .insert({
+        session_id: sessionId,
+        agent_type: 'subagent',
+        is_primary: 0,
+        name: 'Scout',
+        status: 'stopped',
+        ref: 5,
+        agent_sdk: 'claude',
+        model: 'sonnet',
+      })
+      .returning('id');
+    const id = typeof subagentId === 'object' ? subagentId.id : subagentId;
+    await expect(
+      app.service('sessions').patch(sessionId, { pinned_agent_id: id }, params(owner))
+    ).rejects.toThrow(/must be a builder/);
+  });
+
   it('clears pinned_agent_id when that agent is removed', async () => {
     await db('sessions').where({ id: sessionId }).update({ pinned_agent_id: secondaryId });
     await app.service('agents').remove(secondaryId, params(owner));

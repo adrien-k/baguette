@@ -126,7 +126,7 @@ function AgentTreeAddBuilder({ agent, canManage, renaming, onAddBuilder, showAdd
 }
 
 function AgentTreePin({ agent, canManage, renaming, pinnedAgentId, pinSaving, onTogglePin }) {
-  if (!canManage || renaming || isPrimaryAgent(agent)) return null;
+  if (!canManage || renaming || !isSecondaryBuilder(agent)) return null;
   const isPinned =
     pinnedAgentId != null && pinnedAgentId !== '' && Number(pinnedAgentId) === agent.id;
   const title = isPinned ? 'Unpin agent' : 'Pin agent';

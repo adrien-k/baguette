@@ -2260,6 +2260,9 @@ async function validatePinnedAgentOnPatch(context) {
   if (!agent || agent.session_id !== sessionId) {
     throw new BadRequest('pinned_agent_id must belong to this session');
   }
+  if (agent.agent_type !== 'builder') {
+    throw new BadRequest('pinned_agent_id must be a builder');
+  }
   context.data.pinned_agent_id = agentId;
   return context;
 }
