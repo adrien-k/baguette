@@ -469,7 +469,11 @@ export default function BaguetteMcpToolBlock({
     );
   }
 
-  if (toolShortName === 'StartSubagent' || toolShortName === 'AwaitSubagent') {
+  if (
+    toolShortName === 'StartSubagent' ||
+    toolShortName === 'AwaitAgent' ||
+    toolShortName === 'AwaitSubagent'
+  ) {
     return (
       <SubagentMcpToolBlock
         toolName={toolShortName}

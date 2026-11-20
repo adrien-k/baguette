@@ -14,7 +14,7 @@ export const BAGUETTE_MCP_TOOL_NAMES = new Set([
   'ListAgents',
   'StartReview',
   'ContinueReview',
-  'AwaitSubagent',
+  'AwaitAgent',
   'StopSubagent',
   'CreateSession',
   'SearchSessions',

@@ -222,6 +222,102 @@ describe('agents.startReview / continueReview', () => {
     ).rejects.toThrow('Start a review first');
   });
 
+  it('startReview notify_parent inserts an observer row', async () => {
+    await setReviewerDefaults();
+    const builder = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
+    const result = await app
+      .service('agents')
+      .startReview(
+        { session_id: sessionId, notify_parent: true, observer_agent_id: builder.id },
+        params(user)
+      );
+    expect(result.notify_parent).toBe(true);
+    const row = await db('agent_observers')
+      .where({ agent_id: result.agent_id, observer_agent_id: builder.id })
+      .first();
+    expect(row).toBeTruthy();
+    expect(row.notify_on).toBe('once');
+  });
+
+  it('rejects review notify_parent when observer is in a different repo session', async () => {
+    await setReviewerDefaults();
+    const otherSessionId = await insertSessionWithPrimaryBuilder(db, {
+      user_id: user.id,
+      repo_id: sessionRow.repo_id,
+      repo_full_name: 'o/r',
+      short_id: 'revOth',
+      initial_prompt: 'other',
+      base_branch: 'main',
+      local_branch: 'feat/y',
+      status: 'stopped',
+      session_path: '/tmp/wt2',
+      agent_sdk: 'claude',
+      agent_config_id: claudeConfigId,
+      model: 'sonnet',
+    });
+    const otherBuilder = await db('agents')
+      .where({ session_id: otherSessionId, is_primary: 1 })
+      .first();
+    await expect(
+      app.service('agents').startReview(
+        {
+          session_id: sessionId,
+          notify_parent: true,
+          observer_agent_id: otherBuilder.id,
+        },
+        params(user)
+      )
+    ).rejects.toThrow('Review notify_parent only allows');
+  });
+
+  it('continueReview notify_parent inserts an observer row', async () => {
+    await setReviewerDefaults();
+    const start = await app.service('agents').startReview({ session_id: sessionId }, params(user));
+    await vi.waitFor(async () => {
+      const r = await db('agents').where({ id: start.agent_id }).first();
+      expect(r.status).toBe('completed');
+    });
+    const builder = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
+    const result = await app
+      .service('agents')
+      .continueReview(
+        { session_id: sessionId, notify_parent: true, observer_agent_id: builder.id },
+        params(user)
+      );
+    expect(result.notify_parent).toBe(true);
+    const row = await db('agent_observers')
+      .where({ agent_id: result.agent_id, observer_agent_id: builder.id })
+      .first();
+    expect(row).toBeTruthy();
+    expect(row.notify_on).toBe('once');
+    await vi.waitFor(async () => {
+      const reviewer = await db('agents').where({ id: result.agent_id }).first();
+      expect(reviewer.status).toBe('completed');
+    });
+  });
+
+  it('awaitAgent rejects waiting on the caller agent', async () => {
+    const builder = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
+    await expect(
+      app
+        .service('agents')
+        .awaitAgent(
+          { session_id: sessionId, agent_id: builder.id, caller_agent_id: builder.id },
+          params(user)
+        )
+    ).rejects.toThrow('Cannot await your own agent');
+  });
+
+  it('awaitAgent waits for a reviewer turn', async () => {
+    await setReviewerDefaults();
+    const start = await app.service('agents').startReview({ session_id: sessionId }, params(user));
+    const awaited = await app
+      .service('agents')
+      .awaitAgent({ session_id: sessionId, agent_id: start.agent_id }, params(user));
+    expect(awaited.agent_type).toBe('reviewer');
+    expect(awaited.status).toBe('completed');
+  });
+
   it('continueReview posts a baguette latest-changes message', async () => {
     const [reviewerId] = await db('agents').insert({
       session_id: sessionId,

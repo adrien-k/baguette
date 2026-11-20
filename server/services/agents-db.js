@@ -186,6 +186,19 @@ async function wouldCreateObserverCycle(db, observedAgentId, observerAgentId) {
  * are rejected — every wake-up starts a real turn for the observer, so either would
  * loop forever with no user interaction.
  */
+export async function upsertReviewNotifyObserver(db, { agentId, observerAgentId }) {
+  const existing = await db('agent_observers')
+    .where({ agent_id: agentId, observer_agent_id: observerAgentId })
+    .first();
+  if (existing) {
+    if (existing.notify_on !== 'once') {
+      await db('agent_observers').where({ id: existing.id }).update({ notify_on: 'once' });
+    }
+    return existing.id;
+  }
+  return insertAgentObserver(db, { agentId, observerAgentId, notifyOn: 'once' });
+}
+
 export async function insertAgentObserver(db, { agentId, observerAgentId, notifyOn = 'turn_end' }) {
   if (!agentId || !observerAgentId)
     throw new BadRequest('agentId and observerAgentId are required');
@@ -212,7 +225,22 @@ export async function insertAgentObserver(db, { agentId, observerAgentId, notify
   return id;
 }
 
-/** Agent ids from `agentIds` that currently have at least one observer row. */
+/** True when `ancestorAgentId` is on the parent_agent_id chain of `descendantAgentId`. */
+export async function isParentAncestorOf(db, ancestorAgentId, descendantAgentId) {
+  if (!ancestorAgentId || !descendantAgentId) return false;
+  let currentId = descendantAgentId;
+  const visited = new Set();
+  while (currentId != null) {
+    if (visited.has(currentId)) break;
+    visited.add(currentId);
+    const row = await getAgentById(db, currentId);
+    if (!row?.parent_agent_id) break;
+    if (row.parent_agent_id === ancestorAgentId) return true;
+    currentId = row.parent_agent_id;
+  }
+  return false;
+}
+
 export async function notifyParentAgentIds(db, agentIds) {
   const ids = (agentIds ?? []).filter((id) => id != null);
   if (!ids.length) return new Set();

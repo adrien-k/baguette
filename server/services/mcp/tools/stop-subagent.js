@@ -11,7 +11,7 @@ export function createStopSubagentTool(ctx) {
     name: 'StopSubagent',
     description:
       'Stop a running subagent turn (and any active child subagents it spawned). ' +
-      'Use when a subagent is stuck or after AwaitSubagent times out with no progress (GetAgentMessages first). ' +
+      'Use when a subagent is stuck or after AwaitAgent times out with no progress (GetAgentMessages first). ' +
       'Identify the subagent by agent_id or agent_ref from ListAgents.',
     schema: {
       session_id: z

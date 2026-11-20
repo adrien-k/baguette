@@ -1,7 +1,7 @@
 /**
  * Per-call wall-clock limit for Baguette MCP wait tools
- * (StartSubagent with attach, AwaitSubagent, AwaitDetachedTask, RunTask without detach).
- * On timeout the call hands back to the calling agent — the underlying subagent or
+ * (StartSubagent with attach, AwaitAgent, AwaitDetachedTask, RunTask without detach).
+ * On timeout the call hands back to the calling agent — the underlying agent or
  * task is *not* cancelled: the wait is virtually detached and it keeps running.
  * The timeout response tells the agent to check progress and continue awaiting
  * with the corresponding tool; kill it only if it looks stuck for no good reason.
@@ -19,15 +19,19 @@ export function mcpAwaitTimeoutMinutes() {
  * @param {{ id?: number, ref?: number } | null | undefined} agent
  */
 export function agentTurnWaitTimeoutMessage(agent) {
-  const idPart = agent?.id != null ? `agent_id ${agent.id}` : 'the subagent';
+  const idPart = agent?.id != null ? `agent_id ${agent.id}` : 'the agent';
   const refPart = agent?.ref != null ? `, ref ${agent.ref}` : '';
   const minutes = mcpAwaitTimeoutMinutes();
+  const stopHint =
+    agent?.agent_type === 'subagent'
+      ? ' Use StopSubagent only if it looks stuck for no good reason.'
+      : '';
   return (
     `Timed out after ${minutes} minutes waiting for ${idPart}${refPart} to finish. ` +
-    'The subagent was not cancelled — the wait is detached and the turn keeps running in the background. ' +
+    'The agent was not cancelled — the wait is detached and the turn keeps running in the background. ' +
     'Read its last assistant message in the session (GetAgentMessages for that agent) to check progress, ' +
-    'then call AwaitSubagent again to continue waiting. ' +
-    'Use StopSubagent only if it looks stuck for no good reason.'
+    'then call AwaitAgent again to continue waiting.' +
+    stopHint
   );
 }
 

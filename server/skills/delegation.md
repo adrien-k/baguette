@@ -18,11 +18,11 @@ When the plan is done, **`CompletePlan`**.
 
 Use **`StartSubagent`** for parallel or isolated work:
 
-| Pattern                      | How                                                                                                                |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Wait for result in this turn | `attach: true` (default) — same idea as `RunTask` without detach                                                   |
-| Fire-and-forget this turn    | `attach: false`, then **`AwaitSubagent`** if you stay, or `notify_parent: true` if you end your turn while it runs |
-| Isolated git work            | `isolated_worktree: true` when changes must not collide with the parent worktree                                   |
+| Pattern                      | How                                                                                                             |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Wait for result in this turn | `attach: true` (default) — same idea as `RunTask` without detach                                                |
+| Fire-and-forget this turn    | `attach: false`, then **`AwaitAgent`** if you stay, or `notify_parent: true` if you end your turn while it runs |
+| Isolated git work            | `isolated_worktree: true` when changes must not collide with the parent worktree                                |
 
 Follow **`ListPresetModels`** with `context: "subagent"` when Settings → Agent limits subagent models.
 
@@ -40,10 +40,10 @@ Do **not** nest orchestration: subagents cannot **`StartSubagent`**, **`UpdateSe
 
 Use the reviewer MCP tools (same behavior as the Issues tab):
 
-| Tool                 | When                                                                                                                                                                                      |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **`StartReview`**    | First review on the session — creates the reviewer agent and runs its turn. Optional: `initial_prompt`, `extra_prompt`, `clear_previous_review: true` to replace an idle reviewer thread. |
-| **`ContinueReview`** | After new commits — sends “Review latest changes” to the existing reviewer. Optional: `additional_instructions`.                                                                          |
+| Tool                 | When                                                                                                                                                                                                       |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`StartReview`**    | First review on the session — creates the reviewer agent and runs its turn. Optional: `initial_prompt`, `extra_prompt`, `clear_previous_review: true`, `notify_parent: true` (wake-up when the turn ends). |
+| **`ContinueReview`** | After new commits — sends “Review latest changes” to the existing reviewer. Optional: `additional_instructions`, `notify_parent: true`.                                                                    |
 
 Guards (both tools):
 
@@ -121,7 +121,8 @@ flowchart TD
 Typical turn boundaries:
 
 - After **`CreatePlan`** with `interactive: true` — end turn with no extra message.
-- After spawning detached subagents without `notify_parent` — **`AwaitSubagent`** or end turn consciously; do not leave orphan agents.
+- After spawning detached subagents without `notify_parent` — **`AwaitAgent`** or end turn consciously; do not leave orphan agents.
+- After **`StartReview`** / **`ContinueReview`** without `notify_parent`, use **`AwaitAgent`** on the reviewer if you need the outcome in this turn.
 - Builder sessions still **commit + `UpdateSession`** before the final message each turn unless the user forbids it.
 
 ## 6. When _not_ to delegate

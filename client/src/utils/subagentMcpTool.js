@@ -1,6 +1,6 @@
 /**
- * Resolve which subagent a StartSubagent / AwaitSubagent MCP tool call refers to.
- * @param {'StartSubagent' | 'AwaitSubagent'} toolName
+ * Resolve which agent a StartSubagent / AwaitAgent MCP tool call refers to.
+ * @param {'StartSubagent' | 'AwaitAgent' | 'AwaitSubagent'} toolName
  * @param {Record<string, unknown> | undefined} args
  * @param {Record<string, unknown> | null | undefined} parsedResult
  */
@@ -25,7 +25,7 @@ export function resolveSubagentTargetFromMcpTool(toolName, args, parsedResult) {
     (typeof nested?.status === 'string' ? nested.status : null) ??
     null;
 
-  if (toolName === 'AwaitSubagent') {
+  if (toolName === 'AwaitAgent' || toolName === 'AwaitSubagent') {
     if (args?.agent_id != null) agentId = args.agent_id;
     if (args?.agent_ref != null) agentRef = args.agent_ref;
   }
@@ -63,7 +63,7 @@ export function findSessionAgentForSubagentTool(agents, target) {
 
 /**
  * @param {Array<{ id?: number; ref?: number; name?: string; agent_type?: string }> | undefined} agents
- * @param {'StartSubagent' | 'AwaitSubagent'} toolName
+ * @param {'StartSubagent' | 'AwaitAgent' | 'AwaitSubagent'} toolName
  * @param {Record<string, unknown> | undefined} args
  * @param {Record<string, unknown> | null | undefined} parsedResult
  */
@@ -124,7 +124,7 @@ export function findRunningStartSubagentInSession(agents, name, parentAgentId) {
 /**
  * Session agent to open in chat for this MCP subagent tool call, if known.
  * @param {Array<{ id?: number; ref?: number; name?: string; agent_type?: string; status?: string; parent_agent_id?: number | null }> | undefined} agents
- * @param {'StartSubagent' | 'AwaitSubagent'} toolName
+ * @param {'StartSubagent' | 'AwaitAgent' | 'AwaitSubagent'} toolName
  * @param {Record<string, unknown> | undefined} args
  * @param {Record<string, unknown> | null | undefined} parsedResult
  * @param {{ parentAgentId?: number | null; isRunning?: boolean }} [options]
@@ -137,11 +137,15 @@ export function resolveOpenSubagentFromMcpTool(agents, toolName, args, parsedRes
   if (resolved.agentId != null && Number.isFinite(resolved.agentId) && resolved.agentId > 0) {
     const fromSession = findSessionAgentForSubagentTool(agents, { agentId: resolved.agentId });
     if (fromSession) return fromSession;
+    const resultType =
+      parsedResult && typeof parsedResult.agent_type === 'string'
+        ? parsedResult.agent_type
+        : 'subagent';
     return {
       id: resolved.agentId,
       ref: resolved.agentRef ?? undefined,
       name: resolved.name ?? undefined,
-      agent_type: 'subagent',
+      agent_type: resultType,
       status: resolved.status ?? undefined,
     };
   }

@@ -48,6 +48,9 @@ function observedTitleLabel(observedAgent, observedSession) {
   if (observedAgent.agent_type === 'subagent') {
     return `Subagent ${observedAgent.name}`;
   }
+  if (observedAgent.agent_type === 'reviewer') {
+    return 'Reviewer';
+  }
   return `Session "${observedSession?.label ?? ''}"`;
 }
 
@@ -56,6 +59,10 @@ function observedLabel(observedAgent, observedSession) {
   if (observedAgent.agent_type === 'subagent') {
     const ref = observedAgent.ref != null ? `#${observedAgent.ref} ` : '';
     return `Subagent ${ref}"${observedAgent.name}"`;
+  }
+  if (observedAgent.agent_type === 'reviewer') {
+    const ref = observedAgent.ref != null ? ` #${observedAgent.ref}` : '';
+    return `Reviewer${ref}`;
   }
   const label = observedSession?.label ? ` "${observedSession.label}"` : '';
   const id = observedSession?.id != null ? ` (#${observedSession.id})` : '';

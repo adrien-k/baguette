@@ -43,17 +43,24 @@ function badgeRef(
 function SubagentOpenCard({
   label,
   refLabel,
+  agentType,
   canOpen,
   onOpen,
 }: {
   label: string;
   refLabel: number | null;
+  agentType?: string;
   canOpen: boolean;
   onOpen: (e: MouseEvent) => void;
 }) {
+  const resolvedType = agentType === 'reviewer' ? 'reviewer' : 'subagent';
   const cardBody = (
     <>
-      <AgentTypeIcon agentType="subagent" subagent className="h-3.5 w-3.5 shrink-0" />
+      <AgentTypeIcon
+        agentType={resolvedType}
+        subagent={resolvedType === 'subagent'}
+        className="h-3.5 w-3.5 shrink-0"
+      />
       {refLabel != null ? (
         <span className="font-mono text-[10px] text-faint shrink-0">#{refLabel}</span>
       ) : null}
@@ -95,7 +102,7 @@ export default function SubagentMcpToolBlock({
   agents,
   onSelectAgent,
 }: {
-  toolName: 'StartSubagent' | 'AwaitSubagent';
+  toolName: 'StartSubagent' | 'AwaitAgent' | 'AwaitSubagent';
   args?: Record<string, unknown>;
   result?: unknown;
   parsedResult?: McpResultData;
@@ -206,6 +213,7 @@ export default function SubagentMcpToolBlock({
             <SubagentOpenCard
               label={cardLabel}
               refLabel={refLabel}
+              agentType={openAgent?.agent_type ?? displayAgent?.agent_type}
               canOpen={canOpen}
               onOpen={handleOpen}
             />
