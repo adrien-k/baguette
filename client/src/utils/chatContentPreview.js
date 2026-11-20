@@ -1,5 +1,5 @@
 /** Default collapsed preview length for long markdown in chat (assistant text, UpdateSession body, etc.). */
-export const CHAT_CONTENT_PREVIEW_LINES = 8;
+export const CHAT_CONTENT_PREVIEW_LINES = 15;
 
 function isFenceLine(line) {
   return /^```/.test(String(line).trim());

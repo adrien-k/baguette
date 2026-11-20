@@ -20,6 +20,7 @@ import { DEFAULT_PAGINATE } from '../../config.js';
 import { cacheScopeForUser, clearUserReposPickerCache } from '../github.js';
 import { parseAgentDefaultModelJson } from '../../../shared/agent-default-model.js';
 import { normalizeUserAgentDefaultsPatch } from '../../services/user-agent-defaults.js';
+import { userDefaultUsageLimitsPatchError } from '../../lib/usage-limit.js';
 import { parseAutoLoadSkillLabels, serializeAutoLoadSkillLabels } from '../skill-resolution.js';
 import {
   buildPasskeyRegistrationOptions,
@@ -306,6 +307,12 @@ async function stripPrivilegedFieldsFromExternalPatch(context) {
   return context;
 }
 
+async function normalizeDefaultUsageLimitsPatch(context) {
+  const error = userDefaultUsageLimitsPatchError(context.data || {});
+  if (error) throw new BadRequest(error);
+  return context;
+}
+
 async function normalizeDefaultAutoLoadSkillsPatch(context) {
   if (context.data?.default_auto_load_skills === undefined) return context;
   const value = context.data.default_auto_load_skills;
@@ -484,6 +491,7 @@ const usersHooks = {
       normalizeColorSchemePatch,
       normalizeCursorModelPrefsPatch,
       normalizeUserAgentDefaultsPatch,
+      normalizeDefaultUsageLimitsPatch,
       normalizeDefaultAutoLoadSkillsPatch,
       clearGithubPickerCacheOnTokenPatch,
       encryptUserSecrets,

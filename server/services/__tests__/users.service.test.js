@@ -553,6 +553,23 @@ describe('Users service - agent defaults patch', () => {
     ).rejects.toThrow(/inherit, config, preset, or any/);
   });
 
+  it('stores default usage limit fields for new sessions and loops', async () => {
+    const updated = await app
+      .service('users')
+      .patch(
+        user1.id,
+        { default_usage_limit_action: 'continue', default_usage_limit: 2.5 },
+        params(user1)
+      );
+    expect(updated.default_usage_limit_action).toBe('continue');
+    expect(updated.default_usage_limit).toBe(2.5);
+    const cleared = await app
+      .service('users')
+      .patch(user1.id, { default_usage_limit_action: null }, params(user1));
+    expect(cleared.default_usage_limit_action).toBeNull();
+    expect(cleared.default_usage_limit).toBeNull();
+  });
+
   it('stores default_auto_load_skills as skill labels', async () => {
     const updated = await app
       .service('users')

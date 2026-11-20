@@ -25,7 +25,10 @@ import {
   parseAutoLoadSkillLabels,
   serializeAutoLoadSkillLabels,
 } from '../skill-resolution.js';
-import { usageLimitFieldsError } from '../../lib/usage-limit.js';
+import {
+  usageLimitFieldsError,
+  applyUserDefaultUsageLimitsOnCreate,
+} from '../../lib/usage-limit.js';
 
 /** Fields a client may set. Everything else (bookkeeping, user_id) is server-owned. */
 const WRITABLE_FIELDS = [
@@ -700,6 +703,7 @@ const loopsHooks = {
       serializeAutoLoadSkills,
       snapshotMcpServers,
       normalizeAgentConfigOnLoopWrite,
+      applyUserDefaultUsageLimitsOnCreate,
       normalizeCreate,
     ],
     patch: [

@@ -49,10 +49,17 @@ describe('turn end after CreatePlan / AskUserQuestions', () => {
               onTurnStart: async () => {},
               onTurnComplete: async () => {},
               insertUsageRow: vi.fn().mockResolvedValue(0),
+              emit: vi.fn(),
             };
           }
           if (name === 'agents') {
             return { patch: agentPatch };
+          }
+          if (name === 'messages') {
+            return { on: vi.fn(), create: vi.fn().mockResolvedValue({}) };
+          }
+          if (name === 'user-repos') {
+            return { find: vi.fn().mockResolvedValue([]) };
           }
           return {};
         },
