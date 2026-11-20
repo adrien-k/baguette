@@ -51,6 +51,10 @@ config:
       run: pnpm run migrate
     dev-data:load:
       run: .baguette/scripts/dev-data-load.sh
+    dev-data:reset:
+      run: .baguette/scripts/dev-data-reset.sh
+      confirm: true
+      description: Deletes .data in this worktree, runs migrations, and re-runs dev seed (dev user, local-repo-example, skills, sample sessions). Use when seed:dev skipped after an old /auth/dev user or a failed partial seed.
     dev-data:seed:
       run: pnpm run seed:dev
     dev-data:persist:

@@ -186,7 +186,7 @@ export function createAuthRoutes(app) {
               .status(503)
               .type('text')
               .send(
-                'Dev user is not seeded. Run baguette init or `pnpm run migrate && pnpm run seed:dev` in this worktree.'
+                'Dev user is not seeded. Run baguette init, or `pnpm run migrate && pnpm run seed:dev`, or reset with `pnpm run dev-data:reset` (baguette task dev-data:reset).'
               );
             return;
           }

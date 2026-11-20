@@ -9,7 +9,13 @@ import { writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import path from 'node:path';
 import * as yaml from 'js-yaml';
-import { DATA_DIR, REPOS_DIR, normalizeRepoPathForStorage, storedRepoPath } from '../config.js';
+import {
+  DATA_DIR,
+  REPOS_DIR,
+  normalizeRepoPathForStorage,
+  resolveRepoPath,
+  storedRepoPath,
+} from '../config.js';
 import { initLocalRepo } from '../services/github.js';
 import { insertTestAgentConfig } from '../test-utils/agent-configs.js';
 import { readLiveSdkEnv } from '../test-utils/sdk-live-env.js';
@@ -136,6 +142,14 @@ async function ensureLiveSdkAgentConfigs(db, userId) {
   for (const sdk of LIVE_SDKS) {
     const env = readLiveSdkEnv(sdk);
     if (!env.enabled) continue;
+    const existing = await db('agent_configs')
+      .where({ user_id: userId, sdk })
+      .whereNull('deleted_at')
+      .first();
+    if (existing) {
+      configs.set(sdk, { id: existing.id, env });
+      continue;
+    }
     const id = await insertTestAgentConfig(db, userId, {
       sdk,
       label: accountAgentConfigLabel(sdk),
@@ -147,7 +161,15 @@ async function ensureLiveSdkAgentConfigs(db, userId) {
     configs.set(sdk, { id, env });
   }
   if (isMockAgentSdkEnabled()) {
-    const mockId = await ensureMockAgentConfig(db, userId);
+    let mockId = (
+      await db('agent_configs')
+        .where({ user_id: userId, sdk: 'mock' })
+        .whereNull('deleted_at')
+        .first()
+    )?.id;
+    if (!mockId) {
+      mockId = await ensureMockAgentConfig(db, userId);
+    }
     if (mockId) {
       const mockEnv = {
         ...readLiveSdkEnv('mock'),
@@ -166,6 +188,10 @@ async function ensureLiveSdkAgentConfigs(db, userId) {
 
 async function seedIntegrationPresets(db, userId, configs) {
   for (const [sdk, entry] of configs) {
+    const existing = await db('agent_model_presets')
+      .where({ user_id: userId, agent_config_id: entry.id })
+      .first();
+    if (existing) continue;
     const description = INTEGRATION_PRESET_DESCRIPTION[sdk] ?? `${sdk} (integration test)`;
     const modelParams = stringifyModelParamsForStorage(entry.env.modelParams);
     await db('agent_model_presets').insert({
@@ -262,6 +288,8 @@ async function seedLocalRepoExampleConfig(repo) {
 async function seedUserSkills(db, userId) {
   const now = new Date().toISOString();
   for (const skill of DEV_SEED_SKILLS) {
+    const existing = await db('skills').where({ user_id: userId, label: skill.label }).first();
+    if (existing) continue;
     await db('skills').insert({
       user_id: userId,
       label: skill.label,
@@ -276,28 +304,53 @@ async function seedUserSkills(db, userId) {
 }
 
 async function ensureDevRepo(db, userId) {
-  const repoAbs = await initLocalRepo(DEV_REPO_STRIPPED);
+  let repoRow = await db('repos').where({ full_name: DEV_REPO_FULL_NAME }).first();
+  let repoAbs = repoRow ? resolveRepoPath(repoRow) : null;
+  if (!repoAbs) {
+    repoAbs = await initLocalRepo(DEV_REPO_STRIPPED);
+  }
   const defaultBranch = await defaultBranchForRepo(repoAbs);
-  const repoPathStored = normalizeRepoPathForStorage(repoAbs, DEV_REPO_STRIPPED);
-  const [repoId] = await db('repos').insert({
-    full_name: DEV_REPO_FULL_NAME,
-    stripped_name: DEV_REPO_STRIPPED,
-    repo_path: repoPathStored || storedRepoPath(DEV_REPO_STRIPPED),
-    default_branch: defaultBranch,
-    last_fetched_at: db.fn.now(),
-    origin: null,
-    access_mode: 'local',
-  });
-  await db('user_repos').insert({
-    user_id: userId,
-    repo_id: repoId,
-    show_in_all_sessions: 1,
-  });
+  const repoPathStored =
+    repoRow?.repo_path ??
+    (normalizeRepoPathForStorage(repoAbs, DEV_REPO_STRIPPED) || storedRepoPath(DEV_REPO_STRIPPED));
+
+  if (!repoRow) {
+    const [repoId] = await db('repos').insert({
+      full_name: DEV_REPO_FULL_NAME,
+      stripped_name: DEV_REPO_STRIPPED,
+      repo_path: repoPathStored,
+      default_branch: defaultBranch,
+      last_fetched_at: db.fn.now(),
+      origin: null,
+      access_mode: 'local',
+    });
+    repoRow = {
+      id: repoId,
+      full_name: DEV_REPO_FULL_NAME,
+      stripped_name: DEV_REPO_STRIPPED,
+      repo_path: repoPathStored,
+      default_branch: defaultBranch,
+      access_mode: 'local',
+      origin: null,
+    };
+  }
+
+  const link = await db('user_repos').where({ user_id: userId, repo_id: repoRow.id }).first();
+  if (!link) {
+    await db('user_repos').insert({
+      user_id: userId,
+      repo_id: repoRow.id,
+      show_in_all_sessions: 1,
+    });
+  } else if (Number(link.show_in_all_sessions) === 0) {
+    await db('user_repos').where({ id: link.id }).update({ show_in_all_sessions: 1 });
+  }
+
   return {
-    id: repoId,
+    id: repoRow.id,
     full_name: DEV_REPO_FULL_NAME,
     stripped_name: DEV_REPO_STRIPPED,
-    repo_path: repoPathStored || storedRepoPath(DEV_REPO_STRIPPED),
+    repo_path: repoPathStored,
     default_branch: defaultBranch,
     access_mode: 'local',
     origin: null,
@@ -331,6 +384,9 @@ async function seedShowcaseSession(db, userId, repo, configs) {
   if (!mock) return;
 
   const shortId = 'devhub1';
+  const existing = await db('sessions').where({ user_id: userId, short_id: shortId }).first();
+  if (existing) return;
+
   const branch = repo.default_branch;
   await ensureSessionGitWorktree(repo.mainAbs, DEV_REPO_STRIPPED, shortId, branch);
 
@@ -432,6 +488,9 @@ async function seedSecondarySession(db, userId, repo, configs, sdk, shortId, lab
   const entry = configs.get(sdk) ?? pickDefaultConfig(configs);
   if (!entry) return;
 
+  const existing = await db('sessions').where({ user_id: userId, short_id: shortId }).first();
+  if (existing) return;
+
   const branch = repo.default_branch;
   await ensureSessionGitWorktree(repo.mainAbs, DEV_REPO_STRIPPED, shortId, branch);
   const modelParams = stringifyModelParamsForStorage(entry.env.modelParams);
@@ -476,6 +535,35 @@ async function seedSecondarySession(db, userId, repo, configs, sdk, shortId, lab
   });
 }
 
+/** True when the dev user, sample repo, skills, configs, and showcase session are present. */
+export async function isDevSeedComplete(db) {
+  const user = await db('users').where({ email: DEV_SEED_EMAIL }).first();
+  if (!user) return false;
+
+  const repo = await db('repos').where({ full_name: DEV_REPO_FULL_NAME }).first();
+  if (!repo) return false;
+
+  const link = await db('user_repos').where({ user_id: user.id, repo_id: repo.id }).first();
+  if (!link) return false;
+
+  const skillCount = await db('skills').where({ user_id: user.id }).count('* as c').first();
+  if (Number(skillCount?.c ?? 0) < DEV_SEED_SKILLS.length) return false;
+
+  const configCount = await db('agent_configs')
+    .where({ user_id: user.id })
+    .whereNull('deleted_at')
+    .count('* as c')
+    .first();
+  if (Number(configCount?.c ?? 0) < 1) return false;
+
+  if (isMockAgentSdkEnabled()) {
+    const hub = await db('sessions').where({ user_id: user.id, short_id: 'devhub1' }).first();
+    if (!hub) return false;
+  }
+
+  return true;
+}
+
 /**
  * @param {import('knex').Knex} db
  * @param {{ force?: boolean, devGhKey?: string }} [opts]
@@ -483,16 +571,30 @@ async function seedSecondarySession(db, userId, repo, configs, sdk, shortId, lab
 export async function seedDevEnvironment(db, opts = {}) {
   const { force = false, devGhKey = process.env.DEV_USER_GH_KEY?.trim() ?? '' } = opts;
 
-  const existing = await db('users').where({ email: DEV_SEED_EMAIL }).first();
-  if (existing && !force) {
-    console.log('Dev user already seeded; skipping (pass force to re-seed).');
-    return { skipped: true };
-  }
-  if (existing && force) {
-    throw new Error('Re-seed with force is not implemented; remove .data or use a fresh database.');
+  if (force) {
+    throw new Error(
+      'Re-seed with force is not supported in-process. Run `pnpm run dev-data:reset` (baguette task dev-data:reset) to wipe .data and seed again.'
+    );
   }
 
-  const userId = await insertDevUser(db, devGhKey);
+  const existing = await db('users').where({ email: DEV_SEED_EMAIL }).first();
+  if (existing && (await isDevSeedComplete(db))) {
+    console.log('Dev seed already complete; skipping.');
+    return { skipped: true };
+  }
+
+  let userId;
+  if (existing) {
+    userId = existing.id;
+    if (devGhKey) {
+      await db('users')
+        .where({ id: userId })
+        .update({ access_token_encrypted: encrypt(devGhKey) });
+    }
+    console.log('Resuming dev seed for existing dev user…');
+  } else {
+    userId = await insertDevUser(db, devGhKey);
+  }
   const userScopedConfigs = await ensureLiveSdkAgentConfigs(db, userId);
   if (userScopedConfigs.size === 0) {
     console.warn(

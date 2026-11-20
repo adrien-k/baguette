@@ -41,11 +41,14 @@ import {
   DEV_REPO_STRIPPED,
   DEV_SEED_EMAIL,
   DEV_SEED_RECIPE_PLAN_LABEL,
+  DEV_SEED_USERNAME,
+  isDevSeedComplete,
   seedDevEnvironment,
 } from '../seed-dev-environment.js';
 import { parseAutoLoadSkillLabels } from '../../services/skill-resolution.js';
 import { MOCK_STANDARD_MODEL_ID } from '../../../shared/mock-agent-sdk.js';
 import { parseAgentDefaultModelJson } from '../../../shared/agent-default-model.js';
+import { USER_STATUS_APPROVED } from '../../../shared/user-status.js';
 
 describe('seedDevEnvironment', () => {
   let db;
@@ -71,9 +74,21 @@ describe('seedDevEnvironment', () => {
     }
   });
 
-  it('creates dev user, mock agent config, local repo, and subagent-rich sessions', async () => {
+  it('resumes when dev user exists but seed is incomplete', async () => {
+    await db('users').insert({
+      github_id: 42,
+      username: DEV_SEED_USERNAME,
+      email: DEV_SEED_EMAIL,
+      status: USER_STATUS_APPROVED,
+      admin: 1,
+      onboarding_completed: 1,
+      subagent_default_mode: 'preset',
+    });
+    expect(await isDevSeedComplete(db)).toBe(false);
+
     const result = await seedDevEnvironment(db, { devGhKey: '' });
     expect(result.skipped).toBe(false);
+    expect(await isDevSeedComplete(db)).toBe(true);
 
     const user = await db('users').where({ email: DEV_SEED_EMAIL }).first();
     expect(user?.username).toBe('dev');
@@ -117,7 +132,9 @@ describe('seedDevEnvironment', () => {
     expect(types).toContain('builder');
     expect(types).toContain('reviewer');
     expect(types.filter((t) => t === 'subagent').length).toBeGreaterThanOrEqual(4);
+  });
 
+  it('skips when dev seed is already complete', async () => {
     const rerun = await seedDevEnvironment(db);
     expect(rerun.skipped).toBe(true);
   });
