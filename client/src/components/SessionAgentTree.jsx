@@ -42,8 +42,7 @@ const SECONDARY_BUILDER_ROW_TOOLTIP = 'Extra builder added from the UI';
 const REVIEWER_ROW_TOOLTIP =
   'Session reviewer — reviews the diff and manage issues on the Issues tab';
 
-const SUBAGENT_ROW_TOOLTIP =
-  'MCP subagent started by a builder (StartSubagent). Chat here is read-only — new work is sent via MCP, not the composer.';
+const SUBAGENT_ROW_TOOLTIP = 'Subagent started and managed by a builder. Chat here is read-only.';
 
 /** Status glyph between agent name and model — hidden for quiet idle rows. */
 function AgentTreeStatus({ status }) {
