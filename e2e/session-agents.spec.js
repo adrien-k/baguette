@@ -70,11 +70,13 @@ test.describe('session agents (mock)', () => {
       `[data-testid="mini-session-entry"][data-session-id="${sessionId}"][data-selected="true"]`
     );
     await expect(sessionEntry).toBeVisible({ timeout: 30_000 });
-    await expect(sessionEntry.getByTestId('mini-session-title')).toHaveClass(/bg-control-hover/);
+    await expect(sessionEntry.getByTestId('mini-session-highlight')).toHaveClass(
+      /bg-control-hover/
+    );
 
     const subagentRow = sessionAgentTreeRow(page, MOCK_E2E_SUBAGENT_NAME);
     await expect(subagentRow).toHaveAttribute('data-selected', 'true');
-    await expect(subagentRow).toHaveClass(/border-control-hover/);
+    await expect(subagentRow).toHaveClass(/border-faint/);
     const builderRow = sessionAgentTreeRow(page, 'Builder');
     await expect(builderRow).toHaveAttribute('data-selected', 'false');
 

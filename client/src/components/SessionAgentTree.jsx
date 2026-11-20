@@ -141,6 +141,12 @@ function agentNameToneClass(agent) {
   return '';
 }
 
+function selectedAgentRowBorderClass(isCurrent, sessionHighlighted) {
+  if (!isCurrent) return 'border-transparent hover:bg-control/50';
+  if (sessionHighlighted) return 'border-faint';
+  return 'border-control-hover';
+}
+
 function AgentTreeRow({ agent, ...rest }) {
   const { getConfig } = useAgentConfigContext();
   const config = getConfig(agent.agent_config_id);
@@ -158,6 +164,7 @@ function AgentTreeRow({ agent, ...rest }) {
     onCommitRename,
     onCancelRename,
     onRequestRename,
+    sessionHighlighted,
   } = rest;
   const isCurrent = currentAgentId != null && Number(currentAgentId) === agent.id;
   const renaming = renamingAgentId === agent.id;
@@ -172,9 +179,10 @@ function AgentTreeRow({ agent, ...rest }) {
         data-agent-name={agent.name || title}
         data-selected={isCurrent ? 'true' : 'false'}
         aria-current={isCurrent ? 'true' : undefined}
-        className={`group flex items-center gap-1.5 rounded-md border py-1 pl-1 pr-1.5 transition-colors ${
-          isCurrent ? 'border-control-hover' : 'border-transparent hover:bg-control/50'
-        }`}
+        className={`group flex items-center gap-1.5 rounded-md border py-1 pl-1 pr-1.5 transition-colors ${selectedAgentRowBorderClass(
+          isCurrent,
+          sessionHighlighted
+        )}`}
       >
         <AgentTreeIcon agent={agent} config={config} />
         <button
@@ -253,9 +261,9 @@ function AgentTreeRow({ agent, ...rest }) {
  * would hide the open chat. Every row shares the same indent in the title column.
  * `autoExpanded` is the default (selected session on desktop, last-opened on
  * mobile), overridable via the caret. Builder and reviewer rows carry a quiet
- * brand/merged/info name-pill tints. The open agent uses a control-hover border
- * (the session title fill) instead of a second fill. Rows show provider icon · `#ref` · name ·
- * status · rename affordance · model (on the right).
+ * brand/merged/info name-pill tints. On the session highlight fill the open agent
+ * uses a faint border for contrast; off the fill it uses control-hover. Rows show
+ * provider icon · `#ref` · name · status · rename affordance · model (on the right).
  */
 export default function SessionAgentTree({
   agents,
@@ -264,6 +272,7 @@ export default function SessionAgentTree({
   onSelectAgent,
   autoExpanded = false,
   showOwnerGutter = false,
+  sessionHighlighted = false,
 }) {
   const list = buildSessionAgentList(agents);
   const [renamingAgentId, setRenamingAgentId] = useState(null);
@@ -331,6 +340,7 @@ export default function SessionAgentTree({
     onCommitRename: commitRename,
     onCancelRename: cancelRename,
     onRequestRename: startRename,
+    sessionHighlighted,
   };
 
   const visibleAgents = [...(primary ? [primary] : []), ...(!grouped || expanded ? others : [])];
