@@ -667,14 +667,17 @@ export async function seedE2eUsageDashboard(page) {
   const { default: Database } = await import('better-sqlite3');
   const db = new Database(E2E_DB_PATH, { timeout: 10_000, fileMustExist: true });
   try {
-    const otherUserId = Number(
-      db
-        .prepare(
-          `INSERT INTO users (github_id, username, status)
-           VALUES (?, ?, 'approved')`
-        )
-        .run(9_000_001, 'e2e-other').lastInsertRowid
-    );
+    const existingOther = db.prepare('SELECT id FROM users WHERE username = ?').get('e2e-other');
+    const otherUserId = existingOther
+      ? Number(existingOther.id)
+      : Number(
+          db
+            .prepare(
+              `INSERT INTO users (github_id, username, status, onboarding_completed)
+               VALUES (?, ?, 'approved', 1)`
+            )
+            .run(9_000_001, 'e2e-other').lastInsertRowid
+        );
 
     const insert = db.prepare(
       `INSERT INTO usage (
