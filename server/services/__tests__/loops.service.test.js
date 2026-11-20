@@ -213,6 +213,16 @@ describe('Loops service', () => {
       expect(loop.auto_load_skills).toEqual(['Delegation and orchestration']);
     });
 
+    it('stores user default usage limits when usage limit fields are omitted', async () => {
+      await db('users').where({ id: aliceId }).update({
+        default_usage_limit_action: 'continue',
+        default_usage_limit: 0.75,
+      });
+      const loop = await app.service('loops').create(loopData(), params(aliceId));
+      expect(loop.usage_limit_action).toBe('continue');
+      expect(loop.usage_limit).toBe(0.75);
+    });
+
     it('stores an explicit empty auto_load_skills list without filling defaults', async () => {
       await db('users')
         .where({ id: aliceId })

@@ -12,6 +12,7 @@ import {
   usageLimitFieldsError,
   usageLimitStatusText,
   blockingLimitWindow,
+  userDefaultUsageLimitsPatchError,
 } from '../usage-limit.js';
 
 const NOW = Date.parse('2026-11-18T12:00:00Z');
@@ -145,6 +146,27 @@ describe('isUsageLimitText', () => {
     expect(isUsageLimitText('rate limit, slow down')).toBe(false);
     expect(isUsageLimitText('quota check failed, too many requests (429)')).toBe(false);
     expect(isUsageLimitText(undefined)).toBe(false);
+  });
+});
+
+describe('userDefaultUsageLimitsPatchError', () => {
+  it('clears limit when action is cleared', () => {
+    const data = { default_usage_limit_action: null, default_usage_limit: 5 };
+    expect(userDefaultUsageLimitsPatchError(data)).toBeNull();
+    expect(data.default_usage_limit_action).toBeNull();
+    expect(data.default_usage_limit).toBeNull();
+  });
+
+  it('drops usage_limit when action is not continue', () => {
+    const data = { default_usage_limit_action: 'wait', default_usage_limit: 3 };
+    expect(userDefaultUsageLimitsPatchError(data)).toBeNull();
+    expect(data.default_usage_limit).toBeNull();
+  });
+
+  it('rejects invalid action', () => {
+    expect(userDefaultUsageLimitsPatchError({ default_usage_limit_action: 'pause' })).toBe(
+      'default_usage_limit_action must be one of: stop, wait, continue'
+    );
   });
 });
 
