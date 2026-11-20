@@ -42,8 +42,6 @@ import {
   isApprovedUser,
   resolveUserStatus,
 } from '../../shared/user-status.js';
-import { ensureMockAgentConfig } from '../agent-sdks/mock/mock-agent-config.js';
-import { isMockAgentSdkEnabled, MOCK_STANDARD_MODEL_ID } from '../../shared/mock-agent-sdk.js';
 import { createIpRateLimiter } from '../lib/ip-rate-limit.js';
 import { hashInviteToken, isInviteExpired } from '../lib/user-invite.js';
 
@@ -145,7 +143,7 @@ async function userIsFirst(userId) {
   return Number(first?.id) === Number(userId);
 }
 
-/** Development-only login identity. Default stays `dev`; `?username=` creates a distinct user. */
+/** Development-only login identity. Default `dev`; `?username=` targets another seeded dev account. */
 function devLoginIdentity(usernameQuery) {
   const raw = Array.isArray(usernameQuery) ? usernameQuery[0] : usernameQuery;
   const username =
@@ -175,51 +173,17 @@ export function createAuthRoutes(app) {
     router.get('/auth/dev', async (req, res, next) => {
       try {
         const identity = devLoginIdentity(req.query.username);
-        const devGhKey = process.env.DEV_USER_GH_KEY || '';
         let user = await db('users').where({ email: identity.email }).first();
         if (!user) {
           user = await db('users').where({ username: identity.username }).first();
         }
         if (!user) {
-          const created = await app.service('users').create(
-            {
-              github_id: identity.github_id,
-              username: identity.username,
-              email: identity.email,
-              access_token: identity.username === 'dev' ? devGhKey : '',
-              status: USER_STATUS_APPROVED,
-              admin: true,
-              onboarding_completed: true,
-            },
-            {} // internal call — no provider, no user required
-          );
-          user = { id: created.id };
-        } else {
-          const patch = {};
-          if (identity.username === 'dev' && devGhKey) patch.access_token = devGhKey;
-          if (!user.onboarding_completed) patch.onboarding_completed = true;
-          if (Object.keys(patch).length) {
-            await app.service('users').patch(user.id, patch, {});
-          }
-        }
-
-        const mockConfigId = await ensureMockAgentConfig(db, user.id);
-        if (mockConfigId && isMockAgentSdkEnabled()) {
-          const mockDefaultModel = {
-            model: MOCK_STANDARD_MODEL_ID,
-            model_params: null,
-          };
-          const devUser = await db('users').where({ id: user.id }).first();
-          await app.service('users').patch(
-            user.id,
-            {
-              agent_default_config_id: mockConfigId,
-              agent_default_model: mockDefaultModel,
-              reviewer_default_config_id: mockConfigId,
-              reviewer_default_model: mockDefaultModel,
-            },
-            { user: devUser }
-          );
+          const hint =
+            identity.username === 'dev'
+              ? 'Run baguette init, or `pnpm run migrate && pnpm run seed:dev` (local dev) / `pnpm run seed:e2e` (Playwright), or reset with `pnpm run dev-data:reset`.'
+              : `No user "${identity.username}" in the database. Seed it first (e2e ships \`dev\` and \`e2e-other\`; full dev seed adds more).`;
+          res.status(503).type('text').send(`Dev user is not seeded. ${hint}`);
+          return;
         }
 
         setBootstrapUserCookie(res, user.id);
