@@ -11,7 +11,7 @@ config:
     DEV_USER_GH_KEY: '${{ baguette.secrets.DEV_USER_GH_KEY }}'
     # Same keys as `agents-integration-test` — used by `pnpm run seed:dev` for dev agent_configs.
     SDK_TESTS_CURSOR_API_KEY: '${{ baguette.secrets.CURSOR_API_KEY }}'
-    SDK_TESTS_CURSOR_MODEL: glm-5p3-flash
+    SDK_TESTS_CURSOR_MODEL: composer-2.5
     SDK_TESTS_PI_API_KEY: '${{ baguette.secrets.OPEN_CODE_GO_API_KEY }}'
     SDK_TESTS_PI_MODEL: opencode-go/glm-5.3-flash
     SDK_TESTS_PI_API_KEY_ENV_VAR: OPENCODE_GO_API_KEY

@@ -15,7 +15,7 @@ import { insertSessionWithPrimaryBuilder } from '../test-utils/session-agents.js
 import { insertAgentObserver } from '../services/agents-db.js';
 import { provisionIsolatedSubagentWorktree } from '../services/subagent-worktree.js';
 import { ensureMockAgentConfig } from '../agent-sdks/mock/mock-agent-config.js';
-import { isMockAgentSdkEnabled } from '../../shared/mock-agent-sdk.js';
+import { isMockAgentSdkEnabled, MOCK_STANDARD_MODEL_ID } from '../../shared/mock-agent-sdk.js';
 import { stringifyAgentDefaultModel } from '../../shared/agent-default-model.js';
 import { stringifyModelParamsForStorage } from '../../shared/agent-session-defaults.js';
 import { USER_STATUS_APPROVED } from '../../shared/user-status.js';
@@ -30,6 +30,26 @@ export const DEV_REPO_FULL_NAME = 'baguette-dev';
 export const DEV_REPO_STRIPPED = 'baguette-dev';
 
 const LIVE_SDKS = ['claude', 'cursor', 'pi'];
+
+const INTEGRATION_PRESET_DESCRIPTION = {
+  claude: 'Claude (integration test)',
+  cursor: 'Cursor (integration test)',
+  pi: 'Pi (integration test)',
+  mock: 'Mock (local dev)',
+};
+
+function modelDefaultJsonFromLiveEnv(env) {
+  return stringifyAgentDefaultModel({
+    model: env.model,
+    model_params: env.modelParams,
+  });
+}
+
+async function applyAgentConfigDefaultModel(db, configId, env) {
+  const json = modelDefaultJsonFromLiveEnv(env);
+  if (!json) return;
+  await db('agent_configs').where({ id: configId }).update({ default_model: json });
+}
 
 async function defaultBranchForRepo(repoAbs) {
   try {
@@ -77,18 +97,42 @@ async function ensureLiveSdkAgentConfigs(db, userId) {
       apiKeyEnvVar: env.apiKeyEnvVar,
       apiUrl: env.apiUrl,
     });
+    await applyAgentConfigDefaultModel(db, id, env);
     configs.set(sdk, { id, env });
   }
   if (isMockAgentSdkEnabled()) {
     const mockId = await ensureMockAgentConfig(db, userId);
     if (mockId) {
+      const mockEnv = {
+        ...readLiveSdkEnv('mock'),
+        model: MOCK_STANDARD_MODEL_ID,
+        modelParams: null,
+      };
+      await applyAgentConfigDefaultModel(db, mockId, mockEnv);
       configs.set('mock', {
         id: mockId,
-        env: readLiveSdkEnv('mock'),
+        env: mockEnv,
       });
     }
   }
   return configs;
+}
+
+async function seedIntegrationPresets(db, userId, configs) {
+  for (const [sdk, entry] of configs) {
+    const description = INTEGRATION_PRESET_DESCRIPTION[sdk] ?? `${sdk} (integration test)`;
+    const modelParams = stringifyModelParamsForStorage(entry.env.modelParams);
+    await db('agent_model_presets').insert({
+      user_id: userId,
+      description,
+      agent_config_id: entry.id,
+      model: entry.env.model,
+      model_params: modelParams,
+      enabled: 1,
+      for_subagents: 1,
+      for_new_sessions: 1,
+    });
+  }
 }
 
 function pickDefaultConfig(configs) {
@@ -113,17 +157,20 @@ async function insertDevUser(db, devGhKey) {
   return userId;
 }
 
-async function applyDevUserDefaults(db, userId, defaultConfig) {
-  if (!defaultConfig) return;
-  const defaultModelJson = stringifyAgentDefaultModel({
-    model: defaultConfig.env.model,
-    model_params: defaultConfig.env.modelParams,
-  });
+async function applyDevUserDefaults(db, userId, configs) {
+  const mock = configs.get('mock');
+  const builder = mock ?? pickDefaultConfig(configs);
+  if (!builder) return;
+
+  const defaultModelJson = modelDefaultJsonFromLiveEnv(builder.env);
   await db('users').where({ id: userId }).update({
-    agent_default_config_id: defaultConfig.id,
+    agent_default_config_id: builder.id,
     agent_default_model: defaultModelJson,
-    reviewer_default_config_id: defaultConfig.id,
+    reviewer_default_config_id: builder.id,
     reviewer_default_model: defaultModelJson,
+    subagent_default_mode: 'preset',
+    subagent_default_config_id: null,
+    subagent_default_model: null,
   });
 }
 
@@ -346,13 +393,13 @@ export async function seedDevEnvironment(db, opts = {}) {
 
   const userId = await insertDevUser(db, devGhKey);
   const userScopedConfigs = await ensureLiveSdkAgentConfigs(db, userId);
-  const defaultConfig = pickDefaultConfig(userScopedConfigs);
-  if (!defaultConfig) {
+  if (userScopedConfigs.size === 0) {
     console.warn(
       'Dev seed: no SDK_TESTS_* or mock agent config available; sessions will be omitted.'
     );
   } else {
-    await applyDevUserDefaults(db, userId, defaultConfig);
+    await applyDevUserDefaults(db, userId, userScopedConfigs);
+    await seedIntegrationPresets(db, userId, userScopedConfigs);
   }
 
   const repo = await ensureDevRepo(db, userId);

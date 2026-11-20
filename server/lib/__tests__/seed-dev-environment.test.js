@@ -1,7 +1,16 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { DATA_DIR } from '../../config.js';
 import { createMigratedTestDb } from '../../test-utils/db.js';
-import { DEV_REPO_FULL_NAME, DEV_SEED_EMAIL, seedDevEnvironment } from '../seed-dev-environment.js';
+import {
+  DEV_REPO_FULL_NAME,
+  DEV_REPO_STRIPPED,
+  DEV_SEED_EMAIL,
+  seedDevEnvironment,
+} from '../seed-dev-environment.js';
 import { MOCK_STANDARD_MODEL_ID } from '../../../shared/mock-agent-sdk.js';
+import { parseAgentDefaultModelJson } from '../../../shared/agent-default-model.js';
 
 describe('seedDevEnvironment', () => {
   let db;
@@ -9,6 +18,10 @@ describe('seedDevEnvironment', () => {
   beforeAll(async () => {
     vi.stubEnv('ENABLE_MOCK_AGENT', 'true');
     vi.stubEnv('SDK_TESTS_MOCK', '1');
+    await fs.rm(path.join(DATA_DIR, 'repos', DEV_REPO_STRIPPED), {
+      recursive: true,
+      force: true,
+    });
     db = await createMigratedTestDb();
   });
 
@@ -27,7 +40,13 @@ describe('seedDevEnvironment', () => {
     expect(user?.agent_default_config_id).toBeTruthy();
 
     const configs = await db('agent_configs').where({ user_id: user.id }).whereNull('deleted_at');
-    expect(configs.some((c) => c.sdk === 'mock')).toBe(true);
+    const mockConfig = configs.find((c) => c.sdk === 'mock');
+    expect(mockConfig).toBeTruthy();
+    expect(parseAgentDefaultModelJson(mockConfig.default_model).model).toBe(MOCK_STANDARD_MODEL_ID);
+
+    const presets = await db('agent_model_presets').where({ user_id: user.id });
+    expect(presets.length).toBeGreaterThanOrEqual(1);
+    expect(presets.some((p) => p.model === MOCK_STANDARD_MODEL_ID)).toBe(true);
 
     const repo = await db('repos').where({ full_name: DEV_REPO_FULL_NAME }).first();
     expect(repo?.access_mode).toBe('local');
