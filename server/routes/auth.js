@@ -173,7 +173,6 @@ export function createAuthRoutes(app) {
     router.get('/auth/dev', async (req, res, next) => {
       try {
         const identity = devLoginIdentity(req.query.username);
-        const devGhKey = process.env.DEV_USER_GH_KEY || '';
         let user = await db('users').where({ email: identity.email }).first();
         if (!user) {
           user = await db('users').where({ username: identity.username }).first();
@@ -185,13 +184,6 @@ export function createAuthRoutes(app) {
               : `No user "${identity.username}" in the database. Seed it first (e2e ships \`dev\` and \`e2e-other\`; full dev seed adds more).`;
           res.status(503).type('text').send(`Dev user is not seeded. ${hint}`);
           return;
-        }
-
-        const patch = {};
-        if (identity.username === 'dev' && devGhKey) patch.access_token = devGhKey;
-        if (!user.onboarding_completed) patch.onboarding_completed = true;
-        if (Object.keys(patch).length) {
-          await app.service('users').patch(user.id, patch, {});
         }
 
         setBootstrapUserCookie(res, user.id);
