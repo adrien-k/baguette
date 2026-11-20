@@ -1113,6 +1113,32 @@ export default function Session() {
     [isReadonly, gitSession?.id, addBuilderFlow]
   );
 
+  const handleAddBuilderFromSidebar = useCallback(
+    (sessionRow) => {
+      if (isReadonly || !sessionRow?.id) return;
+      if (String(sessionRow.id) === String(routeSessionId) && gitSession?.id) {
+        handleOpenAddBuilder('');
+        return;
+      }
+      const base = sessionUrl(sessionRow.id);
+      navigate(`${base}?view=chat&add_builder=1`);
+    },
+    [isReadonly, routeSessionId, gitSession?.id, handleOpenAddBuilder, navigate, sessionUrl]
+  );
+
+  useEffect(() => {
+    if (searchParams.get('add_builder') !== '1' || isReadonly || !gitSession?.id) return;
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('add_builder');
+        return next;
+      },
+      { replace: true }
+    );
+    addBuilderFlow.openModal('');
+  }, [searchParams, gitSession?.id, isReadonly, addBuilderFlow, setSearchParams]);
+
   useLayoutEffect(() => {
     if (isNewSessionRoute) return;
     scrollActiveViewTabIntoView();
@@ -1286,8 +1312,8 @@ export default function Session() {
           sessionsLength={sessions.length}
           onLoadMoreSessions={loadMoreSessions}
           listScope={listScope}
-          onAddBuilder={() => handleOpenAddBuilder('')}
-          showAddBuilder={!isReadonly && !isNewSessionRoute && Boolean(gitSession?.id)}
+          onAddBuilder={handleAddBuilderFromSidebar}
+          showAddBuilder={!isReadonly && !isNewSessionRoute}
         />
 
         <div

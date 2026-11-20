@@ -126,8 +126,14 @@ export default function MiniSessionEntry({
             currentAgentId={routeAgentId}
             canManage={isOwner && !isArchived && !isArchiving}
             onSelectAgent={(agent) => navigate(agentChatUrl(agent.id))}
-            onAddBuilder={showAddBuilder && onAddBuilder ? onAddBuilder : undefined}
-            showAddBuilder={showAddBuilder && isCurrent}
+            onAddBuilder={
+              showAddBuilder && onAddBuilder
+                ? () => {
+                    onAddBuilder(s);
+                  }
+                : undefined
+            }
+            showAddBuilder={showAddBuilder && isOwner && !isArchived && !isArchiving}
             autoExpanded={autoExpanded}
             showOwnerGutter={showOwner}
             sessionHighlighted={isCurrent}
