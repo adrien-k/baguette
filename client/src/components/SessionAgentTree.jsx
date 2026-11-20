@@ -1,5 +1,15 @@
 import { useState } from 'react';
-import { ChevronDown, Crown, Loader2, Network, Pencil, Pin, Plus } from 'lucide-react';
+import {
+  Bot,
+  ChevronDown,
+  ClipboardCheck,
+  Crown,
+  Loader2,
+  Network,
+  Pencil,
+  Pin,
+  Plus,
+} from 'lucide-react';
 import AgentConfigLogo from './AgentConfigLogo.jsx';
 import AgentTypeIcon from './AgentTypeIcon.jsx';
 import Tooltip from './Tooltip.jsx';
@@ -26,6 +36,12 @@ import { parseModelField } from '../utils/models.js';
 
 const PRIMARY_BUILDER_ROW_TOOLTIP =
   'This session’s primary builder. Messages you send without picking another agent are delivered here by default.';
+
+const SECONDARY_BUILDER_ROW_TOOLTIP =
+  'Extra builder added from the UI. Shares this session’s worktree — you can chat, pin, and rename it.';
+
+const REVIEWER_ROW_TOOLTIP =
+  'Session reviewer — reviews the diff and files issues on the Review tab rather than shipping builder chat.';
 
 const SUBAGENT_ROW_TOOLTIP =
   'MCP subagent started by a builder (StartSubagent). Chat here is read-only — new work is sent via MCP, not the composer.';
@@ -191,21 +207,27 @@ function agentNameToneClass(agent) {
 }
 
 function AgentTreeRoleIcon({ agent }) {
+  let tooltip = null;
+  let icon = null;
   if (isPrimaryAgent(agent)) {
-    return (
-      <Tooltip content={PRIMARY_BUILDER_ROW_TOOLTIP} wrap wide className="inline-flex shrink-0">
-        <Crown className="w-3 h-3 text-brand" aria-label="Primary builder" />
-      </Tooltip>
-    );
+    tooltip = PRIMARY_BUILDER_ROW_TOOLTIP;
+    icon = <Crown className="w-3 h-3 text-brand" aria-label="Primary builder" />;
+  } else if (isSecondaryBuilder(agent)) {
+    tooltip = SECONDARY_BUILDER_ROW_TOOLTIP;
+    icon = <Bot className="w-3 h-3 text-accent" strokeWidth={2} aria-hidden />;
+  } else if (isReviewerAgent(agent)) {
+    tooltip = REVIEWER_ROW_TOOLTIP;
+    icon = <ClipboardCheck className="w-3 h-3 text-merged" strokeWidth={2} aria-hidden />;
+  } else if (isSubagentBuilder(agent)) {
+    tooltip = SUBAGENT_ROW_TOOLTIP;
+    icon = <Network className="w-3 h-3 text-info" strokeWidth={2} aria-hidden />;
   }
-  if (isSubagentBuilder(agent)) {
-    return (
-      <Tooltip content={SUBAGENT_ROW_TOOLTIP} wrap wide className="inline-flex shrink-0">
-        <Network className="w-3 h-3 text-info" aria-hidden />
-      </Tooltip>
-    );
-  }
-  return null;
+  if (!tooltip || !icon) return null;
+  return (
+    <Tooltip content={tooltip} wrap wide className="inline-flex shrink-0">
+      {icon}
+    </Tooltip>
+  );
 }
 
 function selectedAgentRowBorderClass(isCurrent, sessionHighlighted) {
@@ -221,10 +243,10 @@ function AgentTreeNameLabel({ agent, agentRef, title, isCurrent }) {
         agent
       )} ${isCurrent ? 'text-fg' : 'text-secondary'}`}
     >
+      <AgentTreeRoleIcon agent={agent} />
       {agentRef != null ? (
         <span className="shrink-0 font-mono text-[10px] text-faint tabular-nums">#{agentRef}</span>
       ) : null}
-      <AgentTreeRoleIcon agent={agent} />
       <span className="truncate">{title}</span>
     </span>
   );
