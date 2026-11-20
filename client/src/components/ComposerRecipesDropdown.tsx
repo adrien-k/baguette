@@ -2,6 +2,9 @@ import { BookOpen, CircleCheck, GitPullRequest, MessageSquare, Sparkles } from '
 import type { LucideIcon } from 'lucide-react';
 import { BUILTIN_CHAT_RECIPE_IDS } from '@baguette/shared/session-chat-recipes.js';
 import LightChipDropdown from './LightChipDropdown.jsx';
+import { DROPDOWN_PANEL_CLASS } from '../utils/dropdownPanel.js';
+
+const RECIPES_PANEL_CLASS = `min-w-[17rem] max-w-[min(100vw-2rem,22rem)] max-h-[min(24rem,70vh)] overflow-y-auto ${DROPDOWN_PANEL_CLASS} py-1`;
 
 export type ChatRecipe = {
   id: string;
@@ -32,11 +35,11 @@ export default function ComposerRecipesDropdown({
 
   const options = recipes.map((recipe) => {
     const Icon = recipe.builtin ? BUILTIN_RECIPE_ICONS[recipe.id] : Sparkles;
+    const subtitle = recipe.description?.trim() || undefined;
     return {
       value: recipe.id,
       label: recipe.label,
-      description: recipe.description || undefined,
-      title: recipe.description || recipe.label,
+      subtitle,
       icon: <Icon className="w-3.5 h-3.5 shrink-0" aria-hidden />,
     };
   });
@@ -61,6 +64,7 @@ export default function ComposerRecipesDropdown({
         shrinkableTrigger
         triggerClassName="gap-1.5 rounded-md border border-line/80 bg-control/30 px-2 py-1 text-xs text-secondary hover:text-heading hover:border-faint hover:bg-control/60 transition-colors !h-auto min-h-0"
         placement="bottom-start"
+        panelClassName={RECIPES_PANEL_CLASS}
       />
     </div>
   );

@@ -42,6 +42,8 @@ test.describe('session chat recipes', () => {
     await expect(page.getByRole('button', { name: 'Check CI' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Check comments' })).toBeVisible();
     await expect(page.getByRole('button', { name: E2E_CUSTOM_RECIPE_LABEL })).toBeVisible();
+    await expect(page.getByText('Pull latest from the remote and base branch')).toBeVisible();
+    await expect(page.getByText('Repo-specific one-click prompt')).toBeVisible();
 
     await settleForScreenshot(page);
     await saveE2eLocatorScreenshot(recipesDropdown, 'chat-recipes-composer-dropdown.png');
