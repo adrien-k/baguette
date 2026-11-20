@@ -29,8 +29,8 @@ import {
 const PINNED_BUILDER_NAME = 'Pinned E2E builder';
 const OTHER_BUILDER_NAME = 'Other E2E builder';
 
-const PRIMARY_BUILDER_TOOLTIP =
-  /primary builder.*without picking another agent are delivered here by default/i;
+const PRIMARY_BUILDER_TOOLTIP_DEFAULT =
+  'This session’s primary builder. Messages sent without picking an agent are delivered here by default.';
 
 test.describe('pinned session agents (mock)', () => {
   test('add builder pins the new agent and selects its chat', async ({ page }) => {
@@ -121,8 +121,8 @@ test.describe('pinned session agents (mock)', () => {
     await expectMockQuickTurnComplete(page);
 
     const builderRow = sessionAgentTreeRow(page, 'Builder');
-    await builderRow.getByText('Builder', { exact: true }).hover();
-    await expect(page.getByText(PRIMARY_BUILDER_TOOLTIP)).toBeVisible();
+    await builderRow.getByLabel('Primary builder', { exact: true }).hover();
+    await expect(page.getByText(PRIMARY_BUILDER_TOOLTIP_DEFAULT, { exact: true })).toBeVisible();
 
     await settleForScreenshot(page);
     await saveE2eLocatorScreenshot(

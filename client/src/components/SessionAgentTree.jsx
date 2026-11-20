@@ -34,8 +34,19 @@ import { useAgentConfigContext } from '../context/AgentConfigContext.jsx';
 import { useAgentConfigModels } from '../hooks/useAgentConfigModels.js';
 import { parseModelField } from '../utils/models.js';
 
-const PRIMARY_BUILDER_ROW_TOOLTIP =
+export const PRIMARY_BUILDER_ROW_TOOLTIP_DEFAULT =
   'This session’s primary builder. Messages sent without picking an agent are delivered here by default.';
+
+export const PRIMARY_BUILDER_ROW_TOOLTIP_PINNED_OTHER =
+  'This session’s primary builder. Another builder is pinned, so that chat opens and receives messages until you pick an agent.';
+
+export function primaryBuilderRowTooltip(pinnedAgentId, primaryAgentId) {
+  const pinned = pinnedAgentId != null && pinnedAgentId !== '' ? Number(pinnedAgentId) : null;
+  if (pinned != null && primaryAgentId != null && pinned !== Number(primaryAgentId)) {
+    return PRIMARY_BUILDER_ROW_TOOLTIP_PINNED_OTHER;
+  }
+  return PRIMARY_BUILDER_ROW_TOOLTIP_DEFAULT;
+}
 
 const SECONDARY_BUILDER_ROW_TOOLTIP = 'Extra builder added from the UI';
 
@@ -206,11 +217,11 @@ function agentNameToneClass(agent) {
   return '';
 }
 
-function AgentTreeRoleIcon({ agent }) {
+function AgentTreeRoleIcon({ agent, pinnedAgentId }) {
   let tooltip = null;
   let icon = null;
   if (isPrimaryAgent(agent)) {
-    tooltip = PRIMARY_BUILDER_ROW_TOOLTIP;
+    tooltip = primaryBuilderRowTooltip(pinnedAgentId, agent.id);
     icon = <Crown className="w-3 h-3 text-brand" aria-label="Primary builder" />;
   } else if (isSecondaryBuilder(agent)) {
     tooltip = SECONDARY_BUILDER_ROW_TOOLTIP;
@@ -236,14 +247,14 @@ function selectedAgentRowBorderClass(isCurrent, sessionHighlighted) {
   return 'border-control-hover';
 }
 
-function AgentTreeNameLabel({ agent, agentRef, title, isCurrent }) {
+function AgentTreeNameLabel({ agent, agentRef, title, isCurrent, pinnedAgentId }) {
   const nameLabel = (
     <span
       className={`min-w-0 truncate rounded px-1 text-[11px] leading-4 inline-flex items-center gap-1 ${agentNameToneClass(
         agent
       )} ${isCurrent ? 'text-fg' : 'text-secondary'}`}
     >
-      <AgentTreeRoleIcon agent={agent} />
+      <AgentTreeRoleIcon agent={agent} pinnedAgentId={pinnedAgentId} />
       {agentRef != null ? (
         <span className="shrink-0 font-mono text-[10px] text-faint tabular-nums">#{agentRef}</span>
       ) : null}
@@ -329,6 +340,7 @@ function AgentTreeRow({ agent, ...rest }) {
               agentRef={agentRef}
               title={title}
               isCurrent={isCurrent}
+              pinnedAgentId={pinnedAgentId}
             />
           )}
           <AgentTreeStatus status={agent.status} />
