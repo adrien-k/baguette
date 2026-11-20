@@ -4,7 +4,6 @@ import {
   devLogin,
   ensureMockE2eConfigs,
   getCurrentUser,
-  patchUserSessionDefaults,
   setupAccountModelDefaults,
   slackE2eDb,
 } from './helpers.js';
@@ -159,8 +158,27 @@ const linkSlackUser = (slackApp, slackUserId, userId) =>
       .run(slackApp.id, slackUserId, userId)
   );
 
-/** Logs in as a Baguette user; gives them the mock agent as their default model when asked. */
+/** A dev account like the e2e seed's `e2e-other`: dev login only signs in to users that exist. */
+async function ensureDevUser(username) {
+  await withDb((db) => {
+    if (db.prepare('SELECT 1 FROM users WHERE username = ?').get(username)) return;
+    db.prepare(
+      `INSERT INTO users (github_id, username, email, status, admin, onboarding_completed)
+       VALUES (?, ?, ?, 'approved', 0, 1)`
+    ).run(
+      2_000_000_000 + Math.floor(Math.random() * 1_000_000_000),
+      username,
+      `${username}@baguette.local`
+    );
+  });
+}
+
+/**
+ * Logs in as a Baguette user. Everyone but `dev` starts with no agent configuration or default
+ * model; `withModel` gives them the mock agent as their default.
+ */
 async function signInAs(page, username, { withModel = true } = {}) {
+  if (username !== 'dev') await ensureDevUser(username);
   await devLogin(page, username);
   if (withModel) {
     const { configA } = await ensureMockE2eConfigs(page);
@@ -587,11 +605,6 @@ test.describe('Slack global session', () => {
     }) => {
       const { slackApp } = await janWorld(page);
       const carol = await signInAs(page, 'carol', { withModel: false });
-      // New users start with the mock agent as their default; take it away.
-      await patchUserSessionDefaults(page, {
-        agent_default_config_id: null,
-        agent_default_model: null,
-      });
       await linkSlackUser(slackApp, 'UCAROL', carol.id);
       const thread = nextTs();
 
