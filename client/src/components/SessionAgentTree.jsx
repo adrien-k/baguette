@@ -37,8 +37,7 @@ import { parseModelField } from '../utils/models.js';
 const PRIMARY_BUILDER_ROW_TOOLTIP =
   'This session’s primary builder. Messages sent without picking an agent are delivered here by default.';
 
-const SECONDARY_BUILDER_ROW_TOOLTIP =
-  'Extra builder added from the UI. Shares this session’s worktree — you can chat, pin, and rename it.';
+const SECONDARY_BUILDER_ROW_TOOLTIP = 'Extra builder added from the UI';
 
 const REVIEWER_ROW_TOOLTIP =
   'Session reviewer — reviews the diff and files issues on the Review tab rather than shipping builder chat.';
