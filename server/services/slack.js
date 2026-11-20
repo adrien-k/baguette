@@ -6,7 +6,11 @@
 
 import { PUBLIC_HOST } from '../config.js';
 
-const SLACK_API = 'https://slack.com/api';
+// Overridable so the e2e suite can point the server at a Slack mock.
+const SLACK_API = process.env.SLACK_API_URL || 'https://slack.com/api';
+
+/** Base URL of the Slack Web API (`https://slack.com/api`, or the e2e mock). */
+export const slackApiUrl = () => SLACK_API;
 
 export const slackEventsUrl = () => `${PUBLIC_HOST}/api/slack/events`;
 export const slackRedirectUri = () => `${PUBLIC_HOST}/api/slack/oauth/callback`;

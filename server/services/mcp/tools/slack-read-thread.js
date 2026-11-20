@@ -30,7 +30,7 @@ export function createSlackReadThreadTool(ctx) {
     name: 'SlackReadThread',
     description:
       'Read a whole Slack thread (every message, oldest first). With no arguments it reads the ' +
-      'thread this session was started from. Pass `url` (a Slack message link the user gave you) ' +
+      'thread of the Slack message you are answering. Pass `url` (a Slack message link the user gave you) ' +
       'to read another thread. Use it when the user refers to something said in Slack — "the bug ' +
       'above", "what we discussed". Messages carry the author (user id plus `user_name`) and any attached `files` (fetch one with SlackDownloadFile). If you cannot tell ' +
       'which thread the user means, do NOT guess: ask them, like a person would ("Hmm, I\'m a bit ' +
@@ -57,30 +57,17 @@ export function createSlackReadThreadTool(ctx) {
         ({ channel: channelId, threadTs } = parsed);
       }
 
-      const sessionId = ctx.session?.id;
-      const own = sessionId
-        ? await app
-            .get('db')('slack_threads')
-            .where({ session_id: sessionId })
-            .orderBy('id', 'desc')
-            .first()
-        : null;
+      const slackApp = await slack.slackAppFor(appName);
       if (!channelId || !threadTs) {
-        if (!own) {
+        const reply = app.get('slackBot')?.replyTarget((await slack.getSession())?.id);
+        if (!reply) {
           return fail(
-            'This session is not tied to a Slack thread. Ask the user to send you a link to the thread (⋯ → Copy link) or to tag you in it.'
+            'No Slack message is being answered right now. Ask the user to send you a link to the thread (⋯ → Copy link) or to tag you in it.'
           );
         }
-        channelId = own.channel_id;
-        threadTs = own.thread_ts;
+        channelId = reply.channel;
+        threadTs = reply.threadTs;
       }
-
-      let slackApp;
-      if (own && !appName) {
-        const apps = await slack.loadSlackApps();
-        slackApp = apps.find((a) => a.id === own.slack_app_id);
-      }
-      slackApp ??= await slack.resolveSlackApp(appName);
 
       await slack.assertMayReadChannel(slackApp, channelId);
 

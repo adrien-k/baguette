@@ -18,7 +18,7 @@ vi.mock('../../services/slack.js', async (importOriginal) => ({
 
 import createSlackRoutes from '../slack.js';
 import { registerSlackService } from '../../services/feathers/slack.service.js';
-import { registerSlackThreadsService } from '../../services/feathers/slack-threads.service.js';
+import { registerSlackAssistantsService } from '../../services/feathers/slack-assistants.service.js';
 import { createSlackBot } from '../../services/slack-bot.js';
 import { readSlackToken, signSlackToken } from '../../services/slack-auth.js';
 import { decrypt, encrypt } from '../../lib/encrypt.js';
@@ -36,7 +36,7 @@ beforeEach(async () => {
   const app = feathers();
   app.set('db', db);
   registerSlackService(app);
-  registerSlackThreadsService(app);
+  registerSlackAssistantsService(app);
   app.use('users', {
     async get(id) {
       return db('users').where({ id }).first();

@@ -22,13 +22,7 @@ export function createSlackDownloadFileTool(ctx) {
       app: z.string().optional().describe(`Slack app to download as. ${slack.slackAppHint}`),
     },
     handler: slackHandler(async ({ file_id: fileId, app: appName }) => {
-      const bound = await slack.getBoundThread();
-      let slackApp;
-      if (bound && !appName) {
-        const apps = await slack.loadSlackApps();
-        slackApp = apps.find((a) => a.id === bound.slack_app_id);
-      }
-      slackApp ??= await slack.resolveSlackApp(appName);
+      const slackApp = await slack.slackAppFor(appName);
 
       try {
         const file = await getFileInfo(slackApp.bot_token, fileId);

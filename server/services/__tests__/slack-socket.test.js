@@ -45,7 +45,6 @@ const openOk = (url = 'wss://slack.test/1') =>
 function makeManager({ rows = [], fetchFn = openOk(), bot } = {}) {
   const botStub = bot ?? {
     handleEventCallback: vi.fn().mockResolvedValue(),
-    handleInteraction: vi.fn().mockResolvedValue(),
   };
   // The real service does the writes; `find` is stubbed so a test can change the apps at will.
   const real = slackTestApp(db).service('admin/slack');
@@ -121,18 +120,17 @@ describe('handleMessage', () => {
     expect(bot.handleEventCallback).toHaveBeenCalledWith(app, payload);
   });
 
-  it('acks an interactive envelope and hands the payload to the bot', async () => {
+  it('acks an interactive envelope without acting on it', async () => {
     const { manager: m, bot } = makeManager();
     manager = m;
     const socket = ws();
-    const payload = { type: 'block_actions' };
     await manager.handleMessage(
       app,
       socket,
-      JSON.stringify({ type: 'interactive', envelope_id: 'e2', payload })
+      JSON.stringify({ type: 'interactive', envelope_id: 'e2', payload: { type: 'block_actions' } })
     );
     expect(socket.send).toHaveBeenCalledWith(JSON.stringify({ envelope_id: 'e2' }));
-    expect(bot.handleInteraction).toHaveBeenCalledWith(app, payload);
+    expect(bot.handleEventCallback).not.toHaveBeenCalled();
   });
 
   it('acks envelopes it does not act on, and ignores garbage', async () => {
@@ -152,13 +150,11 @@ describe('handleMessage', () => {
     await manager.handleMessage(app, socket, 'not json');
     expect(socket.send).toHaveBeenCalledTimes(2);
     expect(bot.handleEventCallback).not.toHaveBeenCalled();
-    expect(bot.handleInteraction).not.toHaveBeenCalled();
   });
 
   it('survives a bot that throws', async () => {
     const bot = {
       handleEventCallback: vi.fn().mockRejectedValue(new Error('boom')),
-      handleInteraction: vi.fn().mockRejectedValue(new Error('boom')),
     };
     ({ manager } = makeManager({ bot }));
     const socket = ws();
@@ -167,13 +163,8 @@ describe('handleMessage', () => {
       socket,
       JSON.stringify({ type: 'events_api', envelope_id: 'e', payload: {} })
     );
-    await manager.handleMessage(
-      app,
-      socket,
-      JSON.stringify({ type: 'interactive', envelope_id: 'f', payload: {} })
-    );
     await new Promise((r) => setTimeout(r, 0));
-    expect(socket.send).toHaveBeenCalledTimes(2);
+    expect(socket.send).toHaveBeenCalledTimes(1);
   });
 });
 

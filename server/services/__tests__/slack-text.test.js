@@ -4,12 +4,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   extractAssistantText,
-  isStopRequest,
   mentionsWord,
-  parseSlackOptions,
-  slackBranchName,
   slackLinksIn,
-  slackSessionTitle,
   stripBotMention,
   toSlackMrkdwn,
 } from '../slack-text.js';
@@ -45,33 +41,6 @@ describe('stripBotMention', () => {
 
   it('copes with missing text', () => {
     expect(stripBotMention(undefined, 'UBOT')).toBe('');
-  });
-});
-
-describe('parseSlackOptions', () => {
-  it('extracts repo and branch options, in brackets or not', () => {
-    expect(parseSlackOptions('fix login [repo=acme/web branch=dev]')).toEqual({
-      prompt: 'fix login',
-      repo: 'acme/web',
-      branch: 'dev',
-    });
-    expect(parseSlackOptions('repo=acme/web fix login')).toMatchObject({
-      prompt: 'fix login',
-      repo: 'acme/web',
-    });
-  });
-
-  it('strips the angle brackets Slack puts around links', () => {
-    expect(parseSlackOptions('go repo=<acme/web>').repo).toBe('acme/web');
-  });
-
-  it('returns nulls when there are no options, and tolerates missing text', () => {
-    expect(parseSlackOptions('just do it')).toEqual({
-      prompt: 'just do it',
-      repo: null,
-      branch: null,
-    });
-    expect(parseSlackOptions(undefined)).toEqual({ prompt: '', repo: null, branch: null });
   });
 });
 
@@ -149,38 +118,6 @@ describe('slackLinksIn', () => {
   });
 });
 
-describe('isStopRequest', () => {
-  it.each([
-    'stop',
-    'Stop!',
-    'stop now',
-    'please stop immediately',
-    'immediately stop',
-    'cancel the work',
-    'abort',
-    'halt everything right now',
-    'stop the session',
-    'stop it, thanks',
-    'baguette stop',
-  ])('treats "%s" as a request to stop', (text) => {
-    expect(isStopRequest(text)).toBe(true);
-  });
-
-  it.each([
-    'stop using var in this file',
-    'cancel the subscription handling and add retries',
-    'do not stop until the tests pass',
-    'continue',
-    'fix the bug',
-    'unstoppable',
-    'stop one two three four five six seven',
-    '',
-    undefined,
-  ])('does not treat "%s" as one', (text) => {
-    expect(isStopRequest(text)).toBe(false);
-  });
-});
-
 describe('buildUserTurnMessageJson', () => {
   it('stays the plain user turn without metadata', async () => {
     const { buildUserTurnMessageJson } = await import('../feathers/message-create-fields.js');
@@ -205,55 +142,5 @@ describe('buildUserTurnMessageJson', () => {
     const { buildUserTurnMessageJson } = await import('../feathers/message-create-fields.js');
     const parsed = JSON.parse(buildUserTurnMessageJson('real', { message: { content: 'fake' } }));
     expect(parsed.message.content).toBe('real');
-  });
-});
-
-describe('slackSessionTitle', () => {
-  it('uses the first line, tidied', () => {
-    expect(slackSessionTitle('fix the flaky login test\nmore details')).toBe(
-      'Fix the flaky login test'
-    );
-    expect(slackSessionTitle('  *please*   look at `auth.js`  ')).toBe('Please look at auth.js');
-  });
-
-  it('skips empty lines', () => {
-    expect(slackSessionTitle('\n\n  add retries')).toBe('Add retries');
-  });
-
-  it('cuts a long first line at a word and ends it with an ellipsis', () => {
-    const title = slackSessionTitle('word '.repeat(40));
-    expect(title.length).toBeLessThanOrEqual(70);
-    expect(title.endsWith('…')).toBe(true);
-    expect(title).not.toMatch(/\s…$/);
-  });
-
-  it('is null when there is nothing to title', () => {
-    expect(slackSessionTitle('')).toBeNull();
-    expect(slackSessionTitle('  \n  ')).toBeNull();
-    expect(slackSessionTitle('***')).toBeNull();
-    expect(slackSessionTitle(undefined)).toBeNull();
-  });
-});
-
-describe('slackBranchName', () => {
-  it('makes a git-friendly slug from the first line', () => {
-    expect(slackBranchName('Fix the flaky login test!\nmore')).toBe('fix-the-flaky-login-test');
-    expect(slackBranchName('Add   retries (v2) to API/client')).toBe(
-      'add-retries-v2-to-api-client'
-    );
-  });
-
-  it('keeps it short, cutting at a word', () => {
-    const slug = slackBranchName(
-      'please investigate why the nightly build keeps failing on arm machines'
-    );
-    expect(slug.length).toBeLessThanOrEqual(40);
-    expect(slug).toBe('please-investigate-why-the-nightly-build');
-  });
-
-  it('is null when nothing usable is left', () => {
-    expect(slackBranchName('!!')).toBeNull();
-    expect(slackBranchName('')).toBeNull();
-    expect(slackBranchName(undefined)).toBeNull();
   });
 });

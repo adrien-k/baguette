@@ -13,18 +13,18 @@ describe('slackMessageMeta', () => {
         user_id: 'U1',
         user_name: 'Jan',
         text: 'fix it',
-        suggestion: false,
+        allowed: false,
         untagged: false,
       },
     });
   });
 
-  it('keeps the suggestion and untagged flags, and copes with missing values', () => {
-    expect(slackMessageMeta({ userId: 'U1', suggestion: true, untagged: true }).slack).toEqual({
+  it('keeps the allowed and untagged flags, and copes with missing values', () => {
+    expect(slackMessageMeta({ userId: 'U1', allowed: true, untagged: true }).slack).toEqual({
       user_id: 'U1',
       user_name: null,
       text: '',
-      suggestion: true,
+      allowed: true,
       untagged: true,
     });
   });
@@ -51,7 +51,7 @@ describe('describeSlackUserMessage', () => {
     expect(describeSlackUserMessage(message())).toEqual({
       label: 'Slack (Jan)',
       text: 'fix the test',
-      suggestion: false,
+      allowed: false,
       untagged: false,
     });
   });
@@ -60,9 +60,9 @@ describe('describeSlackUserMessage', () => {
     expect(describeSlackUserMessage(message({ userName: null })).label).toBe('Slack (U1)');
   });
 
-  it('passes the suggestion and untagged flags on', () => {
-    const view = describeSlackUserMessage(message({ suggestion: true, untagged: true }));
-    expect(view).toMatchObject({ suggestion: true, untagged: true });
+  it('passes the allowed and untagged flags on', () => {
+    const view = describeSlackUserMessage(message({ allowed: true, untagged: true }));
+    expect(view).toMatchObject({ allowed: true, untagged: true });
   });
 
   it('is null for anything else', () => {

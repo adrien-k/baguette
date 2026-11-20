@@ -21,3 +21,6 @@ fly.toml
 screenshots/
 FINDINGS.md
 AUDIT.md
+
+# Local agent plans
+docs/superpowers/

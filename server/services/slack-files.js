@@ -33,13 +33,17 @@ const TEXT_EXTENSIONS = new Set(
 
 export class SlackFileError extends Error {}
 
-/** Where files for one Slack thread are saved. */
-export const slackFilesDir = (slackAppId, channel, threadTs) =>
-  path.join(SLACK_FILES_DIR, String(slackAppId), `${channel}-${threadTs}`);
-
 /** Where files fetched by the SlackDownloadFile tool are saved for one session. */
 export const slackSessionFilesDir = (sessionId) =>
   path.join(SLACK_FILES_DIR, `session-${sessionId}`);
+
+/** Where an assistant's inbound attachments are saved: one folder per owner and Slack app. */
+export const slackAssistantFilesDir = (slackAppId, userId) =>
+  path.join(SLACK_FILES_DIR, `assistant-${slackAppId}-${userId}`);
+
+/** Where the attachments of one Slack thread are saved for an assistant. */
+export const slackFilesDir = (slackAppId, userId, channel, threadTs) =>
+  path.join(slackAssistantFilesDir(slackAppId, userId), `${channel}-${threadTs}`);
 
 /** Deletes downloaded-file directories; missing ones are fine. */
 export async function removeSlackFileDirs(dirs) {

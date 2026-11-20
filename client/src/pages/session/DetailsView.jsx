@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Copy, ExternalLink, GitBranch, Pencil, CircleHelp } from 'lucide-react';
+import { Copy, GitBranch, Pencil, CircleHelp } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { isGlobalSession } from '@baguette/shared/session-scope.js';
 import {
@@ -107,7 +107,7 @@ function SlackCard({ session, readonly }) {
   if (!slack?.linked) return null;
 
   const startEdit = () => {
-    setDraft(slack.approvals.filter((name) => name !== slack.owner).join(', '));
+    setDraft(slack.allowed.join(', '));
     setEditing(true);
   };
 
@@ -115,10 +115,10 @@ function SlackCard({ session, readonly }) {
     setSaving(true);
     try {
       const usernames = draft.split(/[\s,]+/).filter(Boolean);
-      setSlack(await sessionsService.setSlackApprovals({ id: session.id, usernames }));
+      setSlack(await sessionsService.setSlackAllowedUsers({ id: session.id, usernames }));
       setEditing(false);
     } catch (err) {
-      toastError('Failed to update Slack approvals', err);
+      toastError('Failed to update who the assistant listens to', err);
     } finally {
       setSaving(false);
     }
@@ -128,14 +128,18 @@ function SlackCard({ session, readonly }) {
     <DetailsCard label="Slack">
       <div className="space-y-2 text-[11px] leading-snug">
         <div className="flex items-center gap-1.5">
+          <span className="w-[6rem] shrink-0 text-faint">Workspace</span>
+          <span className="text-secondary">{slack.workspace}</span>
+        </div>
+        <div className="flex items-center gap-1.5">
           <span className="w-[6rem] shrink-0 text-faint">Owner</span>
           <span className="text-secondary">
             {slack.owner ?? 'Unknown'}
-            <SlackHelp help="The person who created this session from Slack." />
+            <SlackHelp help="The Baguette user this assistant works as. Only they can change who else it listens to." />
           </span>
         </div>
         <div className="flex items-start gap-1.5">
-          <span className="w-[6rem] shrink-0 text-faint">Approved people</span>
+          <span className="w-[6rem] shrink-0 text-faint">Also listens to</span>
           {editing ? (
             <div className="min-w-0 flex-1 space-y-2">
               <TextInput
@@ -172,16 +176,16 @@ function SlackCard({ session, readonly }) {
           ) : (
             <>
               <span className="min-w-0 flex-1 break-words text-secondary">
-                {slack.approvals.length ? slack.approvals.join(', ') : '—'}
-                <SlackHelp help="Other people the owner approved. Baguette replies to them and accepts instructions from them in the thread." />
+                {slack.allowed.length ? slack.allowed.join(', ') : '—'}
+                <SlackHelp help="Other people the owner allowed to talk to the assistant in threads it serves. Everyone else is ignored." />
               </span>
               {!readonly && (
                 <button
                   type="button"
                   onClick={startEdit}
                   className="shrink-0 rounded p-1 text-faint hover:text-fg-muted hover:bg-control transition-colors"
-                  title="Edit approved users"
-                  aria-label="Edit approved users"
+                  title="Edit who the assistant listens to"
+                  aria-label="Edit who the assistant listens to"
                 >
                   <Pencil className="w-3 h-3" />
                 </button>
@@ -190,19 +194,6 @@ function SlackCard({ session, readonly }) {
           )}
         </div>
       </div>
-      {slack.thread_url && (
-        <div className="border-t border-line/60 pt-3">
-          <a
-            href={slack.thread_url}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1.5 text-[11px] text-secondary hover:text-fg-muted"
-          >
-            <ExternalLink className="w-3 h-3" aria-hidden />
-            Open Slack thread
-          </a>
-        </div>
-      )}
     </DetailsCard>
   );
 }
@@ -465,7 +456,7 @@ export default function DetailsView({ session, readonly, onSessionUpdate }) {
           )}
         </DetailsCard>
 
-        <SlackCard session={session} readonly={readonly} />
+        <SlackCard session={session} readonly={settingsLocked} />
 
         <DetailsCard label="MCP servers">
           <McpSessionServers

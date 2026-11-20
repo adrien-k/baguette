@@ -554,6 +554,12 @@ export async function seedE2eMcpUserMessage({ targetSessionId, content, mcpSende
 }
 
 /** Session row fields for MCP sender links (label, repo, global). */
+/** The e2e server's database, for seeding Slack rows the API cannot set. Close it when done. */
+export async function slackE2eDb() {
+  const { default: Database } = await import('better-sqlite3');
+  return new Database(E2E_DB_PATH, { timeout: 10_000, fileMustExist: true });
+}
+
 export async function e2eSessionRow(sessionId) {
   const { default: Database } = await import('better-sqlite3');
   const db = new Database(E2E_DB_PATH, { timeout: 10_000, fileMustExist: true });

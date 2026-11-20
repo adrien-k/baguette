@@ -12,7 +12,7 @@ export default function SlackBlock({ message }: { message: TypedMessageView & { 
   const slack = describeSlackUserMessage(message);
   if (!slack) return null;
   const agentText = userMessagePlainText(message);
-  const note = [slack.suggestion && 'suggestion', slack.untagged && 'not tagged']
+  const note = [slack.allowed && 'allowed person', slack.untagged && 'not tagged']
     .filter(Boolean)
     .join(', ');
 

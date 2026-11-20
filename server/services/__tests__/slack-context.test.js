@@ -26,7 +26,7 @@ const tagEvent = { type: 'app_mention', user: 'U1', channel: 'C1', ts: '5.5' };
 const PEOPLE = { U1: 'Jan', U2: 'Eva', U3: 'Tom' };
 
 const context = (event = tagEvent, threadTs = '5.5', text = 'fix it', options) =>
-  createSlackContext().slackContext(slackApp, event, threadTs, text, options);
+  createSlackContext().slackContext(slackApp, event, threadTs, text, { userId: 7, ...options });
 
 beforeEach(() => {
   resetSlackUserCache();
@@ -68,7 +68,7 @@ describe('header', () => {
     expect(text).toContain('Slack context (provided automatically');
     expect(text).toContain('Message from Jan (<@U1>)\n');
     expect(text).toContain('Channel: #dev (C1) — topic: Engineering');
-    expect(text).toContain('Thread: 5.5 (sent 1970-01-01 00:00 UTC)');
+    expect(text).toContain('Thread: channel C1, thread_ts 5.5 (sent 1970-01-01 00:00 UTC)');
   });
 
   it('flags a message that was not addressed to the bot', async () => {
@@ -91,8 +91,8 @@ describe('header', () => {
 
   it('asks Slack about a channel only once', async () => {
     const { slackContext } = createSlackContext();
-    await slackContext(slackApp, tagEvent, '5.5', 'a');
-    await slackContext(slackApp, tagEvent, '5.5', 'b');
+    await slackContext(slackApp, tagEvent, '5.5', 'a', { userId: 7 });
+    await slackContext(slackApp, tagEvent, '5.5', 'b', { userId: 7 });
     expect(slack.getChannelInfo).toHaveBeenCalledTimes(1);
   });
 
@@ -265,7 +265,7 @@ describe('attached files', () => {
     const [token, passed, dir] = files.attachmentsContext.mock.calls[0];
     expect(token).toBe('xoxb-1');
     expect(passed[0]).toMatchObject({ id: 'F1', url: 'https://files/F1' });
-    expect(dir).toMatch(/slack-files[/\\]1[/\\]C1-5\.5$/);
+    expect(dir).toMatch(/slack-files[/\\]assistant-1-7[/\\]C1-5\.5$/);
     expect(slack.getMessageFiles).not.toHaveBeenCalled();
   });
 

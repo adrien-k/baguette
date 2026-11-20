@@ -1,5 +1,5 @@
 /**
- * The Slack tools an agent gets in a session: post, edit, read thread/channel, download, archive.
+ * The Slack tools an agent gets in a session: post, edit, read thread/channel, download, cost and stats.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestDb } from '../../test-utils/db.js';
@@ -27,7 +27,6 @@ vi.mock('../slack-files.js', async (importOriginal) => ({ ...(await importOrigin
 import { SlackApiError } from '../slack.js';
 import { SlackFileError } from '../slack-files.js';
 import { resetSlackUserCache } from '../slack-users.js';
-import { createArchiveSessionTool } from '../mcp/tools/archive-session.js';
 import { createSlackDownloadFileTool } from '../mcp/tools/slack-download-file.js';
 import { createSlackEditMessageTool } from '../mcp/tools/slack-edit-message.js';
 import { createSlackPostMessageTool } from '../mcp/tools/slack-post-message.js';
@@ -37,6 +36,7 @@ import { createSystemStatsTool, formatBytes, formatDuration } from '../mcp/tools
 import { createSlackReadThreadTool, parseSlackThreadUrl } from '../mcp/tools/slack-read-thread.js';
 import {
   decryptedApp,
+  insertAssistant,
   insertSession,
   insertSlackApp,
   insertThread,
@@ -47,28 +47,38 @@ import {
 
 const db = createTestDb();
 
-/** Tool context for a session; `bound` ties it to a Slack thread (C1 / 9.9). */
+/**
+ * Tool context for a session. `bound`: a Slack assistant answering a message in thread C1 / 9.9;
+ * otherwise an ordinary session that no Slack message is waiting on.
+ */
 async function toolContext({ bound = true, apps } = {}) {
   const userId = await insertUser(db);
   const appId = await insertSlackApp(db);
-  const sessionId = await insertSession(db, userId);
-  if (bound) {
-    await insertThread(db, { slack_app_id: appId, session_id: sessionId, user_id: userId });
-  }
+  const sessionId = bound
+    ? await insertAssistant(db, userId, appId)
+    : await insertSession(db, userId);
+  if (bound) await insertThread(db, sessionId);
   const slackApps = apps ?? [decryptedApp({ id: appId })];
-  const threads = slackTestApp(db).service('slack-threads');
+  const assistants = slackTestApp(db).service('slack-assistants');
+  const bot = { replyTarget: () => (bound ? { channel: 'C1', threadTs: '9.9' } : null) };
   return {
     appId,
     sessionId,
     userId,
     ctx: {
       app: {
-        get: () => db,
-        service: (name) => (name === 'slack-threads' ? threads : { find: async () => slackApps }),
+        get: (key) => (key === 'slackBot' ? bot : db),
+        service: (name) =>
+          name === 'slack-assistants' ? assistants : { find: async () => slackApps },
       },
       slackApps,
       session: { id: sessionId },
-      getSession: async () => ({ id: sessionId, agent_sdk: 'claude', model: 'haiku' }),
+      getSession: async () => ({
+        id: sessionId,
+        agent_sdk: 'claude',
+        model: 'haiku',
+        slack_app_id: bound ? appId : null,
+      }),
       describeAgent: () => 'Claude haiku',
     },
   };
@@ -306,7 +316,7 @@ describe('SlackReadThread', () => {
     const { ctx } = await toolContext({ bound: false });
     const out = await result(createSlackReadThreadTool(ctx));
     expect(out.ok).toBe(false);
-    expect(out.error).toContain('not tied to a Slack thread');
+    expect(out.error).toContain('No Slack message is being answered');
   });
 
   it.each(['channel_not_found', 'not_in_channel', 'thread_not_found'])(
@@ -612,24 +622,6 @@ describe('read access follows the session owner, not the bot', () => {
       slack.getFileInfo.mockResolvedValue(file);
       expect((await download(ctx)).ok).toBe(true);
     });
-  });
-});
-
-describe('ArchiveSession', () => {
-  it('asks the sessions service to archive this session once its turn ends', async () => {
-    const archiveAfterTurn = vi.fn();
-    const tool = createArchiveSessionTool({
-      app: { service: () => ({ archiveAfterTurn }) },
-      session: { id: 42 },
-    });
-    const out = await result(tool);
-    expect(archiveAfterTurn).toHaveBeenCalledWith(42);
-    expect(out.ok).toBe(true);
-  });
-
-  it('fails without a session', async () => {
-    const tool = createArchiveSessionTool({ app: { service: () => ({}) }, session: undefined });
-    expect((await result(tool)).ok).toBe(false);
   });
 });
 

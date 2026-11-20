@@ -23,6 +23,7 @@ import { countryCodeToFlagEmoji } from '../../utils/countryFlag.js';
 import { repoAccessModeLabel, repoDisplayName } from '../../utils/repoDisplayName.js';
 import GroupedRepositoriesList from '../../components/GroupedRepositoriesList.jsx';
 import { useAuth } from '../../hooks/useAuth.jsx';
+import { useGetRepos } from '../../hooks/useGetRepos.js';
 import { useCurrentUser } from '../../context/CurrentUserContext.jsx';
 import Toggle from '../../components/Toggle.jsx';
 import { USER_STATUS_APPROVED, USER_STATUS_REVOKED } from '@baguette/shared/user-status.js';
@@ -1027,6 +1028,8 @@ const SECRET_PLACEHOLDER = '••••••••••';
 
 const inputClass = INPUT_CLASS;
 
+const sameIds = (a, b) => a.length === b.length && a.every((id) => b.includes(id));
+
 function SlackAppCard({ app, onChanged }) {
   const [name, setName] = useState(app.name);
   const [tokenPatch, setTokenPatch] = useState(undefined);
@@ -1034,8 +1037,10 @@ function SlackAppCard({ app, onChanged }) {
   const [clientId, setClientId] = useState(app.client_id ?? '');
   const [clientSecretPatch, setClientSecretPatch] = useState(undefined);
   const [signingSecretPatch, setSigningSecretPatch] = useState(undefined);
+  const [repoIds, setRepoIds] = useState(app.allowed_repo_ids ?? []);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const { repos } = useGetRepos();
   const [identity, setIdentity] = useState(null);
 
   useEffect(() => {
@@ -1045,9 +1050,11 @@ function SlackAppCard({ app, onChanged }) {
     setClientId(app.client_id ?? '');
     setClientSecretPatch(undefined);
     setSigningSecretPatch(undefined);
+    setRepoIds(app.allowed_repo_ids ?? []);
     setIdentity(null);
   }, [
     app.id,
+    app.allowed_repo_ids,
     app.name,
     app.has_bot_token,
     app.has_app_token,
@@ -1062,7 +1069,8 @@ function SlackAppCard({ app, onChanged }) {
     appTokenPatch !== undefined ||
     clientId.trim() !== (app.client_id ?? '') ||
     clientSecretPatch !== undefined ||
-    signingSecretPatch !== undefined;
+    signingSecretPatch !== undefined ||
+    !sameIds(repoIds, app.allowed_repo_ids ?? []);
   const canInstall =
     Boolean(app.client_id && app.has_client_secret && app.has_signing_secret) && !dirty;
 
@@ -1077,6 +1085,7 @@ function SlackAppCard({ app, onChanged }) {
       if (clientId.trim() !== (app.client_id ?? '')) payload.client_id = clientId.trim();
       if (clientSecretPatch !== undefined) payload.client_secret = clientSecretPatch;
       if (signingSecretPatch !== undefined) payload.signing_secret = signingSecretPatch;
+      payload.allowed_repo_ids = repoIds;
       await slackService.patch(app.id, payload);
       toast.success(`Saved ${name.trim()}`);
       onChanged();
@@ -1142,6 +1151,28 @@ function SlackAppCard({ app, onChanged }) {
           placeholder="xoxb-…"
           onChange={(value, dirtyToken) => setTokenPatch(dirtyToken ? value : undefined)}
         />
+      </Field>
+
+      <Field
+        label="Repositories"
+        hint="The repositories this app's assistant may start sessions in. Leave all unchecked to allow every repository."
+      >
+        <div className="max-h-40 overflow-y-auto space-y-1">
+          {repos.map((repo) => (
+            <label key={repo.id} className="flex items-center gap-2 text-sm text-secondary">
+              <input
+                type="checkbox"
+                checked={repoIds.includes(repo.id)}
+                onChange={(e) =>
+                  setRepoIds((ids) =>
+                    e.target.checked ? [...ids, repo.id] : ids.filter((id) => id !== repo.id)
+                  )
+                }
+              />
+              {repo.full_name}
+            </label>
+          ))}
+        </div>
       </Field>
 
       <details className="mb-4" open={Boolean(app.client_id || app.installed)}>
@@ -1308,9 +1339,9 @@ export function SlackTab() {
   return (
     <div>
       <SettingsTabHeader title="Slack">
-        Connect Slack apps so people can tag the bot to start sessions (each person links their own
-        Baguette account the first time) and agents can post updates. Instance-wide — available to
-        every session once at least one app is saved.
+        Connect Slack apps so people can talk to their Baguette assistant from Slack (each person
+        links their own Baguette account the first time) and agents can post updates. Instance-wide
+        — available to every session once at least one app is saved.
       </SettingsTabHeader>
       <SettingsSection
         title="Apps"

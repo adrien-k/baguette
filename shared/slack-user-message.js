@@ -5,14 +5,14 @@
  */
 
 /** Extra fields for a user turn's `message_json` that mark it as coming from Slack. */
-export function slackMessageMeta({ userId, userName, text, suggestion = false, untagged = false }) {
+export function slackMessageMeta({ userId, userName, text, allowed = false, untagged = false }) {
   return {
     source: 'slack',
     slack: {
       user_id: userId,
       user_name: userName ?? null,
       text: String(text ?? ''),
-      suggestion: Boolean(suggestion),
+      allowed: Boolean(allowed),
       untagged: Boolean(untagged),
     },
   };
@@ -25,11 +25,11 @@ export function isSlackUserMessage(parsed) {
 /** What the chat shows for a Slack user message, or null when it is not one. */
 export function describeSlackUserMessage(parsed) {
   if (!isSlackUserMessage(parsed)) return null;
-  const { user_id: userId, user_name: userName, text, suggestion, untagged } = parsed.slack;
+  const { user_id: userId, user_name: userName, text, allowed, untagged } = parsed.slack;
   return {
     label: `Slack (${userName || userId || 'unknown'})`,
     text: text ?? '',
-    suggestion: Boolean(suggestion),
+    allowed: Boolean(allowed),
     untagged: Boolean(untagged),
   };
 }

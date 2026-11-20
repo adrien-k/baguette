@@ -4,7 +4,7 @@
 import { feathers } from 'feathers';
 import { encrypt } from '../../lib/encrypt.js';
 import { registerSlackService } from '../feathers/slack.service.js';
-import { registerSlackThreadsService } from '../feathers/slack-threads.service.js';
+import { registerSlackAssistantsService } from '../feathers/slack-assistants.service.js';
 import { insertTestSession } from '../../test-utils/db.js';
 
 let counter = 0;
@@ -19,16 +19,6 @@ export async function insertUser(db, overrides = {}) {
     ...overrides,
   });
   return id;
-}
-
-export async function insertRepo(db, userId, fullName, { defaultBranch = 'main' } = {}) {
-  const [repoId] = await db('repos').insert({
-    full_name: fullName,
-    repo_path: `/tmp/${fullName}`,
-    default_branch: defaultBranch,
-  });
-  await db('user_repos').insert({ user_id: userId, repo_id: repoId });
-  return repoId;
 }
 
 export async function insertSlackApp(db, overrides = {}) {
@@ -62,14 +52,27 @@ export function insertSession(db, userId, overrides = {}) {
   });
 }
 
-export async function insertThread(db, fields) {
-  const [id] = await db('slack_threads').insert({
+/** A Slack assistant session (global, typed with its Slack app) with its builder agent. */
+export function insertAssistant(db, userId, slackAppId, overrides = {}) {
+  return insertTestSession(db, {
+    user_id: userId,
+    repo_full_name: '',
+    base_branch: 'main',
+    is_global: 1,
+    slack_app_id: slackAppId,
+    initial_prompt: 'hello',
+    ...overrides,
+  });
+}
+
+/** Makes an assistant serve a thread. */
+export const insertThread = (db, sessionId, fields = {}) =>
+  db('slack_session_threads').insert({
+    session_id: sessionId,
     channel_id: 'C1',
     thread_ts: '9.9',
     ...fields,
   });
-  return id;
-}
 
 export async function insertAssistantMessage(db, sessionId, text, { agentId } = {}) {
   const agent =
@@ -101,7 +104,7 @@ export function slackTestApp(db, stubs = {}) {
   const app = feathers();
   app.set('db', db);
   registerSlackService(app);
-  registerSlackThreadsService(app);
+  registerSlackAssistantsService(app);
   for (const [path, service] of Object.entries(stubs)) app.use(path, service);
   return app;
 }

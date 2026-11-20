@@ -91,17 +91,14 @@ export function createSlackHelpers(ctx) {
   /**
    * Whether this session may read a Slack channel. The bot token sees every channel the bot is
    * in, so reads are limited to what the session's owner could read themselves: the channel
-   * the session's own thread lives in, public channels, and private channels / DMs the owner
+   * a channel the assistant already serves, public channels, and private channels / DMs the owner
    * (by their linked Slack account) is a member of. Anything unverifiable is refused.
    */
   const mayReadChannel = async (slackApp, channelId) => {
     try {
       const session = await getSession();
       if (!session?.id) return false;
-      const own = await app.service('slack-threads').forSession(session.id);
-      if (own.some((t) => t.slack_app_id === slackApp.id && t.channel_id === channelId)) {
-        return true;
-      }
+      if (await app.service('slack-assistants').servesChannel(session.id, channelId)) return true;
       const info = await getChannelInfo(slackApp.bot_token, channelId);
       if (!info.isPrivate && !info.isDirect) return true;
       const slackUser = await ownerSlackId(slackApp, session.id);
@@ -114,7 +111,7 @@ export function createSlackHelpers(ctx) {
 
   const channelRefusal = (channelId) =>
     `I can't read ${channelId}: it is private and the session owner is not verifiably a member ` +
-    "(or it is not this session's own thread). Ask them to paste what they mean here instead.";
+    "(or the assistant doesn't serve it). Ask them to paste what they mean here instead.";
 
   const assertMayReadChannel = async (slackApp, channelId) => {
     if (!(await mayReadChannel(slackApp, channelId))) throw new Error(channelRefusal(channelId));
@@ -133,6 +130,36 @@ export function createSlackHelpers(ctx) {
     );
   };
 
+  /** The Slack app to use: the named one, else the assistant's own app, else the only one. */
+  const slackAppFor = async (appName) => {
+    const session = await getSession();
+    if (!appName && session?.slack_app_id) {
+      const apps = await loadConfiguredSlackApps(app);
+      const own = apps.find((a) => a.id === session.slack_app_id);
+      if (own) return own;
+    }
+    return resolveSlackApp(appName);
+  };
+
+  /**
+   * Where a Slack call lands: the given channel, else the Slack message the assistant is
+   * answering right now (its channel and thread). Throws when neither is known.
+   */
+  const resolveTarget = async ({ channel, appName }) => {
+    const session = await getSession();
+    const reply = channel ? null : (app.get('slackBot')?.replyTarget(session?.id) ?? null);
+    if (!channel && !reply) {
+      throw new Error(
+        'channel is required: no Slack message is being answered right now. Pass the channel id (and thread_ts) from the message you are replying to.'
+      );
+    }
+    const slackApp = await slackAppFor(appName);
+    const channelId = reply
+      ? reply.channel
+      : await slackResolveChannelId(slackApp.bot_token, channel);
+    return { slackApp, channelId, threadTs: reply?.threadTs };
+  };
+
   return {
     assertMayReadChannel,
     assertMayReadFile,
@@ -140,11 +167,8 @@ export function createSlackHelpers(ctx) {
     slackAppHint,
     resolveSlackApp,
     loadSlackApps: () => loadConfiguredSlackApps(app),
-    /** The Slack thread this session was started from (newest binding), if any. */
-    getBoundThread: async () => {
-      const s = await getSession();
-      return s?.id ? app.service('slack-threads').latestForSession(s.id) : null;
-    },
+    slackAppFor,
+    resolveTarget,
     withSlackFooter,
     slackPostMessage,
     slackGetPermalink,

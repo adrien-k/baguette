@@ -2,6 +2,7 @@ import { BadRequest, NotFound } from 'feathers/errors';
 import { encryptFields, decryptFields, requireUser, requireAdmin } from './hooks.js';
 import { authTest, slackEventsUrl, slackRedirectUri } from '../slack.js';
 import { decrypt, encrypt } from '../../lib/encrypt.js';
+import { parseRepoScope, serializeRepoScope } from '../slack-repo-scope.js';
 
 /**
  * Admin-level Slack apps (table: slack_apps). Each row is one Slack bot the workspace can post as.
@@ -116,6 +117,9 @@ function pickSlackAppFields(context) {
     if (context.data[field] !== undefined) data[field] = context.data[field];
   }
   if (typeof data.client_id === 'string') data.client_id = data.client_id.trim();
+  if (context.data.allowed_repo_ids !== undefined) {
+    data.allowed_repo_ids = serializeRepoScope(context.data.allowed_repo_ids);
+  }
   context.data = data;
   return context;
 }
@@ -213,6 +217,16 @@ function addInstallInfo(context) {
   return context;
 }
 
+/** `allowed_repo_ids` is stored as JSON; clients see an array (null: every repository). */
+function decodeRepoScope(context) {
+  const decode = (row) => {
+    row.allowed_repo_ids = parseRepoScope(row.allowed_repo_ids);
+  };
+  if (Array.isArray(context.result)) context.result.forEach(decode);
+  else if (context.result) decode(context.result);
+  return context;
+}
+
 const slackHooks = {
   before: {
     all: [requireUser, requireAdmin],
@@ -234,10 +248,10 @@ const slackHooks = {
     ],
   },
   after: {
-    find: [exposeSecrets, addInstallInfo],
-    get: [exposeSecrets, addInstallInfo],
-    create: [exposeSecrets, addInstallInfo],
-    patch: [exposeSecrets, addInstallInfo],
+    find: [exposeSecrets, addInstallInfo, decodeRepoScope],
+    get: [exposeSecrets, addInstallInfo, decodeRepoScope],
+    create: [exposeSecrets, addInstallInfo, decodeRepoScope],
+    patch: [exposeSecrets, addInstallInfo, decodeRepoScope],
     remove: [exposeSecrets],
   },
 };

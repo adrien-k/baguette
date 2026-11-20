@@ -43,6 +43,30 @@ describe('find', () => {
   });
 });
 
+describe('repository scope', () => {
+  it('stores the repos an app’s assistants may use and returns them as a list', async () => {
+    const created = await service().create({ name: 'acme', bot_token: 'xoxb-one' }, params);
+    expect(created.allowed_repo_ids).toBeNull();
+
+    const patched = await service().patch(created.id, { allowed_repo_ids: [4, 2, 4] }, params);
+    expect(patched.allowed_repo_ids).toEqual([4, 2]);
+    expect((await service().get(created.id, params)).allowed_repo_ids).toEqual([4, 2]);
+    expect((await service().find(params))[0].allowed_repo_ids).toEqual([4, 2]);
+    expect((await db('slack_apps').first()).allowed_repo_ids).toBe('[4,2]');
+  });
+
+  it('lifts the limit again with an empty list', async () => {
+    const created = await service().create(
+      { name: 'acme', bot_token: 'xoxb-one', allowed_repo_ids: [1] },
+      params
+    );
+    expect(created.allowed_repo_ids).toEqual([1]);
+    expect(
+      (await service().patch(created.id, { allowed_repo_ids: [] }, params)).allowed_repo_ids
+    ).toBeNull();
+  });
+});
+
 describe('who can manage Slack apps', () => {
   const member = { provider: 'rest', user: { id: 2, admin: 1 } };
 

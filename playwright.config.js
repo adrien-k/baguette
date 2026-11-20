@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const appPort = process.env.E2E_PORT || process.env.PORT || '3010';
+const slackPort = process.env.E2E_SLACK_PORT || '3011';
 
 export default defineConfig({
   testDir: './e2e',
@@ -15,10 +16,18 @@ export default defineConfig({
     trace: 'on-first-retry',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
-  webServer: {
-    command: 'bash e2e/start-dev.sh',
-    url: `http://127.0.0.1:${appPort}/up`,
-    reuseExistingServer: false,
-    timeout: 300_000,
-  },
+  webServer: [
+    {
+      command: 'node e2e/slack-mock.mjs',
+      url: `http://127.0.0.1:${slackPort}/__calls`,
+      reuseExistingServer: false,
+      timeout: 30_000,
+    },
+    {
+      command: 'bash e2e/start-dev.sh',
+      url: `http://127.0.0.1:${appPort}/up`,
+      reuseExistingServer: false,
+      timeout: 300_000,
+    },
+  ],
 });

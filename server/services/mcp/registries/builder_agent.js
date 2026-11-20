@@ -4,7 +4,6 @@ import { createGitFetchTool } from '../tools/git-fetch.js';
 import { createGitPushTool } from '../tools/git-push.js';
 import { createCurrentSessionInfoMcpTool } from '../tools/current-session-info.js';
 import { createUpdateSessionTool } from '../tools/update-session.js';
-import { createArchiveSessionTool } from '../tools/archive-session.js';
 import { createSessionCostTool } from '../tools/session-cost.js';
 import { createSystemStatsTool } from '../tools/system-stats.js';
 import { createPrCommentsTool } from '../tools/pr-comments.js';
@@ -84,9 +83,6 @@ export function buildBuilderAgentTools(session, app, { slackApps = [], agent = n
     createGitPushTool(ctx),
     createCurrentSessionInfoMcpTool(ctx),
     createUpdateSessionTool(ctx),
-    createArchiveSessionTool(ctx),
-    createSessionCostTool(ctx),
-    createSystemStatsTool(),
     createPrCommentsTool(ctx),
     createPrMarkCommentViewedTool(ctx),
     createPrCommentTool(ctx),
@@ -110,13 +106,16 @@ export function buildBuilderAgentTools(session, app, { slackApps = [], agent = n
     createStartReviewTool(ctx),
     createContinueReviewTool(ctx),
   ];
-  if (slackApps.length) {
+  if (slackApps.length) tools.push(createSlackPostMessageTool(ctx));
+  // Only Slack assistant sessions read Slack and answer from it; other sessions skip the overhead.
+  if (session.slack_app_id) {
     tools.push(
-      createSlackPostMessageTool(ctx),
       createSlackEditMessageTool(ctx),
       createSlackReadThreadTool(ctx),
       createSlackReadChannelTool(ctx),
-      createSlackDownloadFileTool(ctx)
+      createSlackDownloadFileTool(ctx),
+      createSessionCostTool(ctx),
+      createSystemStatsTool()
     );
   }
   return tools;

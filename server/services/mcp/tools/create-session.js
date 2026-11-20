@@ -14,6 +14,7 @@ import {
   agentCreatedModelSchemaFields,
 } from '../lib/agent-created-model-fields.js';
 import { ok, fail } from '../lib/result.js';
+import { isRepoInSlackScope } from '../../slack-repo-scope.js';
 
 /** Merge optional `branch` with `base_branch` for CreateSession (stacked PR follow-ups). */
 export function resolveCreateSessionBaseBranch(baseBranch, branch) {
@@ -25,19 +26,6 @@ export function resolveCreateSessionBaseBranch(baseBranch, branch) {
     return { error: 'base_branch or branch is required unless is_global is true.' };
   }
   return { base_branch: resolved };
-}
-
-/**
- * A session started by a session that lives in a Slack thread continues in that thread: replies
- * and follow-ups move to the new session. Never fails the creation.
- */
-async function continueInSlackThread(app, fromSessionId, newSessionId) {
-  if (fromSessionId == null) return;
-  try {
-    await app.get('slackBot')?.attachSessionToThread?.(fromSessionId, newSessionId);
-  } catch {
-    // The new session exists either way; only the Slack thread hand-over is lost.
-  }
 }
 
 function createSessionDescription(mode) {
@@ -64,8 +52,6 @@ export function createCreateSessionTool(ctx) {
     callerAgent,
   } = ctx;
   const mode = normalizeSubagentDefaultMode(user?.subagent_default_mode);
-  // Callers (e.g. Slack) may supply their own model resolution for when no default is configured.
-  const resolveBuilderModel = ctx.resolveBuilderModel ?? resolveMcpBuilderModel;
   return {
     name: 'CreateSession',
     description: createSessionDescription(mode),
@@ -162,6 +148,9 @@ export function createCreateSessionTool(ctx) {
         if (!access) {
           return fail(`Repository ${repo_id} not found or not linked to your account.`);
         }
+        if (!(await isRepoInSlackScope(app, callerSession, repo_id))) {
+          return fail(`Repository ${repo_id} is outside what this Slack assistant may work in.`);
+        }
         repoWithKeys = (await loadRepoWithKeys(repo_id)) ?? {
           id: access.id,
           full_name: access.full_name,
@@ -171,7 +160,7 @@ export function createCreateSessionTool(ctx) {
       const db = app.get('db');
       let resolved;
       try {
-        resolved = await resolveBuilderModel(db, userId, {
+        resolved = await resolveMcpBuilderModel(db, userId, {
           preset_model_id: preset_model_id ?? null,
           agent_config_id: agent_config_id ?? null,
           model: model ?? null,
@@ -232,11 +221,14 @@ export function createCreateSessionTool(ctx) {
       if (!is_global && branch_name) payload.branch_name = branch_name;
       if (plugins?.length) payload.plugins = plugins;
       if (is_shared) payload.is_shared = true;
+      if (ctx.slackAppId) payload.slack_app_id = ctx.slackAppId;
 
       try {
         const session = await app.service('sessions').create(payload, {
           ...userParams,
           user: fullUser,
+          // Set when the session is created for a chat integration (Slack): what the first
+          // message is labelled in the chat, and a fixed title that saves the naming LLM call.
           ...(ctx.initialMessageMeta ? { initialMessageMeta: ctx.initialMessageMeta } : {}),
           ...(ctx.initialLabel ? { initialLabel: ctx.initialLabel } : {}),
         });
@@ -265,7 +257,6 @@ export function createCreateSessionTool(ctx) {
             });
           }
         }
-        await continueInSlackThread(app, callerSession?.id, session.id);
         return ok({
           sessionId: session.id,
           sessionPath: `/sessions/${session.id}`,

@@ -17,7 +17,7 @@ export function createSlackReadChannelTool(ctx) {
       'started a thread show `reply_count` — read those with SlackReadThread. To go further back, ' +
       'call again with the returned `next_cursor` (it pages back in time) or pass `latest` (a ts) ' +
       `to read messages before a point. Raise \`limit\` (max ${MAX_LIMIT}) only when you really ` +
-      'need more. In a session started from Slack, `channel` defaults to the thread’s channel. ' +
+      'need more. While you answer a Slack message, `channel` defaults to that message’s channel. ' +
       'Use it when the user points at "the channel", "what was said earlier", or a past discussion. ' +
       'If you still cannot tell what they mean, ask them (a link to the message helps).',
     schema: {
@@ -39,23 +39,7 @@ export function createSlackReadChannelTool(ctx) {
     },
     handler: slackHandler(
       async ({ channel, limit = DEFAULT_LIMIT, cursor, latest, oldest, app: appName }) => {
-        const bound = channel ? null : await slack.getBoundThread();
-        if (!channel && !bound) {
-          return fail(
-            'channel is required: this session was not started from a Slack thread. Pass a channel id or name.'
-          );
-        }
-
-        let slackApp;
-        if (bound && !appName) {
-          const apps = await slack.loadSlackApps();
-          slackApp = apps.find((a) => a.id === bound.slack_app_id);
-        }
-        slackApp ??= await slack.resolveSlackApp(appName);
-
-        const channelId = bound
-          ? bound.channel_id
-          : await slack.slackResolveChannelId(slackApp.bot_token, channel);
+        const { slackApp, channelId } = await slack.resolveTarget({ channel, appName });
         await slack.assertMayReadChannel(slackApp, channelId);
         try {
           const page = await getChannelHistory(slackApp.bot_token, {

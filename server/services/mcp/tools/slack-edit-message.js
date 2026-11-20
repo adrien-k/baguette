@@ -12,7 +12,7 @@ export function createSlackEditMessageTool(ctx) {
       'Edit a Slack message you posted earlier with SlackPostMessage — e.g. keep ONE status ' +
       'message up to date ("Working… 3 of 5 steps done") instead of posting many, or fix a ' +
       'mistake. Pass the `ts` that SlackPostMessage returned. Only messages posted by the bot ' +
-      'can be edited. In a session started from a Slack thread, `channel` can be omitted. Never ' +
+      'can be edited. While you answer a Slack message, `channel` can be omitted. Never ' +
       'put secrets or anything sensitive in it: Slack is public to the whole company. Text ' +
       'uses Slack mrkdwn: *bold*, _italic_, `code`, <https://url|label>.',
     schema: {
@@ -21,7 +21,9 @@ export function createSlackEditMessageTool(ctx) {
       channel: z
         .string()
         .optional()
-        .describe('Channel id the message is in. Omit for this session’s Slack thread.'),
+        .describe(
+          'Channel id the message is in. Omit to use the channel of the message you are answering.'
+        ),
       app: z.string().optional().describe(`Slack app that posted it. ${slack.slackAppHint}`),
     },
     handler: slackHandler(async ({ ts, text, channel, app: appName }) => {
@@ -34,23 +36,7 @@ export function createSlackEditMessageTool(ctx) {
           })
         );
       }
-      const bound = channel ? null : await slack.getBoundThread();
-      if (!channel && !bound) {
-        return fail(
-          'channel is required: this session was not started from a Slack thread. Pass the channel id the message is in.'
-        );
-      }
-
-      let slackApp;
-      if (bound && !appName) {
-        const apps = await slack.loadSlackApps();
-        slackApp = apps.find((a) => a.id === bound.slack_app_id);
-      }
-      slackApp ??= await slack.resolveSlackApp(appName);
-
-      const channelId = bound
-        ? bound.channel_id
-        : await slack.slackResolveChannelId(slackApp.bot_token, channel);
+      const { slackApp, channelId } = await slack.resolveTarget({ channel, appName });
       await updateMessage(slackApp.bot_token, { channel: channelId, ts, text });
       return ok({ channel: channelId, ts, app: slackApp.name });
     }),

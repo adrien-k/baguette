@@ -83,8 +83,8 @@ describe('safeFileName', () => {
 });
 
 describe('slackFilesDir', () => {
-  it('is per app and thread, outside any repo', () => {
-    expect(slackFilesDir(1, 'C1', '9.9')).toMatch(/slack-files[/\\]1[/\\]C1-9\.9$/);
+  it('is per assistant and thread, outside any repo', () => {
+    expect(slackFilesDir(1, 7, 'C1', '9.9')).toMatch(/slack-files[/\\]assistant-1-7[/\\]C1-9\.9$/);
   });
 });
 

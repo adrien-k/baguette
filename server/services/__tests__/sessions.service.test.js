@@ -10,7 +10,7 @@
  *  2. "find, get, create" - standard CRUD with real seeded rows.
  *     Uses a stub messages service so createFirstMessage stays isolated.
  */
-import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
 import crypto from 'crypto';
 import { promisify } from 'util';
 import fs from 'fs';
@@ -30,7 +30,7 @@ import {
   resolveSessionFromData,
 } from '../feathers/sessions.service.js';
 import { patchAgentInternal, registerAgentsService } from '../feathers/agents.service.js';
-import { slackFilesDir, slackSessionFilesDir } from '../slack-files.js';
+import { slackAssistantFilesDir, slackFilesDir, slackSessionFilesDir } from '../slack-files.js';
 import { insertSlackApp } from './slack-test-helpers.js';
 import * as sessionGitStatus from '../session-git-status.js';
 import * as sessionPushWorktree from '../session-push-worktree.js';
@@ -403,68 +403,6 @@ describe('Sessions service - custom methods', () => {
       await expect(app.service('sessions').stop(sessId, { provider: 'rest' })).rejects.toThrow(
         'Not authenticated'
       );
-    });
-  });
-
-  // ── archiveAfterTurn (the agent closing its own session) ───────────────────
-
-  describe('archiveAfterTurn', () => {
-    afterEach(() => vi.useRealTimers());
-
-    const sessions = () => app.service('sessions');
-    const archivedAt = async () => (await db('sessions').where({ id: sessId }).first()).archived_at;
-
-    it('archives the session a couple of seconds after the turn that asked for it', async () => {
-      vi.useFakeTimers({ toFake: ['setTimeout'] });
-      sessions().archiveAfterTurn(sessId);
-      await sessions()._archiveIfRequestedAfterTurn(sessId, { is_primary: 1 });
-
-      expect(await archivedAt()).toBeFalsy();
-      await vi.advanceTimersByTimeAsync(2000);
-      await vi.waitFor(async () => expect(await archivedAt()).toBeTruthy());
-    });
-
-    it('does nothing for a session nobody asked to archive', async () => {
-      vi.useFakeTimers({ toFake: ['setTimeout'] });
-      await sessions()._archiveIfRequestedAfterTurn(sessId, { is_primary: 1 });
-      await vi.advanceTimersByTimeAsync(5000);
-      expect(await archivedAt()).toBeFalsy();
-    });
-
-    it('waits for the main agent: a subagent finishing its turn does not close the session', async () => {
-      vi.useFakeTimers({ toFake: ['setTimeout'] });
-      sessions().archiveAfterTurn(sessId);
-      await sessions()._archiveIfRequestedAfterTurn(sessId, { is_primary: 0 });
-      await vi.advanceTimersByTimeAsync(5000);
-      expect(await archivedAt()).toBeFalsy();
-
-      await sessions()._archiveIfRequestedAfterTurn(sessId, { is_primary: 1 });
-      await vi.advanceTimersByTimeAsync(2000);
-      await vi.waitFor(async () => expect(await archivedAt()).toBeTruthy());
-    });
-
-    it('only archives once, however many turns finish afterwards', async () => {
-      vi.useFakeTimers({ toFake: ['setTimeout'] });
-      const archive = vi.spyOn(sessions(), 'archive').mockResolvedValue({});
-      sessions().archiveAfterTurn(sessId);
-      await sessions()._archiveIfRequestedAfterTurn(sessId, { is_primary: 1 });
-      await sessions()._archiveIfRequestedAfterTurn(sessId, { is_primary: 1 });
-      await vi.advanceTimersByTimeAsync(5000);
-      expect(archive).toHaveBeenCalledTimes(1);
-      expect(archive).toHaveBeenCalledWith({ id: sessId }, { provider: undefined });
-      archive.mockRestore();
-    });
-
-    it('keeps running if archiving fails', async () => {
-      vi.useFakeTimers({ toFake: ['setTimeout'] });
-      const archive = vi
-        .spyOn(sessions(), 'archive')
-        .mockRejectedValue(new Error('cleanup failed'));
-      sessions().archiveAfterTurn(sessId);
-      await sessions()._archiveIfRequestedAfterTurn(sessId, { is_primary: 1 });
-      await vi.advanceTimersByTimeAsync(2000);
-      expect(archive).toHaveBeenCalledTimes(1);
-      archive.mockRestore();
     });
   });
 
@@ -1036,60 +974,37 @@ describe('Sessions service - custom methods', () => {
     });
 
     describe('Slack files', () => {
-      const makeFile = async (dir) => {
-        await fs.promises.mkdir(dir, { recursive: true });
-        await fs.promises.writeFile(path.join(dir, 'a.png'), 'x');
-      };
       const exists = (dir) =>
         fs.promises.access(dir).then(
           () => true,
           () => false
         );
-      const linkThread = async (sessionId, slackAppId, thread = '111.222') =>
-        db('slack_threads').insert({
-          slack_app_id: slackAppId,
-          channel_id: 'C1',
-          thread_ts: thread,
-          session_id: sessionId,
-          user_id: userId,
-        });
+
+      const makeFile = async (dir) => {
+        await fs.promises.mkdir(dir, { recursive: true });
+        await fs.promises.writeFile(path.join(dir, 'a.png'), 'x');
+      };
 
       it('deletes the files downloaded for the session', async () => {
-        const slackAppId = await insertSlackApp(db);
-        await linkThread(sessId, slackAppId);
-        const threadDir = slackFilesDir(slackAppId, 'C1', '111.222');
-        const toolDir = slackSessionFilesDir(sessId);
-        await makeFile(threadDir);
-        await makeFile(toolDir);
+        await makeFile(slackSessionFilesDir(sessId));
 
         await app.service('sessions').archive(sessId, params({ id: userId }));
 
-        expect(await exists(threadDir)).toBe(false);
-        expect(await exists(toolDir)).toBe(false);
+        expect(await exists(slackSessionFilesDir(sessId))).toBe(false);
       });
 
-      it('keeps the thread files while another live session serves the thread', async () => {
+      it("deletes an assistant's saved attachments too", async () => {
         const slackAppId = await insertSlackApp(db);
-        const other = await insertTestSession(db, {
-          user_id: userId,
-          repo_full_name: 'test/repo',
-          base_branch: 'main',
-          initial_prompt: 'other',
-          short_id: 'other1',
-        });
-        await linkThread(sessId, slackAppId);
-        await linkThread(other, slackAppId);
-        const threadDir = slackFilesDir(slackAppId, 'C1', '111.222');
-        await makeFile(threadDir);
+        await db('sessions').where({ id: sessId }).update({ slack_app_id: slackAppId });
+        const dir = slackFilesDir(slackAppId, userId, 'C1', '111.222');
+        await makeFile(dir);
 
         await app.service('sessions').archive(sessId, params({ id: userId }));
 
-        expect(await exists(threadDir)).toBe(true);
+        expect(await exists(slackAssistantFilesDir(slackAppId, userId))).toBe(false);
       });
 
       it('still archives when the files cannot be deleted', async () => {
-        const slackAppId = await insertSlackApp(db);
-        await linkThread(sessId, slackAppId);
         const rm = vi.spyOn(fs, 'rm').mockRejectedValueOnce(new Error('EACCES'));
 
         const result = await app.service('sessions').archive(sessId, params({ id: userId }));

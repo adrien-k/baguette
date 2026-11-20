@@ -6,7 +6,7 @@
  * periodically, so saving or removing an app in Settings takes effect without a restart.
  */
 import logger from '../logger.js';
-import { authTest } from './slack.js';
+import { authTest, slackApiUrl } from './slack.js';
 
 const DEFAULT_APP_NAME = 'baguette';
 const SYNC_INTERVAL_MS = 30_000;
@@ -15,7 +15,7 @@ const RECONNECT_MIN_MS = 1_000;
 const RECONNECT_MAX_MS = 30_000;
 
 async function openConnectionUrl(appToken, fetchFn) {
-  const res = await fetchFn('https://slack.com/api/apps.connections.open', {
+  const res = await fetchFn(`${slackApiUrl()}/apps.connections.open`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${appToken}`, 'User-Agent': 'baguette-app' },
     signal: AbortSignal.timeout(OPEN_CONNECTION_TIMEOUT_MS),
@@ -69,11 +69,6 @@ export function createSlackSocketManager(
     if (message.envelope_id) {
       // Ack immediately; Slack redelivers anything not acknowledged within seconds.
       ws.send(JSON.stringify({ envelope_id: message.envelope_id }));
-    }
-    if (message.type === 'interactive' && message.payload) {
-      bot
-        .handleInteraction(slackApp, message.payload)
-        .catch((err) => logger.error({ err }, 'slack: socket interaction failed'));
     }
     if (message.type === 'events_api' && message.payload) {
       bot

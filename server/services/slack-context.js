@@ -170,27 +170,28 @@ export function createSlackContext() {
     }
   }
 
-  async function attachedFiles(slackApp, event, threadTs) {
+  async function attachedFiles(slackApp, userId, event, threadTs) {
     const files = await filesOfEvent(slackApp, event, threadTs);
-    const dir = slackFilesDir(slackApp.id, event.channel, threadTs);
+    const dir = slackFilesDir(slackApp.id, userId, event.channel, threadTs);
     return attachmentsContext(slackApp.bot_token, files, dir);
   }
 
   /**
-   * @param {{ followUp?: boolean, untagged?: boolean }} [options] `followUp`: only add what was
-   *   said since the agent's last reply; `untagged`: the message was not addressed to the bot.
+   * @param {{ userId: number, followUp?: boolean, untagged?: boolean }} options `userId`: the
+   *   assistant's owner (where attachments are saved); `followUp`: only add what was said since
+   *   the agent's last reply; `untagged`: the message was not addressed to the bot.
    */
   async function slackContext(
     slackApp,
     event,
     threadTs,
     text,
-    { followUp = false, untagged = false } = {}
+    { userId, followUp = false, untagged = false }
   ) {
     const [channel, sender, ...sections] = await Promise.all([
       describeChannel(slackApp, event.channel),
       slackUserLabel(slackApp.bot_token, event.user),
-      attachedFiles(slackApp, event, threadTs),
+      attachedFiles(slackApp, userId, event, threadTs),
       threadContext(slackApp, event, threadTs, { sinceLastBotReply: followUp }),
       channelContext(slackApp, event, threadTs),
       linkedContext(slackApp, text),
@@ -198,7 +199,8 @@ export function createSlackContext() {
     const header =
       `Message from ${sender}${untagged ? ' (not tagged to you)' : ''}\n` +
       `Channel: ${channel}\n` +
-      `Thread: ${threadTs} (sent ${slackClock(event.ts)} UTC)`;
+      `Thread: channel ${event.channel}, thread_ts ${threadTs} (sent ${slackClock(event.ts)} UTC) — ` +
+      'to answer there, SlackPostMessage with this channel and thread_ts';
     return (
       '\n\n---\nSlack context (provided automatically; use the Slack tools only for more):\n' +
       `${SENSITIVE_REMINDER}\n` +
