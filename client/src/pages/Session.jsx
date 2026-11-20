@@ -78,7 +78,8 @@ import { isGlobalSessionDisabledView } from './session/sessionViews.js';
 
 export default function Session() {
   const { id: routeSessionId, repoId, loopId: routeLoopId } = useParams();
-  const { pathname } = useLocation();
+  const location = useLocation();
+  const { pathname } = location;
   const isNewSessionRoute = isNewSessionRouteId(routeSessionId) || isSessionHomePathname(pathname);
   const isNewLoopRoute = isNewLoopRouteId(routeLoopId) || isLoopHomePathname(pathname);
   const fromAllSessions = isAllSessionsPath(pathname);
@@ -1104,13 +1105,25 @@ export default function Session() {
     modelAgent: primaryBuilderForChat,
     onSelectAgent: selectAgent,
   });
+  const {
+    open: addBuilderOpen,
+    modalKey: addBuilderModalKey,
+    initialPrompt: addBuilderInitialPrompt,
+    initialLabel: addBuilderInitialLabel,
+    adding: addBuilderSaving,
+    composerClearNonce: addBuilderComposerClearNonce,
+    recipes: addBuilderRecipes,
+    openModal: openAddBuilderModal,
+    closeModal: closeAddBuilderModal,
+    handleConfirm: confirmAddBuilder,
+  } = addBuilderFlow;
 
   const handleOpenAddBuilder = useCallback(
     (prompt = '') => {
       if (isReadonly || !gitSession?.id) return;
-      addBuilderFlow.openModal(prompt);
+      openAddBuilderModal(prompt);
     },
-    [isReadonly, gitSession?.id, addBuilderFlow]
+    [isReadonly, gitSession?.id, openAddBuilderModal]
   );
 
   const handleAddBuilderFromSidebar = useCallback(
@@ -1121,23 +1134,38 @@ export default function Session() {
         return;
       }
       const base = sessionUrl(sessionRow.id);
-      navigate(`${base}?view=chat&add_builder=1`);
+      navigate(`${base}?view=chat`, { state: { openAddBuilder: true } });
     },
     [isReadonly, routeSessionId, gitSession?.id, handleOpenAddBuilder, navigate, sessionUrl]
   );
 
+  const pendingOpenAddBuilderRef = useRef(false);
+
   useEffect(() => {
-    if (searchParams.get('add_builder') !== '1' || isReadonly || !gitSession?.id) return;
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        next.delete('add_builder');
-        return next;
-      },
-      { replace: true }
+    pendingOpenAddBuilderRef.current = false;
+  }, [routeSessionId]);
+
+  useEffect(() => {
+    if (!location.state?.openAddBuilder || isReadonly) return;
+    if (!gitSession?.id || String(gitSession.id) !== String(routeSessionId)) return;
+    if (pendingOpenAddBuilderRef.current) return;
+    pendingOpenAddBuilderRef.current = true;
+    const { openAddBuilder: _drop, ...restState } = location.state ?? {};
+    navigate(
+      { pathname: location.pathname, search: location.search },
+      { replace: true, state: Object.keys(restState).length ? restState : null }
     );
-    addBuilderFlow.openModal('');
-  }, [searchParams, gitSession?.id, isReadonly, addBuilderFlow, setSearchParams]);
+    openAddBuilderModal('');
+  }, [
+    location.pathname,
+    location.search,
+    location.state,
+    routeSessionId,
+    gitSession?.id,
+    isReadonly,
+    navigate,
+    openAddBuilderModal,
+  ]);
 
   useLayoutEffect(() => {
     if (isNewSessionRoute) return;
@@ -1420,8 +1448,8 @@ export default function Session() {
                   pushing={pushing}
                   onDeletePermanently={handleSessionDeletedPermanently}
                   onOpenAddBuilder={handleOpenAddBuilder}
-                  addBuilderSaving={addBuilderFlow.adding}
-                  addBuilderComposerClearNonce={addBuilderFlow.composerClearNonce}
+                  addBuilderSaving={addBuilderSaving}
+                  addBuilderComposerClearNonce={addBuilderComposerClearNonce}
                 />
               )}
             {!isLoopsView &&
@@ -1581,13 +1609,13 @@ export default function Session() {
         )}
       </div>
 
-      {addBuilderFlow.open && gitSession?.id ? (
+      {addBuilderOpen && gitSession?.id ? (
         <StartSubagentModal
-          key={addBuilderFlow.modalKey}
+          key={addBuilderModalKey}
           sessionId={gitSession.id}
-          initialPrompt={addBuilderFlow.initialPrompt}
-          defaultLabel={addBuilderFlow.initialLabel}
-          recipes={addBuilderFlow.recipes}
+          initialPrompt={addBuilderInitialPrompt}
+          defaultLabel={addBuilderInitialLabel}
+          recipes={addBuilderRecipes}
           initialAgentConfigId={
             gitSession.agent_config_id ?? primaryBuilderForChat?.agent_config_id ?? null
           }
@@ -1595,9 +1623,9 @@ export default function Session() {
           initialModelParams={
             primaryBuilderForChat?.model_params ?? gitSession.model_params ?? null
           }
-          onConfirm={(opts) => void addBuilderFlow.handleConfirm(opts)}
-          onCancel={addBuilderFlow.closeModal}
-          saving={addBuilderFlow.adding}
+          onConfirm={(opts) => void confirmAddBuilder(opts)}
+          onCancel={closeAddBuilderModal}
+          saving={addBuilderSaving}
         />
       ) : null}
       <SessionWorkspaceModals
