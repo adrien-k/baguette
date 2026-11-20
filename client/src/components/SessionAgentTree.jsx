@@ -409,19 +409,24 @@ export default function SessionAgentTree({
 
   if (!list.length) return null;
 
+  const primaryAgent = list.find(isPrimaryAgent) ?? null;
   const headAgent = list[0] ?? null;
-  const others = headAgent ? list.slice(1) : list;
-  const grouped = Boolean(headAgent) && others.length > 0;
+  const tailAfterHead = headAgent ? list.slice(1) : list;
+  const primaryPinnedSlot =
+    primaryAgent && headAgent && primaryAgent.id !== headAgent.id ? primaryAgent : null;
+  const collapsibleOthers = primaryPinnedSlot
+    ? tailAfterHead.filter((a) => a.id !== primaryAgent.id)
+    : tailAfterHead;
+  const grouped = Boolean(headAgent) && collapsibleOthers.length > 0;
   const collapseLocked = isAgentTreeCollapseLocked(list, currentAgentId, headAgent?.id);
   const expanded = collapseLocked || (manuallyExpanded ?? autoExpanded);
-  const caret =
-    grouped && others.length > 0
-      ? {
-          expanded,
-          collapseLocked,
-          onToggle: () => setManuallyExpanded(!expanded),
-        }
-      : null;
+  const caret = grouped
+    ? {
+        expanded,
+        collapseLocked,
+        onToggle: () => setManuallyExpanded(!expanded),
+      }
+    : null;
 
   const startRename = (agent) => {
     if (!isSecondaryBuilder(agent)) return;
@@ -492,7 +497,8 @@ export default function SessionAgentTree({
 
   const visibleAgents = [
     ...(headAgent ? [headAgent] : []),
-    ...(!grouped || expanded ? others : []),
+    ...(primaryPinnedSlot ? [primaryPinnedSlot] : []),
+    ...(!grouped || expanded ? collapsibleOthers : []),
   ];
 
   return (
