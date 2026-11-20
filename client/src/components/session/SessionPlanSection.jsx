@@ -2,23 +2,9 @@ import { CheckCircle } from 'lucide-react';
 import CollapsibleMarkdown from '../chat/CollapsibleMarkdown.tsx';
 import RunPlanButton from '../chat/RunPlanButton.tsx';
 import SessionTodosPanel from './SessionTodosPanel.jsx';
+import PlanStatusBadge from './PlanStatusBadge.jsx';
 import { NEUTRAL_BUTTON_CLASS } from '../../utils/buttonStyles.js';
-
-const PLAN_STATUS_BADGE_CLASS = {
-  open: 'bg-brand/15 text-accent border-brand/35',
-  completed: 'bg-success/15 text-success border-success/35',
-};
-
-function PlanStatusBadge({ status = 'open' }) {
-  const key = status === 'completed' ? 'completed' : 'open';
-  return (
-    <span
-      className={`inline-flex shrink-0 items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${PLAN_STATUS_BADGE_CLASS[key]}`}
-    >
-      {key}
-    </span>
-  );
-}
+import { sessionPlanTitle } from '../../utils/sessionPlanDisplay.ts';
 
 export default function SessionPlanSection({
   plan,
@@ -32,6 +18,7 @@ export default function SessionPlanSection({
   const markdown = (plan.markdown ?? '').trim();
   const isCompleted = plan.status === 'completed';
   const refLabel = plan.ref != null ? `#${plan.ref}` : null;
+  const title = sessionPlanTitle(plan);
 
   return (
     <section
@@ -41,7 +28,10 @@ export default function SessionPlanSection({
       }`}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <h2 className="text-sm font-medium text-heading">Plan{refLabel ? ` ${refLabel}` : ''}</h2>
+        <h2 className="text-sm font-medium text-heading">
+          {title}
+          {refLabel ? <span className="text-faint font-normal">{` ${refLabel}`}</span> : null}
+        </h2>
         <PlanStatusBadge status={plan.status} />
         {editable && !isCompleted && (
           <button
