@@ -1,7 +1,40 @@
+/**
+ * Dev seed integration test — uses an isolated DATA_DIR so vitest never rm -rf's
+ * the developer's .data/repos/local-repo-example.
+ */
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
-import { DATA_DIR } from '../../config.js';
+
+const { TEST_DATA_DIR } = vi.hoisted(() => ({
+  TEST_DATA_DIR: `/tmp/baguette-seed-dev-env-${Math.random().toString(36).slice(2)}`,
+}));
+
+vi.mock('../../config.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    DATA_DIR: TEST_DATA_DIR,
+    REPOS_DIR: path.join(TEST_DATA_DIR, 'repos'),
+    resolveDataDirRelativePath: (subpath) => {
+      if (subpath == null || subpath === '') return subpath;
+      if (path.isAbsolute(subpath)) return subpath;
+      return path.join(TEST_DATA_DIR, subpath);
+    },
+    resolveRepoPath: (repo) => {
+      if (!repo) return undefined;
+      const stored = repo.repo_path;
+      if (stored == null || stored === '') {
+        return repo.stripped_name
+          ? path.join(TEST_DATA_DIR, 'repos', repo.stripped_name, 'main')
+          : undefined;
+      }
+      if (path.isAbsolute(stored)) return stored;
+      return path.join(TEST_DATA_DIR, stored);
+    },
+  };
+});
+
 import { createMigratedTestDb } from '../../test-utils/db.js';
 import {
   DEV_REPO_FULL_NAME,
@@ -20,7 +53,8 @@ describe('seedDevEnvironment', () => {
   beforeAll(async () => {
     vi.stubEnv('ENABLE_MOCK_AGENT', 'true');
     vi.stubEnv('SDK_TESTS_MOCK', '1');
-    await fs.rm(path.join(DATA_DIR, 'repos', DEV_REPO_STRIPPED), {
+    await fs.mkdir(TEST_DATA_DIR, { recursive: true });
+    await fs.rm(path.join(TEST_DATA_DIR, 'repos', DEV_REPO_STRIPPED), {
       recursive: true,
       force: true,
     });
@@ -30,6 +64,11 @@ describe('seedDevEnvironment', () => {
   afterAll(async () => {
     await db?.destroy();
     vi.unstubAllEnvs();
+    try {
+      await fs.rm(TEST_DATA_DIR, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
   });
 
   it('creates dev user, mock agent config, local repo, and subagent-rich sessions', async () => {
@@ -53,7 +92,7 @@ describe('seedDevEnvironment', () => {
     const repo = await db('repos').where({ full_name: DEV_REPO_FULL_NAME }).first();
     expect(repo?.access_mode).toBe('local');
     const baguetteYaml = await fs.readFile(
-      path.join(DATA_DIR, repo.repo_path, '.baguette.yaml'),
+      path.join(TEST_DATA_DIR, repo.repo_path, '.baguette.yaml'),
       'utf8'
     );
     expect(baguetteYaml).toContain(DEV_SEED_RECIPE_PLAN_LABEL);
