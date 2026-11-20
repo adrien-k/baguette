@@ -1,3 +1,5 @@
+import { resolveDataDirRelativePath } from '../config.js';
+import { buildSystemPromptAppend } from './session-prompt.js';
 import { sessionMessageIdentity } from './feathers/message-create-fields.js';
 
 /**
@@ -24,6 +26,42 @@ export async function agentHasSystemPromptMessage(db, sessionId, agentId) {
  * @param {object} agent - agents row
  * @param {string} content - full append prompt shown in the UI
  */
+/**
+ * Build the chat append prompt for an agent (same text SDKs inject on a turn).
+ *
+ * @param {import('feathers').Application} app
+ * @param {object} session
+ * @param {object} agent
+ * @param {string | null | undefined} agentSdk
+ */
+export async function buildChatSystemPromptForAgent(app, session, agent, agentSdk) {
+  if (!session?.id || !agent?.id) return '';
+  const absoluteCwd = session.session_path
+    ? resolveDataDirRelativePath(session.session_path)
+    : null;
+  const sessionRow =
+    absoluteCwd != null && absoluteCwd !== ''
+      ? { ...session, absolute_session_path: absoluteCwd }
+      : session;
+  return buildSystemPromptAppend(sessionRow, {
+    agent,
+    db: app.get('db'),
+    app,
+    agentSdk: agentSdk ?? agent.agent_sdk ?? null,
+  });
+}
+
+/**
+ * @param {import('feathers').Application} app
+ * @param {object} session
+ * @param {object} agent
+ * @param {string | null | undefined} agentSdk
+ */
+export async function ensureAgentChatSystemPromptMessage(app, session, agent, agentSdk) {
+  const content = await buildChatSystemPromptForAgent(app, session, agent, agentSdk);
+  await ensureAgentSystemPromptMessage(app, session, agent, content);
+}
+
 export async function ensureAgentSystemPromptMessage(app, session, agent, content) {
   const trimmed = typeof content === 'string' ? content.trim() : '';
   if (!trimmed || !agent?.id || !session?.id) return;

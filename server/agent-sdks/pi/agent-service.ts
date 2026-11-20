@@ -45,7 +45,7 @@ import {
   registerBaguetteToolMessageCompactionHook,
   unregisterBaguetteToolMessageCompactionHook,
 } from '../../services/agent-turn-compaction.js';
-import { ensureAgentSystemPromptMessage } from '../../services/ensure-agent-system-prompt-message.js';
+import { prepareAgentTurnStart } from '../../services/agent-turn-prelude.js';
 import { sessionMessageIdentity } from '../../services/feathers/message-create-fields.js';
 import type { MessageStreamWriter } from '../../../shared/message-stream-writer.ts';
 import type { SystemMessagePayload } from '../../../shared/session-messages.ts';
@@ -192,7 +192,6 @@ export class PiAgentService {
       storedPiSessionId,
       appendSystemPrompt,
       agent,
-      channel,
     }: {
       model?: string | null;
       modelParams?: unknown;
@@ -225,9 +224,6 @@ export class PiAgentService {
     await writePiUserMcpConfig(agentDir, userMcp);
     const systemAppend =
       appendSystemPrompt ?? (await this._buildAppendSystemPrompt(session, agent));
-    if (agent && channel !== 'review') {
-      await ensureAgentSystemPromptMessage(this.app, session, agent, systemAppend[0] ?? '');
-    }
     const resourceLoader = new DefaultResourceLoader({
       cwd,
       agentDir: agentDir ?? cwd,
@@ -554,7 +550,10 @@ export class PiAgentService {
         requiresModelParamsOnTurn: getSdkPlugin('pi')?.requiresModelParamsOnTurn === true,
       });
       const turnAgentConfigId = requireAgentConfigId(row.agent_config_id);
-      await prepareAgentTurnCompaction(this.app, session);
+      await prepareAgentTurnStart(this.app, session, agent, {
+        channel,
+        agentSdk: PI_AGENT_SDK_KEY,
+      });
       registerBaguetteToolMessageCompactionHook(sessionId, () =>
         prepareAgentTurnCompaction(this.app, session)
       );
