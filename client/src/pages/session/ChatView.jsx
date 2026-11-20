@@ -244,7 +244,9 @@ export default function ChatView({
     [costByAgentId]
   );
   const activeAgentCostLabel = activeAgent ? agentUsageCostLabel(activeAgent) : null;
-  const canSendDraft = Boolean((input.trim() || files.length) && session?.id && !sending);
+  const canSendDraft = Boolean(
+    (input.trim() || files.length) && session?.id && !sending && !addBuilderSaving
+  );
   const canQuickSend = Boolean(session?.id && activeAgent?.id);
   const runningAgentCount = useMemo(
     () => agents.filter((a) => isAgentTurnActive(a.status)).length,
@@ -256,7 +258,9 @@ export default function ChatView({
       ? agentSource.agent_sdk.charAt(0).toUpperCase() + agentSource.agent_sdk.slice(1)
       : 'Agent';
   const hasInputMessage = Boolean(input.trim());
-  const canOpenScheduleMenu = Boolean(hasInputMessage && session?.id && !sending);
+  const canOpenScheduleMenu = Boolean(
+    hasInputMessage && session?.id && !sending && !addBuilderSaving
+  );
   const chatSessionId = session?.id;
   const chatSessionIdRef = useRef(chatSessionId);
   useEffect(() => {
@@ -540,7 +544,7 @@ export default function ChatView({
   };
 
   const scheduleMessageAt = async (sendAtIso) => {
-    if ((!input.trim() && !files.length) || !session?.id || sending) return;
+    if ((!input.trim() && !files.length) || !session?.id || sending || addBuilderSaving) return;
     const text = input.trim();
     setError(null);
     setFileError(null);
@@ -675,7 +679,7 @@ export default function ChatView({
 
   const handleSend = async (e, { force = false } = {}) => {
     e?.preventDefault();
-    if ((!input.trim() && !files.length) || !session?.id || sending) return;
+    if ((!input.trim() && !files.length) || !session?.id || sending || addBuilderSaving) return;
     const text = input.trim();
     setError(null);
     setFileError(null);
@@ -1023,7 +1027,7 @@ export default function ChatView({
                     onChange={setInput}
                     onSubmit={handleSend}
                     placeholder={`Message ${agentDisplayName}...`}
-                    sending={sending}
+                    sending={sending || addBuilderSaving}
                     agentName={activeAgent?.name}
                     agentType={activeAgent?.agent_type}
                     agents={agents}
