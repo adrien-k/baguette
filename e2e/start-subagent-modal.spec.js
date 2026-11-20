@@ -19,7 +19,7 @@ const DRAFT_PROMPT = 'Refactor the cache layer for e2e';
 const PREFILL_LABEL = titleFromPrompt(DRAFT_PROMPT);
 const CUSTOM_LABEL = 'Modal E2E builder';
 
-test.describe('start subagent modal (mock)', () => {
+test.describe('add builder modal (mock)', () => {
   test('prefill, screenshots, cancel, and start', async ({ page }) => {
     await devLogin(page);
 
@@ -31,25 +31,28 @@ test.describe('start subagent modal (mock)', () => {
     await composer.fill(DRAFT_PROMPT);
 
     await page.getByTitle('Schedule', { exact: true }).click();
-    await expect(page.getByRole('menuitem', { name: 'Start subagent' })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'Add builder' })).toBeVisible();
     await settleForScreenshot(page);
     await saveE2eScreenshot(page, 'start-subagent-send-menu.png');
 
-    await page.getByRole('menuitem', { name: 'Start subagent' }).click();
-    await expect(page.getByRole('heading', { name: 'Start subagent' })).toBeVisible();
-    await expect(page.getByPlaceholder('Subagent name')).toHaveValue(PREFILL_LABEL);
+    await page.getByRole('menuitem', { name: 'Add builder' }).click();
+    await expect(page.getByRole('heading', { name: 'Add builder' })).toBeVisible();
+    await expect(
+      page.getByPlaceholder('Optional — leave empty to open the builder with no initial message')
+    ).toHaveValue(DRAFT_PROMPT);
+    await expect(page.getByPlaceholder('Builder name')).toHaveValue(PREFILL_LABEL);
     await expect(page.getByLabel('Generate label')).toBeVisible();
     await settleForScreenshot(page);
     await saveE2eScreenshot(page, 'start-subagent-modal.png');
 
     await page.getByRole('button', { name: 'Cancel' }).click();
-    await expect(page.getByRole('heading', { name: 'Start subagent' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Add builder' })).toHaveCount(0);
     await expect(composer).toHaveValue(DRAFT_PROMPT);
 
     const startPrompt = `${CUSTOM_LABEL} ${MOCK_E2E_QUICK_TURN_PROMPT}`;
     await composer.fill(startPrompt);
     await openStartSubagentModalFromComposer(page);
-    await page.getByPlaceholder('Subagent name').fill(CUSTOM_LABEL);
+    await page.getByPlaceholder('Builder name').fill(CUSTOM_LABEL);
     await settleForScreenshot(page);
     await saveE2eScreenshot(page, 'start-subagent-modal-ready.png');
     await confirmStartSubagentModal(page);

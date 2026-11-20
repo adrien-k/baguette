@@ -1,7 +1,13 @@
 import { AlertTriangle, ArrowUpToLine } from 'lucide-react';
 import { useGetSession } from '../../hooks/useGetSession.js';
 import { parseMcpJsonResult } from '../../utils/parseMcpJsonResult.ts';
-import { gitPushNeedsApproval, resolveGitPushBranches } from './gitPushCardHelpers.js';
+import { usePushApprovalUi } from '../../context/PushApprovalUiContext.jsx';
+import { NEUTRAL_BUTTON_CLASS } from '../../utils/buttonStyles.js';
+import {
+  buildGitPushApprovalRequestEvent,
+  gitPushNeedsApproval,
+  resolveGitPushBranches,
+} from './gitPushCardHelpers.js';
 import { useGitPushApprovalOutcome } from './useGitPushApprovalOutcome.js';
 
 const FORCE_LABEL: Record<string, string> = {
@@ -116,6 +122,17 @@ export default function GitPushToolBlock({
     (running && needsApproval && !directPushInProgress) || (requested && outcome !== 'pushing');
   const showDirectPushMessage = directPushInProgress || approvalPushInProgress;
 
+  const { pushModalOpen, openAgentPushApproval } = usePushApprovalUi();
+  const canOpenPushApproval =
+    requested && showApprovalWait && !pushModalOpen && sessionId != null && mcpResult != null;
+
+  const handleOpenPushApproval = () => {
+    if (!canOpenPushApproval) return;
+    openAgentPushApproval(
+      buildGitPushApprovalRequestEvent(sessionId, args, mcpResult, session ?? undefined)
+    );
+  };
+
   return (
     <div
       className={`bg-inset/50 rounded-lg border overflow-hidden ${
@@ -184,9 +201,25 @@ export default function GitPushToolBlock({
           </p>
         ) : null}
         {showApprovalWait && (
-          <p className="text-faint leading-snug">
-            Waiting for the user to confirm or cancel in the Push modal.
-          </p>
+          <div className="space-y-2">
+            <p className="text-faint leading-snug">
+              Waiting for the user to accept or reject in the Push modal.
+            </p>
+            {canOpenPushApproval ? (
+              <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2">
+                <p className="text-faint leading-snug min-w-0">
+                  Approval dialog missing? You can open it from here.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleOpenPushApproval}
+                  className={`${NEUTRAL_BUTTON_CLASS} shrink-0`}
+                >
+                  Open push approval
+                </button>
+              </div>
+            ) : null}
+          </div>
         )}
         {showDirectPushMessage && <p className="text-faint leading-snug">Pushing to origin…</p>}
         {errorMessage ? <p className="text-danger leading-snug">{errorMessage}</p> : null}

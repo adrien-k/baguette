@@ -5,6 +5,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { QueryClientProvider } from '@tanstack/react-query';
 import GitPushToolBlock from '../GitPushToolBlock.tsx';
+import { PushApprovalUiProvider } from '../../../context/PushApprovalUiContext.jsx';
 import { createTestQueryClient } from '../../../queries/testUtils.jsx';
 import { sessionKeys } from '../../../queries/keys.js';
 import { sessionsService } from '../../../feathers.js';
@@ -55,7 +56,10 @@ const APPROVAL_RESULT = toolResult({
   auto_push_off: false,
 });
 
-function renderCard(props, { session, sessionId = 42 } = {}) {
+function renderCard(
+  props,
+  { session, sessionId = 42, pushModalOpen = false, openAgentPushApproval = vi.fn() } = {}
+) {
   const queryClient = createTestQueryClient();
   if (session) {
     queryClient.setQueryData(sessionKeys.detail(sessionId), session);
@@ -76,13 +80,23 @@ function renderCard(props, { session, sessionId = 42 } = {}) {
     ),
     {
       wrapper: ({ children }) =>
-        createElement(QueryClientProvider, { client: queryClient }, children),
+        createElement(
+          QueryClientProvider,
+          { client: queryClient },
+          createElement(PushApprovalUiProvider, { pushModalOpen, openAgentPushApproval }, children)
+        ),
     }
   );
 }
 
-function renderCardStatic(props, { sessionId = null } = {}) {
+function renderCardStatic(props, { sessionId = 42, session } = {}) {
   const queryClient = createTestQueryClient();
+  const sessionRow = session ?? { remote_branch: 'adrien-baguette/feature', auto_push: true };
+  queryClient.setQueryData(sessionKeys.detail(sessionId), sessionRow);
+  queryClient.setQueryData(sessionKeys.counts(sessionId), {
+    open_issues_count: 0,
+    running_tasks_count: 0,
+  });
   return renderToStaticMarkup(
     createElement(
       QueryClientProvider,
@@ -110,20 +124,48 @@ describe('GitPushToolBlock', () => {
     expect(html).toContain('GitPush');
     expect(html).toContain('animate-spin');
     expect(html).toContain('Pushing to origin');
-    expect(html).not.toContain('Waiting for the user to confirm or cancel');
+    expect(html).not.toContain('Waiting for the user to accept or reject');
     expect(html).toContain('ship the session branch');
   });
 
   it('shows approval wait copy while awaiting Push modal confirmation', () => {
     const html = renderCardStatic({ args: {}, result: APPROVAL_RESULT });
     expect(html).toContain('approval requested');
-    expect(html).toContain('Waiting for the user to confirm or cancel');
+    expect(html).toContain('Waiting for the user to accept or reject');
+    expect(html).toContain('Open push approval');
     expect(html).toContain('adrien-baguette/feature');
     expect(html).toContain('development');
     expect(html).toContain('fast-forward development with the finished feature work');
     expect(html).toContain('Normal push');
     expect(html).not.toContain('Auto-push is off');
     expect(html).not.toMatch(/>pushed</);
+  });
+
+  it('opens the push approval modal when the chat fallback button is clicked', async () => {
+    const openAgentPushApproval = vi.fn();
+    renderCard(
+      { result: APPROVAL_RESULT },
+      {
+        session: { remote_branch: 'adrien-baguette/feature', auto_push: true },
+        openAgentPushApproval,
+      }
+    );
+    await screen.getByRole('button', { name: 'Open push approval' }).click();
+    expect(openAgentPushApproval).toHaveBeenCalledTimes(1);
+    expect(openAgentPushApproval.mock.calls[0][0]).toMatchObject({
+      sessionId: 42,
+      agentRequest: true,
+      request_id: APPROVAL_REQUEST_ID,
+      branch: 'development',
+    });
+  });
+
+  it('hides the reopen button while the push modal is already open', () => {
+    renderCard(
+      { result: APPROVAL_RESULT },
+      { session: { remote_branch: 'adrien-baguette/feature' }, pushModalOpen: true }
+    );
+    expect(screen.queryByRole('button', { name: 'Open push approval' })).toBeNull();
   });
 
   it('flags the requested force option', () => {
@@ -206,7 +248,7 @@ describe('GitPushToolBlock', () => {
     });
     expect(html).toContain('canceled');
     expect(html).not.toContain('approval requested');
-    expect(html).not.toContain('Waiting for the user to confirm or cancel');
+    expect(html).not.toContain('Waiting for the user to accept or reject');
   });
 
   it('after remount, persisted pushed result shows pushed badge', () => {
@@ -221,7 +263,24 @@ describe('GitPushToolBlock', () => {
     });
     expect(html).toContain('pushed');
     expect(html).not.toContain('approval requested');
-    expect(html).not.toContain('Waiting for the user to confirm or cancel');
+    expect(html).not.toContain('Waiting for the user to accept or reject');
+  });
+
+  it('shows source_branch as the left-hand ref instead of session local_branch', () => {
+    const html = renderCardStatic({
+      args: { source_branch: 'v1.0.0', branch: 'development' },
+      result: toolResult({
+        ok: true,
+        approval_requested: true,
+        request_id: APPROVAL_REQUEST_ID,
+        source_branch: 'v1.0.0',
+        target_branch: 'development',
+        local_branch: 'adrien-baguette/feature',
+      }),
+    });
+    expect(html).toContain('v1.0.0');
+    expect(html).toContain('development');
+    expect(html).not.toContain('adrien-baguette/feature');
   });
 
   it('ignores push:complete for a different request id', async () => {

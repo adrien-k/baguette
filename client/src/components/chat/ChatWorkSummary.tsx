@@ -44,7 +44,7 @@ export default function ChatWorkSummary({
   sessionPath,
   sessionId,
   agentName,
-  pinnedRunningBashIds,
+  pinnedToolDockIds,
   agents,
   onSelectAgent,
   tasks,
@@ -60,7 +60,7 @@ export default function ChatWorkSummary({
   sessionPath?: string | null;
   sessionId?: number | null;
   agentName?: string;
-  pinnedRunningBashIds?: Set<string>;
+  pinnedToolDockIds?: Set<string>;
   agents?: SessionAgent[];
   onSelectAgent?: (agent: SessionAgent) => void;
   tasks?: SessionTask[];
@@ -139,7 +139,7 @@ export default function ChatWorkSummary({
                   sessionPath={sessionPath}
                   sessionId={sessionId}
                   agentName={agentName}
-                  pinnedRunningBashIds={pinnedRunningBashIds}
+                  pinnedToolDockIds={pinnedToolDockIds}
                   agents={agents}
                   onSelectAgent={onSelectAgent}
                   tasks={tasks}
@@ -160,7 +160,7 @@ export default function ChatWorkSummary({
                 agentName={agentName}
                 messageIndex={index}
                 allMessages={displayMessages}
-                pinnedRunningBashIds={pinnedRunningBashIds}
+                pinnedToolDockIds={pinnedToolDockIds}
                 agents={agents}
                 onSelectAgent={onSelectAgent}
                 tasks={tasks}

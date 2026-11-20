@@ -78,7 +78,8 @@ describe('buildSystemPromptAppend', () => {
     expect(result).toContain('git add -A && git commit');
     expect(result).toContain('UpdateSession');
     expect(result).toContain('after your turn ends');
-    expect(result).not.toContain('GitPush');
+    expect(result).toContain('source_branch');
+    expect(result).toContain('You do not call push tools yourself');
     expect(result).not.toContain('PrUpsert');
     const lastShipping = result.lastIndexOf('End-of-turn shipping (required every turn)');
     const runningTests = result.lastIndexOf('## Running Tests');

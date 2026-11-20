@@ -26,7 +26,7 @@ import { usePersistentState } from '../hooks/usePersistentState.js';
 import { useMediaQuery } from '../hooks/useMediaQuery.js';
 import { useCursorModelPrefs } from '../hooks/useAgentPreferences.js';
 import AgentMessageComposer from './AgentMessageComposer.jsx';
-import { GHOST_BUTTON_CLASS, PRIMARY_BUTTON_SIZED } from '../utils/buttonStyles.js';
+import { PRIMARY_BUTTON_SIZED } from '../utils/buttonStyles.js';
 import ComposerPrimaryMenuAddon from './ComposerPrimaryMenuAddon.jsx';
 import FileAttachmentPicker from './FileAttachmentPicker.jsx';
 import SearchableSelect from './SearchableSelect';
@@ -95,7 +95,6 @@ export default function BuilderForm({
   onCreateLoop,
   onUpdateLoop,
   onDeleteLoop,
-  onCancelEdit,
   editingLoop,
   loading,
   repoFullName: repoFullNameProp,
@@ -120,6 +119,7 @@ export default function BuilderForm({
   // be re-seeded from agent defaults or the last session.
   const hasPersistedPromptRef = useRef(Boolean(persistKey && hasPromptText(persistentState.store)));
   const seededDefaultSkillsRef = useRef(false);
+  const seededUsageLimitsRef = useRef(false);
   /** Last repo/global scope we applied lastUsed() for — avoids clobbering manual picks on user/config refetches. */
   const lastSeededScopeRef = useRef(null);
   // True once the user picks a repo, or this mount restored a saved pick. Server defaults stay
@@ -260,12 +260,37 @@ export default function BuilderForm({
   useEffect(() => {
     if (!editingLoop) return;
     setLoopEnabled(!!editingLoop.enabled);
-  }, [editingLoop?.id, editingLoop?.enabled]);
+  }, [editingLoop]);
+
+  useEffect(() => {
+    if (editingLoop || userSettings == null) return;
+    if (seededUsageLimitsRef.current) return;
+    if (
+      persistKey &&
+      ('usageLimitAction' in persistentState.store || 'usageLimit' in persistentState.store)
+    ) {
+      seededUsageLimitsRef.current = true;
+      return;
+    }
+    const action = userSettings.default_usage_limit_action ?? DEFAULT_USAGE_LIMIT_ACTION;
+    setUsageLimitAction(action);
+    setUsageLimitText(usageLimitInputText(userSettings.default_usage_limit));
+    seededUsageLimitsRef.current = true;
+  }, [
+    editingLoop,
+    userSettings,
+    persistKey,
+    persistentState.store,
+    setUsageLimitAction,
+    setUsageLimitText,
+  ]);
 
   // Whether the initial SDK/model seeding (agent defaults or last session) has resolved;
   // the models fetch waits for it so the persisted default never resolves against
   // another SDK's list.
   const [sdkModelSeeded, setSdkModelSeeded] = useState(false);
+  /** Bumped when Clear runs so mount-style seed effects re-run without a scope change. */
+  const [formSeedToken, setFormSeedToken] = useState(0);
   const { configOptions, loading: configsLoading } = useAgentConfigs();
   const { getMeta } = useSdkMetas();
   const selectedConfig =
@@ -362,7 +387,7 @@ export default function BuilderForm({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- scope + readiness only; configOptions read inside effect
-  }, [editingLoop, userSettings?.id, configsLoading, selectedRepo?.id, isGlobal]);
+  }, [editingLoop, userSettings?.id, configsLoading, selectedRepo?.id, isGlobal, formSeedToken]);
   const {
     branches,
     loading: loadingBranches,
@@ -384,7 +409,7 @@ export default function BuilderForm({
     const defaultBranch = selectedRepo?.default_branch || branches[0];
     if (defaultBranch) setBranch(defaultBranch);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repoFullName, selectedRepo?.default_branch, branches]);
+  }, [repoFullName, selectedRepo?.default_branch, branches, formSeedToken]);
 
   useEffect(() => {
     if (isGlobal && sessionStartMode === 'same-branch') setSessionStartMode('new-branch');
@@ -517,18 +542,40 @@ export default function BuilderForm({
     (!isLoop || (Boolean(initialPrompt.trim()) && isScheduleComplete(schedule)));
 
   const clearForm = () => {
+    if (editingLoop) return;
     const keepTarget = allowRepoChoice ? targetScope : null;
     persistentState.clear();
-    if (keepTarget) setTargetScopeMemory(keepTarget);
+    hasPersistedPromptRef.current = false;
+    seededDefaultSkillsRef.current = false;
+    seededUsageLimitsRef.current = false;
+    lastSeededScopeRef.current = null;
+    setSdkModelSeeded(false);
+
+    setInitialPrompt(String(defaultPrompt || '').trim() ? defaultPrompt : '');
+    setUsageLimitAction(userSettings?.default_usage_limit_action ?? DEFAULT_USAGE_LIMIT_ACTION);
+    setUsageLimitText(usageLimitInputText(userSettings?.default_usage_limit));
+    setLoopName('');
+    setSingleSession(false);
+    setNewBranch(true);
+    setLoopEnabled(true);
+    setSessionStartMode('new-branch');
+    setSchedule(scheduleFromLoop(null));
     setFiles([]);
     setFileError(null);
-    setLoopName('');
-    setNewBranch(true);
-    if (!editingLoop) {
-      const next = {};
-      for (const server of mcpCatalog) next[String(server.id)] = !!server.enabled;
-      setMcpEnabled(next);
+    if (keepTarget) setTargetScopeMemory(keepTarget);
+    const next = {};
+    for (const server of mcpCatalog) next[String(server.id)] = !!server.enabled;
+    setMcpEnabled(next);
+    if (!isGlobal && repoFullName && branches.length) {
+      const defaultBranch = selectedRepo?.default_branch || branches[0];
+      if (defaultBranch && branches.includes(defaultBranch)) setBranch(defaultBranch);
     }
+    setFormSeedToken((n) => n + 1);
+  };
+
+  const handleClearForm = () => {
+    if (loading) return;
+    clearForm();
   };
 
   const buildPayload = ({ createNewBranch = true }) => {
@@ -720,8 +767,23 @@ export default function BuilderForm({
 
   const { owner: repoOwner, name: repoName } = parseRepoFullName(repoFullName);
 
+  const showNewFormClear = !editingLoop;
+  const showModeTabs = onCreateLoop && !builderModeControlled;
+
   return (
     <div className="space-y-4">
+      {showNewFormClear && !showModeTabs ? (
+        <div className="flex justify-end -mt-1">
+          <button
+            type="button"
+            onClick={handleClearForm}
+            disabled={loading}
+            className="text-xs text-faint hover:text-secondary disabled:opacity-50"
+          >
+            Clear
+          </button>
+        </div>
+      ) : null}
       {userSettings && !configsLoading && !hasAgentConfig && (
         <Alert variant="alert">
           Add an agent configuration in <Link to="/settings?tab=agent">Settings → Agent</Link> to
@@ -758,10 +820,9 @@ export default function BuilderForm({
             </button>
           )}
         </div>
-      ) : (
-        onCreateLoop &&
-        !builderModeControlled && (
-          <div className="flex gap-1 border-b border-line -mt-1">
+      ) : showModeTabs ? (
+        <div className="flex items-center justify-between gap-2 border-b border-line -mt-1">
+          <div className="flex gap-1 min-w-0">
             {[
               { value: 'session', label: 'Session' },
               { value: 'loop', label: 'Loop' },
@@ -780,8 +841,18 @@ export default function BuilderForm({
               </button>
             ))}
           </div>
-        )
-      )}
+          {showNewFormClear ? (
+            <button
+              type="button"
+              onClick={handleClearForm}
+              disabled={loading}
+              className="shrink-0 text-xs text-faint hover:text-secondary disabled:opacity-50 pb-2"
+            >
+              Clear
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       {isLoop && (
         <div>
@@ -1079,11 +1150,6 @@ export default function BuilderForm({
 
       {isLoop && !loopReadOnly && (
         <div className="flex items-center justify-end gap-2 border-t border-line pt-4">
-          {onCancelEdit ? (
-            <button type="button" onClick={onCancelEdit} className={GHOST_BUTTON_CLASS}>
-              Cancel
-            </button>
-          ) : null}
           <button
             type="button"
             disabled={!canSubmit}

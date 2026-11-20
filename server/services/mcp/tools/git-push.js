@@ -16,19 +16,19 @@ export function createGitPushTool(ctx) {
   return {
     name: 'GitPush',
     description:
-      'Push the session work to origin. NOT for regular turn work: Baguette pushes and syncs the PR automatically after each turn — calling this for a plain session-branch push with auto-push on only duplicates that. A plain session-branch push with auto-push on goes through immediately (no Push modal). Auto-push off, a different target branch, source_branch, or force opens the Push approval modal for the user to confirm. Always pass reason with a short explanation of why the push is needed; it is shown to the user in the approval. While the approval is open, do not retry and do not push via shell git — the push runs once the user confirms.',
+      'Push the session work to origin. NOT for regular turn work: Baguette pushes and syncs the PR automatically after each turn — calling this for a plain session-branch push with auto-push on only duplicates that. A plain session-branch push with auto-push on goes through immediately (no Push modal). Auto-push off, a different target branch, source_branch, or force opens the Push approval modal for the user to confirm. Valid pattern: after an isolated subagent finishes on its own branch, call GitPush with source_branch set to that branch (no need to merge into the session worktree first); use branch to publish onto a shared integration branch (e.g. development) or the session remote. Always pass reason with a short explanation of why the push is needed; it is shown to the user in the approval. While the approval is open, do not retry and do not push via shell git — the push runs once the user confirms.',
     schema: {
       branch: z
         .string()
         .optional()
         .describe(
-          'Target branch on origin (defaults to the current session branch). A different branch requires user approval via the Push modal.'
+          'Target branch on origin (defaults to the session remote branch). A different branch — e.g. a shared development branch — requires user approval via the Push modal.'
         ),
       source_branch: z
         .string()
         .optional()
         .describe(
-          'Optional local git ref to push from (branch name, tag, or commit). When set, the push refspec is source_branch:target and user approval is always required.'
+          'Local git ref to push from instead of the session worktree HEAD (branch name, tag, or commit). You do not need to merge that ref into the session branch first — typical use: publish an isolated subagent branch (set to subagent_local_branch) or any other local branch; refspec is source_branch:target. User approval is always required.'
         ),
       force: z
         .enum(['lease', 'force'])

@@ -13,8 +13,8 @@ export function chipOptionClassName(selected) {
   }`;
 }
 
-function listOptionClassName(selected) {
-  return `w-full text-left flex items-center gap-2 px-3 py-2 text-sm transition-colors disabled:opacity-50 ${
+function listOptionClassName(selected, multiLine = false) {
+  return `w-full text-left flex ${multiLine ? 'items-start' : 'items-center'} gap-2 px-3 py-2 text-sm transition-colors disabled:opacity-50 ${
     selected ? 'text-fg bg-control-hover' : 'text-fg-muted hover:text-fg hover:bg-control/50'
   }`;
 }
@@ -27,7 +27,7 @@ const lightListPanelClassName = `min-w-[14rem] max-w-[min(100vw-2rem,18rem)] max
 const lightListPanelMatchTriggerClassName = `max-h-[min(24rem,70vh)] overflow-y-auto ${DROPDOWN_PANEL_CLASS} py-1`;
 
 /**
- * @typedef {{ value: string, label: string, icon?: import('react').ReactNode, disabled?: boolean, title?: string, selected?: boolean, detail?: string, description?: string }} LightDropdownOption
+ * @typedef {{ value: string, label: string, icon?: import('react').ReactNode, disabled?: boolean, title?: string, selected?: boolean, detail?: string, description?: string, subtitle?: string }} LightDropdownOption
  * @typedef {{ heading?: string, options: LightDropdownOption[] }} LightDropdownSection
  */
 
@@ -96,6 +96,9 @@ export default function LightChipDropdown({
   const renderOption = (opt) => {
     const optionDisabled = disabled || opt.disabled;
     const selected = opt.selected ?? opt.value === value;
+    const secondaryLine =
+      layout === 'list' ? opt.subtitle?.trim() || opt.description?.trim() || '' : '';
+    const multiLine = Boolean(secondaryLine);
     const button = (
       <button
         type="button"
@@ -105,15 +108,21 @@ export default function LightChipDropdown({
           pick(opt.value);
         }}
         className={
-          layout === 'list' ? listOptionClassName(selected) : chipOptionClassName(selected)
+          layout === 'list'
+            ? listOptionClassName(selected, multiLine)
+            : chipOptionClassName(selected)
         }
       >
-        {opt.icon ? <span className="shrink-0 flex items-center">{opt.icon}</span> : null}
-        {layout === 'list' && opt.description ? (
+        {opt.icon ? (
+          <span className={`shrink-0 flex items-center${multiLine ? ' mt-0.5' : ''}`} aria-hidden>
+            {opt.icon}
+          </span>
+        ) : null}
+        {multiLine ? (
           <span className="flex-1 min-w-0">
-            <span className="block truncate">{opt.label}</span>
-            <span className="block text-xs text-faint whitespace-normal leading-snug">
-              {opt.description}
+            <span className="block font-medium text-heading leading-snug">{opt.label}</span>
+            <span className="block text-[11px] text-faint font-normal mt-0.5 leading-snug whitespace-normal">
+              {secondaryLine}
             </span>
           </span>
         ) : (

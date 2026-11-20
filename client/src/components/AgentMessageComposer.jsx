@@ -16,6 +16,7 @@ import {
   isSubagentBuilder,
   otherAgentsRunningLabel,
 } from '../utils/sessionAgents.js';
+import ComposerRecipesDropdown from './ComposerRecipesDropdown.tsx';
 
 const COMPOSER_SUBMIT_SUBTITLE_CLASS =
   'text-[9px] font-normal leading-none whitespace-nowrap opacity-70';
@@ -165,6 +166,8 @@ export default function AgentMessageComposer({
   runningTasksCount = 0,
   onShowTasks,
   mcpReadOnly = false,
+  recipes,
+  onRecipeSelect,
 }) {
   const handleChange = (e) => {
     onChange(e.target.value);
@@ -211,7 +214,11 @@ export default function AgentMessageComposer({
     (showAgentSwitcher || sessionAgents.length === 0 || mcpReadOnly)
   );
   const showRunningTasks = Boolean(runningTasksCount > 0);
-  const showAgentHeader = showAgentChrome || (showRunningTasks && onShowTasks != null);
+  const showRecipesDropdown = Boolean(
+    !mcpReadOnly && onRecipeSelect && Array.isArray(recipes) && recipes.length > 0
+  );
+  const showAgentHeader =
+    showAgentChrome || (showRunningTasks && onShowTasks != null) || showRecipesDropdown;
 
   const agentTitleNode = (
     <span className="text-xs font-medium text-heading truncate">
@@ -294,6 +301,13 @@ export default function AgentMessageComposer({
               <SelectedAgentRunningSpinner agent={headerAgent} />
             </>
           ))}
+        {showRecipesDropdown ? (
+          <ComposerRecipesDropdown
+            recipes={recipes}
+            disabled={composerChromeDisabled}
+            onSelect={onRecipeSelect}
+          />
+        ) : null}
         <OtherRunningAgentsCount count={otherRunningAgentCount} />
         <RunningTasksCount count={runningTasksCount} onShowTasks={onShowTasks} />
       </div>

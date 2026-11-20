@@ -595,6 +595,8 @@ export function SkillsTab() {
   const [content, setContent] = useState('');
   const [editingId, setEditingId] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [viewingBuiltin, setViewingBuiltin] = useState(null);
+  const [viewingBuiltinLoading, setViewingBuiltinLoading] = useState(null);
 
   const defaultAutoLoadSkills = Array.isArray(currentUser?.default_auto_load_skills)
     ? currentUser.default_auto_load_skills
@@ -676,6 +678,18 @@ export function SkillsTab() {
     setLabel(skill.label);
     setDescription(skill.description);
     setContent(skill.content);
+  };
+
+  const handleViewBuiltin = async (skill) => {
+    setViewingBuiltinLoading(skill.label);
+    try {
+      const row = await skillsService.readByLabel({ label: skill.label });
+      setViewingBuiltin(row);
+    } catch (err) {
+      toastError('Failed to load skill', err);
+    } finally {
+      setViewingBuiltinLoading(null);
+    }
   };
 
   const handleRemove = async (skill) => {
@@ -805,12 +819,43 @@ export function SkillsTab() {
                   preloadByDefault={defaultAutoLoadSkills.includes(skill.label)}
                   disabled={defaultBusyLabel === skill.label}
                   onDefaultChange={setSkillDefaultPreload}
+                  actions={
+                    <button
+                      type="button"
+                      onClick={() => handleViewBuiltin(skill)}
+                      disabled={viewingBuiltinLoading === skill.label}
+                      className="text-xs text-fg-muted hover:text-fg disabled:opacity-50"
+                    >
+                      {viewingBuiltinLoading === skill.label ? 'Loading…' : 'View'}
+                    </button>
+                  }
                 />
               ))}
             </div>
           )}
         </SettingsSection>
       </div>
+
+      {viewingBuiltin ? (
+        <Modal maxWidth="max-w-2xl" padding="p-5">
+          <ModalHeader title={viewingBuiltin.label} onClose={() => setViewingBuiltin(null)} />
+          {viewingBuiltin.description ? (
+            <p className={`${TEXT_MUTED} text-sm mb-3`}>{viewingBuiltin.description}</p>
+          ) : null}
+          <pre className="max-h-[min(60vh,28rem)] overflow-auto rounded-lg border border-line bg-muted/40 p-3 text-xs font-mono text-fg whitespace-pre-wrap">
+            {viewingBuiltin.content}
+          </pre>
+          <ModalActions className="flex justify-end mt-4">
+            <button
+              type="button"
+              onClick={() => setViewingBuiltin(null)}
+              className="px-4 py-2 text-sm text-secondary hover:text-fg"
+            >
+              Close
+            </button>
+          </ModalActions>
+        </Modal>
+      ) : null}
     </div>
   );
 }

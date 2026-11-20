@@ -19,7 +19,6 @@ export default function LoopWorkspaceBody({
   builderAllowRepoChoice,
   onCreateLoop,
   onUpdateLoop,
-  onCancelLoopEdit,
   onDeleteLoop,
   runSessions,
   runsLoading,
@@ -60,7 +59,6 @@ export default function LoopWorkspaceBody({
             editingLoop={editingLoop}
             onCreateLoop={onCreateLoop}
             onUpdateLoop={onUpdateLoop}
-            onCancelEdit={onCancelLoopEdit}
             onDeleteLoop={editingLoop ? onDeleteLoop : undefined}
             loading={saving}
             repoFullName={builderRepoFullName}

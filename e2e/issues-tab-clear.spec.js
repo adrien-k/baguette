@@ -51,6 +51,11 @@ test.describe('Issues tab reset reviewer', () => {
     await page.getByRole('button', { name: 'Reset', exact: true }).click();
     await confirmClearReviewerChatModal(page);
 
+    await expect(page.getByRole('button', { name: 'Start review' })).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page).toHaveURL(/[?&]view=review(?:&|$)/);
+
     for (const issue of MOCK_REVIEW_ISSUES) {
       await expect(page.getByText(issue.title)).toBeVisible();
     }

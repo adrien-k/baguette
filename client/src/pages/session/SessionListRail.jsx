@@ -38,6 +38,8 @@ export default function SessionListRail({
   sessionsLength,
   onLoadMoreSessions,
   listScope = LIST_SCOPE_MINE,
+  onAddBuilder = null,
+  showAddBuilder = false,
 }) {
   return (
     <div
@@ -167,6 +169,8 @@ export default function SessionListRail({
                   routeAgentId={routeAgentId}
                   autoExpandId={autoExpandId}
                   isMobileList={isMobileList}
+                  onAddBuilder={onAddBuilder}
+                  showAddBuilder={showAddBuilder}
                 />
               ))}
               {hasMoreSessions && sessionsLength > 0 && (

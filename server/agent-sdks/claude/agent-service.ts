@@ -44,7 +44,7 @@ import {
   rejectTurnMismatch,
 } from '../../services/agent-message-dispatch.js';
 import { createMessageStreamWriter } from '../../services/message-writer-factory.ts';
-import { prepareAgentTurnCompaction } from '../../services/agent-turn-compaction.js';
+import { prepareAgentTurnStart } from '../../services/agent-turn-prelude.js';
 import { sessionMessageIdentity } from '../../services/feathers/message-create-fields.js';
 import { claudeResultErrorText } from './mapping.ts';
 import { processClaudeQueryStream, type ClaudeStreamTurnOutcome } from './sdk-turn.ts';
@@ -524,7 +524,7 @@ export class ClaudeAgentService {
       });
       return;
     }
-    await prepareAgentTurnCompaction(this.app, session);
+    await prepareAgentTurnStart(this.app, session, agent, { channel, agentSdk: sdk });
     const writer =
       row.turn_id != null
         ? createMessageStreamWriter(this.app, {

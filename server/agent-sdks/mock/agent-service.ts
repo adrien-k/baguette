@@ -24,6 +24,7 @@ import {
   setAgentTurnRunning,
   setAgentTurnTerminal,
 } from '../../services/agent-turn-patch.js';
+import { prepareAgentTurnStart } from '../../services/agent-turn-prelude.js';
 import type {
   AgentApp,
   AgentRow,
@@ -173,6 +174,10 @@ class MockAgentService {
     const isReview = channel === 'review';
     let turnFinishedOk = false;
     try {
+      await prepareAgentTurnStart(this.app, session, agent, {
+        channel,
+        agentSdk: MOCK_AGENT_SDK,
+      });
       if (!isReview) {
         await setAgentTurnRunning(this.app, agent, userId);
         await this.app.service('sessions').onTurnStart(sessionId);

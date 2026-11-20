@@ -37,7 +37,7 @@ test.describe('mock agent plan and questions', () => {
       timeout: 60_000,
     });
 
-    const planFooterLink = page.getByRole('link', { name: 'Plan #1' });
+    const planFooterLink = page.getByRole('link', { name: /E2E mock plan/i });
     await expect(planFooterLink).toBeVisible({ timeout: 30_000 });
     await planFooterLink.scrollIntoViewIfNeeded();
     await settleForScreenshot(page);
