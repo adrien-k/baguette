@@ -316,8 +316,11 @@ export default function Session() {
     [setSearchParams]
   );
   const handleReviewerCleared = useCallback(() => {
-    if (primaryBuilder) selectAgent(primaryBuilder);
-  }, [primaryBuilder, selectAgent]);
+    if (activeView === 'review') return;
+    if (activeAgent?.agent_type === 'reviewer' && primaryBuilder) {
+      selectAgent(primaryBuilder);
+    }
+  }, [activeView, activeAgent, primaryBuilder, selectAgent]);
   const [creatingSession, setCreatingSession] = useState(false);
   const [createSessionError, setCreateSessionError] = useState(null);
   const [newSessionFormKey, setNewSessionFormKey] = useState(0);
