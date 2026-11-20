@@ -288,6 +288,43 @@ export async function selectAgentInTree(page, name) {
   await row.locator('button:not([data-testid="agent-tree-toggle"])').first().click();
 }
 
+/** Pin/unpin control for a secondary builder row (hover the row first on desktop). */
+export function agentTreePinButton(page, agentName) {
+  return sessionAgentTreeRow(page, agentName).getByRole('button', {
+    name: new RegExp(`^(Pin|Unpin) agent — ${escapeRegExp(agentName)}`),
+  });
+}
+
+export async function hoverAgentTreeRow(page, agentName) {
+  await sessionAgentTreeRow(page, agentName).hover();
+}
+
+export async function clickAgentTreePin(page, agentName) {
+  await hoverAgentTreeRow(page, agentName);
+  await agentTreePinButton(page, agentName).click();
+}
+
+/** Session URL with `agent` query removed so the pinned default applies on load. */
+export function sessionChatUrlWithoutAgentQuery(page) {
+  const url = new URL(page.url());
+  url.searchParams.delete('agent');
+  return url.toString();
+}
+
+export async function fetchSessionForPage(page) {
+  const routeId = parseSessionIdFromUrl(page.url());
+  const sessionId = await e2eNumericSessionId(routeId);
+  const res = await page.request.get(`/api/sessions/${sessionId}`);
+  expect(res.ok()).toBe(true);
+  return res.json();
+}
+
+export async function currentSessionSidebarEntry(page) {
+  const routeId = parseSessionIdFromUrl(page.url());
+  const sessionId = await e2eNumericSessionId(routeId);
+  return page.locator(`[data-testid="mini-session-entry"][data-session-id="${sessionId}"]`);
+}
+
 /** Wait until no agent with `name` is running (API poll — the tree only shows a spinner while running). */
 export async function waitForAgentNotRunning(page, name, timeout = 120_000) {
   await expect
