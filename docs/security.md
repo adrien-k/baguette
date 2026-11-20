@@ -10,6 +10,8 @@ Because of this, **treat Baguette like any other server that runs untrusted code
 
 A fresh install can boot with **no required env**. The first visitor claims the instance as admin (optionally gated by `BOOTSTRAP_PASSWORD`). That password is a one-time first-visitor gate: it stays in the process environment and is never copied to disk. Set it on public hosts so a stranger cannot own the instance.
 
+**Kamal deployments** can alternatively (or additionally) put **[oauth2-proxy](https://oauth2-proxy.github.io/oauth2-proxy/)** in front of Baguette for OIDC/SSO at the edge. Set `OAUTH2_PROXY_PROVIDER` (e.g. `google`) in Kamal env so only identities from your IdP can reach the app. That gate is independent of Baguette accounts — users still sign in to Baguette after passing SSO. See [kamal.md — Optional OIDC](deployment/kamal.md#optional--oidc-with-oauth2-proxy-kamal-only).
+
 Later users are not admins. Without a GitHub App the admin invites them from **Admin → Users** with a one-time link; the invitee adds a passkey. With a GitHub App, later users sign in with GitHub and wait for approval. Admins manage users, the GitHub App, global secrets, Slack, and instance repositories.
 
 ## Encryption key file
