@@ -69,7 +69,7 @@ const connected = () => vi.waitFor(() => expect(FakeWebSocket.instances.length).
 let manager;
 beforeEach(() => {
   FakeWebSocket.instances = [];
-  slack.authTest.mockReset().mockResolvedValue({ userId: 'UBOT', teamId: 'T1', team: 'Futrou' });
+  slack.authTest.mockReset().mockResolvedValue({ userId: 'UBOT', teamId: 'T1', team: 'Acme' });
   manager = null;
 });
 afterEach(() => {
@@ -195,7 +195,7 @@ describe('connections', () => {
     expect(await db('slack_apps').where({ id }).first()).toMatchObject({
       bot_user_id: 'UBOT',
       team_id: 'T1',
-      team_name: 'Futrou',
+      team_name: 'Acme',
     });
   });
 
@@ -336,7 +336,7 @@ describe('connections', () => {
     await vi.waitFor(() => expect(slack.authTest).toHaveBeenCalled());
 
     manager.stop();
-    resolveAuth({ userId: 'UBOT', teamId: 'T1', team: 'Futrou' });
+    resolveAuth({ userId: 'UBOT', teamId: 'T1', team: 'Acme' });
     await new Promise((r) => setTimeout(r, 10));
     expect(fetchFn).not.toHaveBeenCalled();
     expect(FakeWebSocket.instances).toHaveLength(0);

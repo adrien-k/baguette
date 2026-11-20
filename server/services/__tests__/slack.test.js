@@ -557,7 +557,7 @@ describe('installing the app', () => {
       access_token: 'xoxb-new',
       bot_user_id: 'UBOT',
       app_id: 'A1',
-      team: { id: 'T1', name: 'Futrou' },
+      team: { id: 'T1', name: 'Acme' },
     });
     const out = await oauthAccess({
       clientId: 'cid',
@@ -570,7 +570,7 @@ describe('installing the app', () => {
       botUserId: 'UBOT',
       apiAppId: 'A1',
       teamId: 'T1',
-      teamName: 'Futrou',
+      teamName: 'Acme',
     });
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toMatch(/oauth\.v2\.access$/);

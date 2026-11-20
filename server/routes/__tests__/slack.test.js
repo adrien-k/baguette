@@ -282,7 +282,7 @@ describe('GET /api/slack/oauth/callback', () => {
     botUserId: 'UNEW',
     apiAppId: 'ANEW',
     teamId: 'T9',
-    teamName: 'Futrou',
+    teamName: 'Acme',
   };
 
   async function setup() {
@@ -316,7 +316,7 @@ describe('GET /api/slack/oauth/callback', () => {
       bot_user_id: 'UNEW',
       api_app_id: 'ANEW',
       team_id: 'T9',
-      team_name: 'Futrou',
+      team_name: 'Acme',
     });
     expect(row.installed_at).toBeTruthy();
   });

@@ -324,9 +324,9 @@ describe('OAuth and Socket Mode credentials', () => {
     expect(created.redirect_uri).toMatch(/\/api\/slack\/oauth\/callback$/);
     expect(created.installed).toBe(false);
 
-    await db('slack_apps').where({ id: created.id }).update({ team_id: 'T1', team_name: 'Futrou' });
+    await db('slack_apps').where({ id: created.id }).update({ team_id: 'T1', team_name: 'Acme' });
     const fetched = await service().get(created.id, params);
-    expect(fetched).toMatchObject({ installed: true, team_name: 'Futrou' });
+    expect(fetched).toMatchObject({ installed: true, team_name: 'Acme' });
     const listed = await service().find(params);
     expect(listed[0].installed).toBe(true);
   });
@@ -386,7 +386,7 @@ describe('saveInstall', () => {
       botUserId: 'UBOT',
       apiAppId: 'A1',
       teamId: 'T1',
-      teamName: 'Futrou',
+      teamName: 'Acme',
     });
 
     const row = await db('slack_apps').first();
@@ -395,7 +395,7 @@ describe('saveInstall', () => {
       bot_user_id: 'UBOT',
       api_app_id: 'A1',
       team_id: 'T1',
-      team_name: 'Futrou',
+      team_name: 'Acme',
     });
     expect(row.installed_at).toBeTruthy();
     expect((await service().get(created.id, {})).bot_token).toBe('xoxb-new');
@@ -413,25 +413,25 @@ describe('saveIdentity', () => {
     await service().saveIdentity(created.id, {
       bot_user_id: 'UBOT',
       team_id: 'T1',
-      team_name: 'Futrou',
+      team_name: 'Acme',
       api_app_id: 'A1',
     });
     expect(await db('slack_apps').first()).toMatchObject({
       bot_user_id: 'UBOT',
       team_id: 'T1',
-      team_name: 'Futrou',
+      team_name: 'Acme',
       api_app_id: 'A1',
     });
   });
 
   it('changes only what it is given', async () => {
     const created = await service().create({ name: 'acme', bot_token: 'xoxb-one' }, params);
-    await service().saveIdentity(created.id, { bot_user_id: 'UBOT', team_name: 'Futrou' });
+    await service().saveIdentity(created.id, { bot_user_id: 'UBOT', team_name: 'Acme' });
     await service().saveIdentity(created.id, { api_app_id: 'A1' });
     await service().saveIdentity(created.id, {});
     expect(await db('slack_apps').first()).toMatchObject({
       bot_user_id: 'UBOT',
-      team_name: 'Futrou',
+      team_name: 'Acme',
       api_app_id: 'A1',
     });
   });

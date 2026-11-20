@@ -232,9 +232,9 @@ describe('SlackEditMessage', () => {
 describe('parseSlackThreadUrl', () => {
   it('reads the channel and message timestamp from a permalink', () => {
     expect(
-      parseSlackThreadUrl('https://futrou.slack.com/archives/C0CDJA4UTFA/p1793147747403329')
+      parseSlackThreadUrl('https://acme.slack.com/archives/C0EXAMPLE1/p1793147747403329')
     ).toEqual({
-      channel: 'C0CDJA4UTFA',
+      channel: 'C0EXAMPLE1',
       threadTs: '1793147747.403329',
     });
   });
