@@ -506,18 +506,35 @@ export default function BuilderForm({
     (!isLoop || (Boolean(initialPrompt.trim()) && isScheduleComplete(schedule)));
 
   const clearForm = () => {
+    if (editingLoop) return;
     const keepTarget = allowRepoChoice ? targetScope : null;
     persistentState.clear();
-    if (keepTarget) setTargetScope(keepTarget);
+    hasPersistedPromptRef.current = false;
+    seededDefaultSkillsRef.current = false;
+    seededUsageLimitsRef.current = false;
+    lastSeededScopeRef.current = null;
+    setSdkModelSeeded(false);
+
+    setInitialPrompt(String(defaultPrompt || '').trim() ? defaultPrompt : '');
+    setUsageLimitAction(userSettings?.default_usage_limit_action ?? DEFAULT_USAGE_LIMIT_ACTION);
+    setUsageLimitText(usageLimitInputText(userSettings?.default_usage_limit));
+    setLoopName('');
+    setSingleSession(false);
+    setNewBranch(true);
+    setLoopEnabled(true);
+    setSessionStartMode('new-branch');
+    setSchedule(scheduleFromLoop(null));
     setFiles([]);
     setFileError(null);
-    setLoopName('');
-    setNewBranch(true);
-    if (!editingLoop) {
-      const next = {};
-      for (const server of mcpCatalog) next[String(server.id)] = !!server.enabled;
-      setMcpEnabled(next);
-    }
+    if (keepTarget) setTargetScope(keepTarget);
+    const next = {};
+    for (const server of mcpCatalog) next[String(server.id)] = !!server.enabled;
+    setMcpEnabled(next);
+  };
+
+  const handleClearForm = () => {
+    if (loading) return;
+    clearForm();
   };
 
   const buildPayload = ({ createNewBranch = true }) => {
@@ -709,8 +726,23 @@ export default function BuilderForm({
 
   const { owner: repoOwner, name: repoName } = parseRepoFullName(repoFullName);
 
+  const showNewFormClear = !editingLoop;
+  const showModeTabs = onCreateLoop && !builderModeControlled;
+
   return (
     <div className="space-y-4">
+      {showNewFormClear && !showModeTabs ? (
+        <div className="flex justify-end -mt-1">
+          <button
+            type="button"
+            onClick={handleClearForm}
+            disabled={loading}
+            className="text-xs text-faint hover:text-secondary disabled:opacity-50"
+          >
+            Clear
+          </button>
+        </div>
+      ) : null}
       {userSettings && !configsLoading && !hasAgentConfig && (
         <Alert variant="alert">
           Add an agent configuration in <Link to="/settings?tab=agent">Settings → Agent</Link> to
@@ -747,10 +779,9 @@ export default function BuilderForm({
             </button>
           )}
         </div>
-      ) : (
-        onCreateLoop &&
-        !builderModeControlled && (
-          <div className="flex gap-1 border-b border-line -mt-1">
+      ) : showModeTabs ? (
+        <div className="flex items-center justify-between gap-2 border-b border-line -mt-1">
+          <div className="flex gap-1 min-w-0">
             {[
               { value: 'session', label: 'Session' },
               { value: 'loop', label: 'Loop' },
@@ -769,8 +800,18 @@ export default function BuilderForm({
               </button>
             ))}
           </div>
-        )
-      )}
+          {showNewFormClear ? (
+            <button
+              type="button"
+              onClick={handleClearForm}
+              disabled={loading}
+              className="shrink-0 text-xs text-faint hover:text-secondary disabled:opacity-50 pb-2"
+            >
+              Clear
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       {isLoop && (
         <div>
