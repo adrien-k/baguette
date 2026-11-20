@@ -212,6 +212,9 @@ export function createAuthRoutes(app) {
           }
         }
 
+        // E2e (`seed:e2e`) and auto-created dev logins only get a user row — no agent_configs.
+        // When the mock agent server is on, ensure a mock SDK config exists and set builder/reviewer
+        // defaults from it only while `agent_default_config_id` is unset (do not override `seed:dev`).
         if (isMockAgentSdkEnabled()) {
           const mockConfigId = await ensureMockAgentConfig(db, user.id);
           if (mockConfigId) {
