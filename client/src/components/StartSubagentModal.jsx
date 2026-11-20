@@ -1,14 +1,16 @@
 import { useState } from 'react';
-import { Bot, Loader2, Sparkles } from 'lucide-react';
+import { BookOpen, Bot, Loader2, Sparkles } from 'lucide-react';
 import Modal, { ModalActions, ModalHeader } from './Modal.jsx';
 import Field from './Field.jsx';
 import TextInput from './TextInput.jsx';
 import Tooltip from './Tooltip.jsx';
+import ChatRecipeCarousel from './chat/ChatRecipeCarousel.tsx';
 import { AgentDefaultModelPicker } from './settings/DefaultAgentPicker.jsx';
 import { agentsService } from '../feathers.js';
 import { toastError } from '../utils/toastError.jsx';
 import { GHOST_BUTTON_CLASS, PRIMARY_BUTTON_SIZED } from '../utils/buttonStyles.js';
-import { TEXT_FAINT } from '../utils/ui.js';
+import { INPUT_CLASS, TEXT_FAINT } from '../utils/ui.js';
+import { titleFromPrompt } from '@baguette/shared/agent-naming.js';
 
 function paramsJsonFromValue(value) {
   if (value == null || value === '') return null;
@@ -18,8 +20,9 @@ function paramsJsonFromValue(value) {
 
 export default function StartSubagentModal({
   sessionId,
-  prompt,
+  initialPrompt = '',
   defaultLabel,
+  recipes = [],
   initialAgentConfigId = null,
   initialModel = null,
   initialModelParams = null,
@@ -27,7 +30,8 @@ export default function StartSubagentModal({
   onCancel,
   saving = false,
 }) {
-  const [label, setLabel] = useState(defaultLabel);
+  const [label, setLabel] = useState(defaultLabel ?? titleFromPrompt(initialPrompt));
+  const [prompt, setPrompt] = useState(initialPrompt);
   const [generating, setGenerating] = useState(false);
   const [configId, setConfigId] = useState(
     initialAgentConfigId != null ? Number(initialAgentConfigId) : null
@@ -36,16 +40,17 @@ export default function StartSubagentModal({
   const [modelParamsJson, setModelParamsJson] = useState(paramsJsonFromValue(initialModelParams));
 
   const trimmedLabel = label.trim();
+  const trimmedPrompt = prompt.trim();
   const busy = saving || generating;
   const canStart = Boolean(trimmedLabel) && !busy;
-  const canGenerate = Boolean(prompt?.trim()) && !busy;
+  const canGenerate = Boolean(trimmedPrompt) && !busy;
 
   const handleGenerate = async () => {
     if (!canGenerate) return;
     setGenerating(true);
     try {
       const result = await agentsService.generateName({
-        prompt,
+        prompt: trimmedPrompt,
         session_id: sessionId,
       });
       if (result?.name) setLabel(result.name);
@@ -56,10 +61,16 @@ export default function StartSubagentModal({
     }
   };
 
+  const handleRecipeSelect = (recipePrompt) => {
+    setPrompt(recipePrompt);
+    setLabel(titleFromPrompt(recipePrompt));
+  };
+
   const handleConfirm = () => {
     if (!canStart) return;
     onConfirm({
       name: trimmedLabel,
+      prompt: trimmedPrompt,
       agent_config_id: configId,
       model,
       model_params: modelParamsJson,
@@ -76,6 +87,29 @@ export default function StartSubagentModal({
         }}
       >
         <div className="space-y-4">
+          <Field className="" label="Prompt">
+            <textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder="Optional — leave empty to open the builder with no initial message"
+              disabled={busy}
+              rows={4}
+              className={`${INPUT_CLASS} resize-y min-h-[5rem]`}
+            />
+            {recipes.length > 0 ? (
+              <div className="mt-2 space-y-1.5">
+                <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-faint">
+                  <BookOpen className="w-3 h-3 shrink-0" aria-hidden />
+                  Recipes
+                </div>
+                <ChatRecipeCarousel
+                  recipes={recipes}
+                  disabled={busy}
+                  onSelect={handleRecipeSelect}
+                />
+              </div>
+            ) : null}
+          </Field>
           <Field className="" label="Label">
             <div className="relative">
               <TextInput

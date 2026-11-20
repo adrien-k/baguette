@@ -8,6 +8,8 @@ import toast from 'react-hot-toast';
 import { toastError, toastFeathersError } from '../utils/toastError.jsx';
 import { useAgentConfigs } from '../hooks/useAgentConfigs.js';
 import { agentsService, sessionsService, tasksService } from '../feathers.js';
+import StartSubagentModal from '../components/StartSubagentModal.jsx';
+import { useAddBuilderFlow } from '../hooks/useAddBuilderFlow.js';
 import {
   sessionActivityAt,
   sessionNeedsLastViewedUpdate,
@@ -1094,6 +1096,20 @@ export default function Session() {
   const isArchiving =
     !isNewSessionRoute && !gitSession?.archived_at && gitSession?.status === 'archiving';
 
+  const addBuilderFlow = useAddBuilderFlow({
+    session: gitSession,
+    modelAgent: primaryBuilderForChat,
+    onSelectAgent: selectAgent,
+  });
+
+  const handleOpenAddBuilder = useCallback(
+    (prompt = '') => {
+      if (isReadonly || !gitSession?.id) return;
+      addBuilderFlow.openModal(prompt);
+    },
+    [isReadonly, gitSession?.id, addBuilderFlow]
+  );
+
   useLayoutEffect(() => {
     if (isNewSessionRoute) return;
     scrollActiveViewTabIntoView();
@@ -1267,6 +1283,8 @@ export default function Session() {
           sessionsLength={sessions.length}
           onLoadMoreSessions={loadMoreSessions}
           listScope={listScope}
+          onAddBuilder={() => handleOpenAddBuilder('')}
+          showAddBuilder={!isReadonly && !isNewSessionRoute && Boolean(gitSession?.id)}
         />
 
         <div
@@ -1372,6 +1390,9 @@ export default function Session() {
                   onPush={handlePush}
                   pushing={pushing}
                   onDeletePermanently={handleSessionDeletedPermanently}
+                  onOpenAddBuilder={handleOpenAddBuilder}
+                  addBuilderSaving={addBuilderFlow.adding}
+                  addBuilderComposerClearNonce={addBuilderFlow.composerClearNonce}
                 />
               )}
             {!isLoopsView &&
@@ -1531,6 +1552,25 @@ export default function Session() {
         )}
       </div>
 
+      {addBuilderFlow.open && gitSession?.id ? (
+        <StartSubagentModal
+          key={addBuilderFlow.modalKey}
+          sessionId={gitSession.id}
+          initialPrompt={addBuilderFlow.initialPrompt}
+          defaultLabel={addBuilderFlow.initialLabel}
+          recipes={addBuilderFlow.recipes}
+          initialAgentConfigId={
+            gitSession.agent_config_id ?? primaryBuilderForChat?.agent_config_id ?? null
+          }
+          initialModel={primaryBuilderForChat?.model ?? gitSession.model ?? null}
+          initialModelParams={
+            primaryBuilderForChat?.model_params ?? gitSession.model_params ?? null
+          }
+          onConfirm={(opts) => void addBuilderFlow.handleConfirm(opts)}
+          onCancel={addBuilderFlow.closeModal}
+          saving={addBuilderFlow.adding}
+        />
+      ) : null}
       <SessionWorkspaceModals
         pendingAgentConfigId={pendingAgentConfigId}
         session={session}

@@ -24,6 +24,8 @@ export default function MiniSessionEntry({
   routeAgentId = null,
   autoExpandId = null,
   isMobileList = false,
+  onAddBuilder = null,
+  showAddBuilder = false,
 }) {
   const navigate = useNavigate();
   const { currentUser } = useCurrentUser();
@@ -124,6 +126,8 @@ export default function MiniSessionEntry({
             currentAgentId={routeAgentId}
             canManage={isOwner && !isArchived && !isArchiving}
             onSelectAgent={(agent) => navigate(agentChatUrl(agent.id))}
+            onAddBuilder={showAddBuilder && onAddBuilder ? onAddBuilder : undefined}
+            showAddBuilder={showAddBuilder && isCurrent}
             autoExpanded={autoExpanded}
             showOwnerGutter={showOwner}
             sessionHighlighted={isCurrent}

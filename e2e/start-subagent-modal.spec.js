@@ -37,6 +37,9 @@ test.describe('add builder modal (mock)', () => {
 
     await page.getByRole('menuitem', { name: 'Add builder' }).click();
     await expect(page.getByRole('heading', { name: 'Add builder' })).toBeVisible();
+    await expect(
+      page.getByPlaceholder('Optional — leave empty to open the builder with no initial message')
+    ).toHaveValue(DRAFT_PROMPT);
     await expect(page.getByPlaceholder('Builder name')).toHaveValue(PREFILL_LABEL);
     await expect(page.getByLabel('Generate label')).toBeVisible();
     await settleForScreenshot(page);

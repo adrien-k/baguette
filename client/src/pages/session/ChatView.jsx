@@ -24,7 +24,6 @@ import { subscribeSseReconnect } from '../../utils/sseReconnect.js';
 import { mergeFailureToastLabel } from '../../utils/mergeSessionErrors.js';
 import ChatMessage from '../../components/ChatMessage.tsx';
 import ChatWorkSummary from '../../components/chat/ChatWorkSummary.tsx';
-import { titleFromPrompt } from '@baguette/shared/agent-naming.js';
 import { groupChatDisplayMessages } from '@baguette/shared/chat-display-groups.js';
 import {
   collectRunningBashToolsForDock,
@@ -56,7 +55,6 @@ import MergeConfirmModal from '../../components/MergeConfirmModal.jsx';
 import { useMergePrEntry } from '../../hooks/useMergePrEntry.js';
 import ScheduleMessageModal from '../../components/ScheduleMessageModal.jsx';
 import SendRegularlyModal from '../../components/SendRegularlyModal.jsx';
-import StartSubagentModal from '../../components/StartSubagentModal.jsx';
 import ChatMessagesViewport, { CHAT_COLUMN_CLASS } from '../../components/ChatMessagesViewport.jsx';
 import PendingInitialPromptMessage from '../../components/chat/PendingInitialPromptMessage.jsx';
 import { shouldShowPendingInitialPrompt } from './pendingInitialPrompt.js';
@@ -135,6 +133,9 @@ export default function ChatView({
   onPush,
   pushing = false,
   onDeletePermanently,
+  onOpenAddBuilder,
+  addBuilderSaving = false,
+  addBuilderComposerClearNonce = 0,
 }) {
   const { currentUser } = useCurrentUser();
   const isOwner = isSessionOwner(session, currentUser);
@@ -169,7 +170,7 @@ export default function ChatView({
   const [queue, setQueue] = useState([]);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [showRegularlyModal, setShowRegularlyModal] = useState(false);
-  const [showStartSubagentModal, setShowStartSubagentModal] = useState(false);
+  const openedAddBuilderFromComposerRef = useRef(false);
   const [creatingLoop, setCreatingLoop] = useState(false);
   const [tiedLoops, setTiedLoops] = useState([]);
   const { loopEditUrl } = useFilterRoutes();
@@ -651,75 +652,19 @@ export default function ChatView({
     !readonly && showMessageComposer && activeAgent?.agent_type !== 'reviewer';
 
   const openStartSubagentModal = () => {
-    if ((!input.trim() && !files.length) || !session?.id || sending) return;
-    setShowStartSubagentModal(true);
+    if (!session?.id || !onOpenAddBuilder || addBuilderSaving) return;
+    openedAddBuilderFromComposerRef.current = true;
+    onOpenAddBuilder(input.trim());
   };
 
-  const closeStartSubagentModal = () => {
-    if (sending) return;
-    setShowStartSubagentModal(false);
-  };
-
-  const handleStartSubagentBuilder = async ({ name, agent_config_id, model, model_params }) => {
-    if ((!input.trim() && !files.length) || !session?.id || sending) return;
-    const text = input.trim();
-    const label = typeof name === 'string' ? name.trim() : '';
-    if (!label) return;
-    setError(null);
-    setFileError(null);
-    const filesToSend = files;
+  useEffect(() => {
+    if (!addBuilderComposerClearNonce) return;
+    if (!openedAddBuilderFromComposerRef.current) return;
+    setInput('');
     setFiles([]);
-    setSending(true);
-    let content;
-    try {
-      content = await buildContent(text, filesToSend);
-    } catch (err) {
-      setFileError(err?.message ?? 'Failed to read attached files');
-      setInput(text);
-      setFiles(filesToSend);
-      setSending(false);
-      return;
-    }
-    const messageJson = JSON.stringify({ type: 'user', message: { role: 'user', content } });
-    let newAgent;
-    try {
-      const payload = {
-        session_id: session.id,
-        agent_type: 'builder',
-        name: label,
-      };
-      if (agent_config_id != null) payload.agent_config_id = agent_config_id;
-      if (model) payload.model = model;
-      if (model_params !== undefined) payload.model_params = model_params;
-      newAgent = await agentsService.create(payload);
-    } catch (err) {
-      setInput(text);
-      setFiles(filesToSend);
-      toastFeathersError('Failed to add builder', err);
-      setSending(false);
-      return;
-    }
-    setShowStartSubagentModal(false);
-    if (newAgent?.id != null) {
-      try {
-        await sessionsService.patch(session.id, { pinned_agent_id: newAgent.id });
-      } catch (err) {
-        toastError('Failed to pin new builder', err);
-      }
-      onSelectAgent?.(newAgent);
-    }
-    try {
-      await sendMessage(messageJson, { agent: newAgent });
-      setInput('');
-      persistentState.clear();
-    } catch (err) {
-      setInput(text);
-      setFiles(filesToSend);
-      toastFeathersError('Failed to send message', err);
-    } finally {
-      setSending(false);
-    }
-  };
+    persistentState.clear();
+    openedAddBuilderFromComposerRef.current = false;
+  }, [addBuilderComposerClearNonce, persistentState]);
 
   const handleSend = async (e, { force = false } = {}) => {
     e?.preventDefault();
@@ -1144,7 +1089,7 @@ export default function ChatView({
                               <button
                                 type="button"
                                 role="menuitem"
-                                disabled={!canSendDraft}
+                                disabled={addBuilderSaving}
                                 onClick={openStartSubagentModal}
                                 className="w-full text-left px-3 py-2 text-sm text-heading hover:bg-control disabled:opacity-50 disabled:pointer-events-none"
                               >
@@ -1183,19 +1128,6 @@ export default function ChatView({
           onCancel={closeRegularlyModal}
           saving={creatingLoop}
           defaultName={input.trim().split('\n')[0].slice(0, 60)}
-        />
-      )}
-      {showStartSubagentModal && session?.id && (
-        <StartSubagentModal
-          sessionId={session.id}
-          prompt={input.trim()}
-          defaultLabel={titleFromPrompt(input)}
-          initialAgentConfigId={session.agent_config_id ?? agentSource?.agent_config_id ?? null}
-          initialModel={session.model ?? composerModel}
-          initialModelParams={session.model_params ?? composerModelParams}
-          onConfirm={(opts) => void handleStartSubagentBuilder(opts)}
-          onCancel={closeStartSubagentModal}
-          saving={sending}
         />
       )}
       {showMergeModal && (

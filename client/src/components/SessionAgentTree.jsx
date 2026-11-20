@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, Loader2, Pencil, Pin } from 'lucide-react';
+import { ChevronDown, Crown, Loader2, Pencil, Pin, Plus } from 'lucide-react';
 import AgentConfigLogo from './AgentConfigLogo.jsx';
 import AgentTypeIcon from './AgentTypeIcon.jsx';
 import Tooltip from './Tooltip.jsx';
@@ -103,6 +103,25 @@ function AgentTreeEdit({ agent, canManage, renaming, onRequestRename }) {
   );
 }
 
+function AgentTreeAddBuilder({ agent, canManage, renaming, onAddBuilder, showAddBuilder }) {
+  if (!showAddBuilder || !canManage || renaming || !isPrimaryAgent(agent) || !onAddBuilder)
+    return null;
+  return (
+    <button
+      type="button"
+      title="Add builder"
+      aria-label="Add builder"
+      onClick={(e) => {
+        e.stopPropagation();
+        onAddBuilder();
+      }}
+      className="shrink-0 p-0.5 rounded text-faint hover:text-fg"
+    >
+      <Plus className="w-3 h-3" aria-hidden />
+    </button>
+  );
+}
+
 function AgentTreePin({ agent, canManage, renaming, pinnedAgentId, pinSaving, onTogglePin }) {
   if (!canManage || renaming || isPrimaryAgent(agent)) return null;
   const isPinned =
@@ -163,7 +182,7 @@ function AgentTreeCaret({ expanded, onToggle, collapseLocked = false }) {
  * tints match the composer switcher badges; secondary builders stay plain.
  */
 function agentNameToneClass(agent) {
-  if (isPrimaryAgent(agent)) return 'bg-brand/15';
+  if (isPrimaryAgent(agent) || isSecondaryBuilder(agent)) return 'bg-brand/15';
   if (isReviewerAgent(agent)) return 'bg-merged/10';
   if (isSubagentBuilder(agent)) return 'bg-info/10';
   return '';
@@ -182,6 +201,7 @@ function AgentTreeNameLabel({ agent, agentRef, title, isCurrent }) {
         agent
       )} ${isCurrent ? 'text-fg' : 'text-secondary'}`}
     >
+      {isPrimaryAgent(agent) ? <Crown className="w-3 h-3 shrink-0 text-brand" aria-hidden /> : null}
       {agentRef != null ? (
         <span className="shrink-0 font-mono text-[10px] text-faint tabular-nums">#{agentRef}</span>
       ) : null}
@@ -221,6 +241,8 @@ function AgentTreeRow({ agent, ...rest }) {
     pinnedAgentId,
     pinSaving,
     onTogglePin,
+    onAddBuilder,
+    showAddBuilder,
     sessionHighlighted,
   } = rest;
   const isCurrent = currentAgentId != null && Number(currentAgentId) === agent.id;
@@ -279,6 +301,13 @@ function AgentTreeRow({ agent, ...rest }) {
           )}
           <AgentTreeStatus status={agent.status} />
         </button>
+        <AgentTreeAddBuilder
+          agent={agent}
+          canManage={canManage}
+          renaming={renaming}
+          onAddBuilder={onAddBuilder}
+          showAddBuilder={showAddBuilder}
+        />
         <AgentTreePin
           agent={agent}
           canManage={canManage}
@@ -332,6 +361,8 @@ export default function SessionAgentTree({
   canManage,
   onSelectAgent,
   onPinnedAgentIdChange,
+  onAddBuilder,
+  showAddBuilder = false,
   autoExpanded = false,
   showOwnerGutter = false,
   sessionHighlighted = false,
@@ -422,6 +453,8 @@ export default function SessionAgentTree({
     pinnedAgentId,
     pinSaving,
     onTogglePin: togglePin,
+    onAddBuilder,
+    showAddBuilder,
     sessionHighlighted,
   };
 
