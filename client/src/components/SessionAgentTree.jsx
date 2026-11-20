@@ -27,6 +27,9 @@ import { parseModelField } from '../utils/models.js';
 const PRIMARY_BUILDER_ROW_TOOLTIP =
   'This session’s primary builder. Messages you send without picking another agent are delivered here by default.';
 
+const SUBAGENT_ROW_TOOLTIP =
+  'MCP subagent started by a builder (StartSubagent). Chat here is read-only — new work is sent via MCP, not the composer.';
+
 /** Status glyph between agent name and model — hidden for quiet idle rows. */
 function AgentTreeStatus({ status }) {
   if (isAgentTurnActive(status) || status === 'provisioning') {
@@ -208,14 +211,12 @@ function AgentTreeNameLabel({ agent, agentRef, title, isCurrent }) {
       <span className="truncate">{title}</span>
     </span>
   );
-  if (!isPrimaryAgent(agent)) return nameLabel;
+  let tooltip = null;
+  if (isPrimaryAgent(agent)) tooltip = PRIMARY_BUILDER_ROW_TOOLTIP;
+  else if (isSubagentBuilder(agent)) tooltip = SUBAGENT_ROW_TOOLTIP;
+  if (!tooltip) return nameLabel;
   return (
-    <Tooltip
-      content={PRIMARY_BUILDER_ROW_TOOLTIP}
-      wrap
-      wide
-      className="min-w-0 max-w-full inline-flex"
-    >
+    <Tooltip content={tooltip} wrap wide className="min-w-0 max-w-full inline-flex">
       {nameLabel}
     </Tooltip>
   );
