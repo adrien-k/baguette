@@ -106,7 +106,6 @@ export default function AgentDefaultsSection({ settings, onSave }) {
     hydrateSessionModelsSection(settings);
     hydrateMcpSection(settings);
     hydrateOptionsSection(settings);
-     
   }, [settings]);
 
   const buildModelPayload = (model, paramsJson) => {
