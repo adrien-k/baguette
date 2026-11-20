@@ -150,7 +150,7 @@ Baguette connects to Slack over [Socket Mode](https://api.slack.com/apis/socket-
    SLACK_BOT_TOKEN=xoxb-…
    SLACK_APP_TOKEN=xapp-…
    ```
-7. In Slack, invite the bot to a channel (`/invite @<your app name>`) and tag it: `@<your app name> fix the flaky login test`. The first time, it replies privately with a link: log in to Baguette, confirm that the Slack account is yours, then tag it again. Set a default builder model first (Settings → Agent), or the bot tells you to.
+7. In Slack, invite the bot to a channel (`/invite @<your app name>`) and tag it: `@<your app name> fix the flaky login test`. The first time, it replies privately with a link: log in to Baguette, confirm that the Slack account is yours, then tag it again. Without a default builder model (Settings → Agent) the assistant falls back to Haiku or Composer.
 
 Say which repository you mean in plain words; the assistant asks when it is unclear. You can limit an app to chosen repositories under **Settings → Integrations**.
 

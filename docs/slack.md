@@ -32,9 +32,10 @@ list); after that every thread, in any channel, goes to the same one.
   assistant answers only if the message is meant for it (otherwise it stays silent). Channel
   chatter and DMs are ignored. Untagged messages need the `message.channels` and `message.groups`
   bot events (README, step 4).
-- **No default model, no assistant.** The assistant and the sessions it starts use your default
-  builder model (Settings → Agent). Without one the bot answers with that instruction and creates
-  nothing.
+- **Which model.** The assistant and the sessions it starts use your default builder model
+  (Settings → Agent). Without one, the assistant itself falls back to Haiku, else Composer, from
+  your agent configurations (the newest version found). If none of them offers either, the bot says
+  so and points to Settings → Agent; nothing is created.
 - **Which repos.** The assistant picks the repository from what you wrote and asks when it is
   unclear. Under **Settings → Integrations → Slack** an app can be limited to chosen repositories;
   the assistant then only sees and starts sessions in those.

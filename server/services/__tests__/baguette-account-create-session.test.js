@@ -416,6 +416,23 @@ describe('CreateSession for Slack assistants', () => {
     expect(sessionParams).not.toHaveProperty('initialMessageMeta');
   });
 
+  it('lets the caller choose the model when the user has no default', async () => {
+    const resolveBuilderModel = vi
+      .fn()
+      .mockResolvedValue({ agent_config_id: configId, model: 'haiku', model_params: null });
+    const result = parseMcpToolResult(await tool({ resolveBuilderModel }).handler(repoArgs));
+    expect(result.ok).toBe(true);
+    expect(resolveBuilderModel).toHaveBeenCalledWith(
+      db,
+      user.id,
+      expect.objectContaining({ repo_id: 1 })
+    );
+    expect(createSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ agent_config_id: configId, model: 'haiku', agent_sdk: 'claude' }),
+      expect.any(Object)
+    );
+  });
+
   it('fails with the settings instructions when no builder model is configured', async () => {
     const result = parseMcpToolResult(await tool().handler(repoArgs));
     expect(result.ok).toBe(false);

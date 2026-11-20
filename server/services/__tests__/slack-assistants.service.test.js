@@ -80,6 +80,7 @@ describe('ensure', () => {
     expect(session.slack_app_id).toBe(appId);
     expect(calls).toHaveLength(1);
     expect(calls[0].args).toEqual({ is_global: true, initial_prompt: 'first message' });
+    expect(calls[0].context.resolveBuilderModel).toBeTypeOf('function');
     expect(calls[0].context).toMatchObject({
       slackAppId: appId,
       initialMessageMeta: meta,

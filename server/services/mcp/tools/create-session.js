@@ -52,6 +52,8 @@ export function createCreateSessionTool(ctx) {
     callerAgent,
   } = ctx;
   const mode = normalizeSubagentDefaultMode(user?.subagent_default_mode);
+  // Callers (the Slack assistant) may add a fallback for owners without a default model.
+  const resolveBuilderModel = ctx.resolveBuilderModel ?? resolveMcpBuilderModel;
   return {
     name: 'CreateSession',
     description: createSessionDescription(mode),
@@ -160,7 +162,7 @@ export function createCreateSessionTool(ctx) {
       const db = app.get('db');
       let resolved;
       try {
-        resolved = await resolveMcpBuilderModel(db, userId, {
+        resolved = await resolveBuilderModel(db, userId, {
           preset_model_id: preset_model_id ?? null,
           agent_config_id: agent_config_id ?? null,
           model: model ?? null,

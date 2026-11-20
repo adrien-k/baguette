@@ -1,6 +1,7 @@
 import { KnexService } from '@feathersjs/knex';
 import { createAccountContext } from '../mcp/lib/account-context.js';
 import { createCreateSessionTool } from '../mcp/tools/create-session.js';
+import { createAssistantModelResolver } from '../slack-assistant-model.js';
 import { parseRepoScope } from '../slack-repo-scope.js';
 
 const ASSISTANT_LABEL = 'Slack assistant';
@@ -54,6 +55,7 @@ class SlackAssistantsService extends KnexService {
     const tool = createCreateSessionTool({
       ...createAccountContext(user, this.app),
       slackAppId: slackApp.id,
+      resolveBuilderModel: createAssistantModelResolver(this.app),
       initialMessageMeta: messageMeta,
       initialLabel: ASSISTANT_LABEL,
     });
