@@ -2,13 +2,15 @@ import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } fr
 import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { fileToContentBlock } from '../utils/fileToContentBlock.js';
-import { useSessionsContext } from '../context/SessionsContext.jsx';
 import { PushApprovalUiProvider } from '../context/PushApprovalUiContext.jsx';
+import { useSessionsContext } from '../context/SessionsContext.jsx';
 import { useRepoContext, ALL_REPOS, GLOBAL_SCOPE, SHARED_SCOPE } from '../context/RepoContext.jsx';
 import toast from 'react-hot-toast';
 import { toastError, toastFeathersError } from '../utils/toastError.jsx';
 import { useAgentConfigs } from '../hooks/useAgentConfigs.js';
 import { agentsService, sessionsService, tasksService } from '../feathers.js';
+import StartSubagentModal from '../components/StartSubagentModal.jsx';
+import { useAddBuilderFlow } from '../hooks/useAddBuilderFlow.js';
 import {
   sessionActivityAt,
   sessionNeedsLastViewedUpdate,
@@ -77,7 +79,8 @@ import { isGlobalSessionDisabledView } from './session/sessionViews.js';
 
 export default function Session() {
   const { id: routeSessionId, repoId, loopId: routeLoopId } = useParams();
-  const { pathname } = useLocation();
+  const location = useLocation();
+  const { pathname } = location;
   const isNewSessionRoute = isNewSessionRouteId(routeSessionId) || isSessionHomePathname(pathname);
   const isNewLoopRoute = isNewLoopRouteId(routeLoopId) || isLoopHomePathname(pathname);
   const fromAllSessions = isAllSessionsPath(pathname);
@@ -153,8 +156,22 @@ export default function Session() {
     if (parsedId != null && agentsForChat.some((a) => a.id === parsedId)) {
       return agentsForChat.find((a) => a.id === parsedId) ?? null;
     }
+    const pinnedId = sessionFromHook?.id === sessionId ? sessionFromHook?.pinned_agent_id : null;
+    if (
+      pinnedId != null &&
+      agentsForChat.some((a) => a.id === pinnedId && a.agent_type === 'builder')
+    ) {
+      return agentsForChat.find((a) => a.id === pinnedId) ?? null;
+    }
     return primaryBuilderForChat ?? agentsForChat[0] ?? null;
-  }, [agentsForChat, agentParam, primaryBuilderForChat]);
+  }, [
+    agentsForChat,
+    agentParam,
+    primaryBuilderForChat,
+    sessionFromHook?.pinned_agent_id,
+    sessionFromHook?.id,
+    sessionId,
+  ]);
   const {
     messages: hookMessages,
     loading: messagesLoading,
@@ -317,11 +334,8 @@ export default function Session() {
     [setSearchParams]
   );
   const handleReviewerCleared = useCallback(() => {
-    if (activeView === 'review') return;
-    if (activeAgent?.agent_type === 'reviewer' && primaryBuilder) {
-      selectAgent(primaryBuilder);
-    }
-  }, [activeView, activeAgent, primaryBuilder, selectAgent]);
+    if (primaryBuilder) selectAgent(primaryBuilder);
+  }, [primaryBuilder, selectAgent]);
   const [creatingSession, setCreatingSession] = useState(false);
   const [createSessionError, setCreateSessionError] = useState(null);
   const [newSessionFormKey, setNewSessionFormKey] = useState(0);
@@ -958,12 +972,8 @@ export default function Session() {
             repos.find((r) => r.full_name === repoFullName)
           ),
         };
-    if (usageLimitAction) {
-      params.usage_limit_action = usageLimitAction;
-      if (usageLimitAction === 'continue') {
-        params.usage_limit = usageLimit ?? null;
-      }
-    }
+    if (usageLimitAction) params.usage_limit_action = usageLimitAction;
+    if (usageLimit != null) params.usage_limit = usageLimit;
     if (agentConfigId) params.agent_config_id = agentConfigId;
     if (model) params.model = model;
     if (modelParams) params.model_params = modelParams;
@@ -1113,6 +1123,82 @@ export default function Session() {
       gitSession?.status === 'archived');
   const isArchiving =
     !isNewSessionRoute && !gitSession?.archived_at && gitSession?.status === 'archiving';
+
+  const addBuilderFlow = useAddBuilderFlow({
+    session: gitSession,
+    modelAgent: primaryBuilderForChat,
+    onSelectAgent: selectAgent,
+  });
+  const {
+    open: addBuilderOpen,
+    modalKey: addBuilderModalKey,
+    initialPrompt: addBuilderInitialPrompt,
+    initialLabel: addBuilderInitialLabel,
+    adding: addBuilderSaving,
+    composerClearNonce: addBuilderComposerClearNonce,
+    recipes: addBuilderRecipes,
+    openModal: openAddBuilderModal,
+    closeModal: closeAddBuilderModal,
+    handleConfirm: confirmAddBuilder,
+  } = addBuilderFlow;
+
+  const handleOpenAddBuilder = useCallback(
+    (arg = '') => {
+      if (isReadonly || !gitSession?.id) return;
+      openAddBuilderModal(arg);
+    },
+    [isReadonly, gitSession?.id, openAddBuilderModal]
+  );
+
+  const isSessionRowAddBuilderBlocked = (sessionRow) => {
+    if (!sessionRow) return true;
+    return (
+      !!sessionRow.archived_at ||
+      sessionRow.status === 'archiving' ||
+      sessionRow.status === 'archived'
+    );
+  };
+
+  const handleAddBuilderFromSidebar = useCallback(
+    (sessionRow) => {
+      if (!sessionRow?.id || isSessionRowAddBuilderBlocked(sessionRow)) return;
+      if (String(sessionRow.id) === String(routeSessionId) && gitSession?.id) {
+        handleOpenAddBuilder('');
+        return;
+      }
+      const base = sessionUrl(sessionRow.id);
+      navigate(`${base}?view=chat`, { state: { openAddBuilder: true } });
+    },
+    [routeSessionId, gitSession?.id, handleOpenAddBuilder, navigate, sessionUrl]
+  );
+
+  const pendingOpenAddBuilderRef = useRef(false);
+
+  useEffect(() => {
+    pendingOpenAddBuilderRef.current = false;
+  }, [routeSessionId]);
+
+  useEffect(() => {
+    if (!location.state?.openAddBuilder || isReadonly) return;
+    if (!gitSession?.id || String(gitSession.id) !== String(routeSessionId)) return;
+    if (pendingOpenAddBuilderRef.current) return;
+    pendingOpenAddBuilderRef.current = true;
+    const { openAddBuilder: _drop, ...restState } = location.state ?? {};
+    navigate(
+      { pathname: location.pathname, search: location.search },
+      { replace: true, state: Object.keys(restState).length ? restState : null }
+    );
+    openAddBuilderModal('');
+  }, [
+    location.pathname,
+    location.search,
+    location.state,
+    routeSessionId,
+    gitSession?.id,
+    isReadonly,
+    navigate,
+    openAddBuilderModal,
+  ]);
 
   useLayoutEffect(() => {
     if (isNewSessionRoute) return;
@@ -1288,6 +1374,8 @@ export default function Session() {
             sessionsLength={sessions.length}
             onLoadMoreSessions={loadMoreSessions}
             listScope={listScope}
+            onAddBuilder={handleAddBuilderFromSidebar}
+            showAddBuilder={!isNewSessionRoute}
           />
 
           <div
@@ -1330,6 +1418,7 @@ export default function Session() {
                   builderAllowRepoChoice={loopWorkspace.builderAllowRepoChoice}
                   onCreateLoop={loopWorkspace.handleCreateLoop}
                   onUpdateLoop={loopWorkspace.handleUpdateLoop}
+                  onCancelLoopEdit={loopWorkspace.handleCancelLoopEdit}
                   onDeleteLoop={() => loopWorkspace.handleDeleteLoop()}
                   runSessions={loopWorkspace.runSessions}
                   runsLoading={loopWorkspace.runsLoading}
@@ -1392,6 +1481,10 @@ export default function Session() {
                     onPush={handlePush}
                     pushing={pushing}
                     onDeletePermanently={handleSessionDeletedPermanently}
+                    onOpenAddBuilder={handleOpenAddBuilder}
+                    addBuilderOpen={addBuilderOpen}
+                    addBuilderSaving={addBuilderSaving}
+                    addBuilderComposerClearNonce={addBuilderComposerClearNonce}
                   />
                 )}
               {!isLoopsView &&
@@ -1551,6 +1644,25 @@ export default function Session() {
           )}
         </div>
 
+        {addBuilderOpen && gitSession?.id ? (
+          <StartSubagentModal
+            key={addBuilderModalKey}
+            sessionId={gitSession.id}
+            initialPrompt={addBuilderInitialPrompt}
+            defaultLabel={addBuilderInitialLabel}
+            recipes={addBuilderRecipes}
+            initialAgentConfigId={
+              gitSession.agent_config_id ?? primaryBuilderForChat?.agent_config_id ?? null
+            }
+            initialModel={primaryBuilderForChat?.model ?? gitSession.model ?? null}
+            initialModelParams={
+              primaryBuilderForChat?.model_params ?? gitSession.model_params ?? null
+            }
+            onConfirm={(opts) => void confirmAddBuilder(opts)}
+            onCancel={closeAddBuilderModal}
+            saving={addBuilderSaving}
+          />
+        ) : null}
         <SessionWorkspaceModals
           pendingAgentConfigId={pendingAgentConfigId}
           session={session}

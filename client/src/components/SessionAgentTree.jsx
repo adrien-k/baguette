@@ -1,10 +1,20 @@
 import { useState } from 'react';
-import { ChevronDown, Loader2, Pencil } from 'lucide-react';
+import {
+  Bot,
+  ChevronDown,
+  ClipboardCheck,
+  Crown,
+  Loader2,
+  Network,
+  Pencil,
+  Pin,
+  Plus,
+} from 'lucide-react';
 import AgentConfigLogo from './AgentConfigLogo.jsx';
 import AgentTypeIcon from './AgentTypeIcon.jsx';
 import Tooltip from './Tooltip.jsx';
 import { SessionStatusIcon } from './SessionCard.jsx';
-import { agentsService } from '../feathers.js';
+import { agentsService, sessionsService } from '../feathers.js';
 import { toastError } from '../utils/toastError.jsx';
 import { buildSessionAgentList } from '../utils/sessionAgentList.js';
 import {
@@ -23,6 +33,27 @@ import { formatUsd } from '../utils/usageSeries.js';
 import { useAgentConfigContext } from '../context/AgentConfigContext.jsx';
 import { useAgentConfigModels } from '../hooks/useAgentConfigModels.js';
 import { parseModelField } from '../utils/models.js';
+
+export const PRIMARY_BUILDER_ROW_TOOLTIP_DEFAULT =
+  'This session’s primary builder. Messages sent without picking an agent are delivered here by default.';
+
+export const PRIMARY_BUILDER_ROW_TOOLTIP_PINNED_OTHER =
+  'This session’s primary builder. Another builder is pinned, so that chat opens and receives messages until you pick an agent.';
+
+export function primaryBuilderRowTooltip(pinnedAgentId, primaryAgentId) {
+  const pinned = pinnedAgentId != null && pinnedAgentId !== '' ? Number(pinnedAgentId) : null;
+  if (pinned != null && primaryAgentId != null && pinned !== Number(primaryAgentId)) {
+    return PRIMARY_BUILDER_ROW_TOOLTIP_PINNED_OTHER;
+  }
+  return PRIMARY_BUILDER_ROW_TOOLTIP_DEFAULT;
+}
+
+const SECONDARY_BUILDER_ROW_TOOLTIP = 'Extra builder added from the UI';
+
+const REVIEWER_ROW_TOOLTIP =
+  'Session reviewer — reviews the diff and manage issues on the Issues tab';
+
+const SUBAGENT_ROW_TOOLTIP = 'Subagent started and managed by a builder. Chat here is read-only.';
 
 /** Status glyph between agent name and model — hidden for quiet idle rows. */
 function AgentTreeStatus({ status }) {
@@ -93,9 +124,55 @@ function AgentTreeEdit({ agent, canManage, renaming, onRequestRename }) {
         e.stopPropagation();
         onRequestRename(agent);
       }}
-      className="shrink-0 p-0.5 rounded text-faint hover:text-fg md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+      className="shrink-0 p-0.5 rounded text-faint hover:text-fg md:opacity-0 md:group-hover/row:opacity-100 focus-visible:opacity-100 transition-opacity"
     >
       <Pencil className="w-3 h-3" aria-hidden />
+    </button>
+  );
+}
+
+function AgentTreeAddBuilder({ agent, canManage, renaming, onAddBuilder, showAddBuilder }) {
+  if (!showAddBuilder || !canManage || renaming || !isPrimaryAgent(agent) || !onAddBuilder)
+    return null;
+  return (
+    <button
+      type="button"
+      title="Add builder"
+      aria-label="Add builder"
+      onClick={(e) => {
+        e.stopPropagation();
+        onAddBuilder();
+      }}
+      className="shrink-0 p-0.5 rounded text-faint hover:text-fg"
+    >
+      <Plus className="w-3 h-3" aria-hidden />
+    </button>
+  );
+}
+
+function AgentTreePin({ agent, canManage, renaming, pinnedAgentId, pinSaving, onTogglePin }) {
+  if (!canManage || renaming || !isSecondaryBuilder(agent)) return null;
+  const isPinned =
+    pinnedAgentId != null && pinnedAgentId !== '' && Number(pinnedAgentId) === agent.id;
+  const title = isPinned ? 'Unpin agent' : 'Pin agent';
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={`${title} — ${agentDisplayTitle(agent)}`}
+      aria-pressed={isPinned}
+      disabled={pinSaving}
+      onClick={(e) => {
+        e.stopPropagation();
+        onTogglePin(agent);
+      }}
+      className={`shrink-0 p-0.5 rounded transition-opacity disabled:opacity-40 focus-visible:opacity-100 ${
+        isPinned
+          ? 'text-accent'
+          : 'text-faint hover:text-fg md:opacity-0 md:group-hover/row:opacity-100'
+      }`}
+    >
+      <Pin className={`w-3 h-3 ${isPinned ? 'fill-current' : ''}`} aria-hidden />
     </button>
   );
 }
@@ -116,7 +193,7 @@ function AgentTreeCaret({ expanded, onToggle, collapseLocked = false }) {
       aria-expanded={expanded}
       aria-disabled={locked || undefined}
       aria-label={agentTreeCaretLabel(expanded, locked)}
-      title={locked ? 'Open the primary agent to hide the others' : undefined}
+      title={locked ? 'Open the default agent to hide the others' : undefined}
       onClick={locked ? undefined : onToggle}
       className={`shrink-0 -my-1 p-0.5 transition-colors ${
         locked ? 'cursor-default text-faint/40' : 'text-faint hover:text-fg'
@@ -131,20 +208,60 @@ function AgentTreeCaret({ expanded, onToggle, collapseLocked = false }) {
 }
 
 /**
- * Quiet pill behind the agent name: primary builder, reviewer, and subagent
- * tints match the composer switcher badges; secondary builders stay plain.
+ * Quiet pill behind the agent name: primary and extra builders share brand;
+ * reviewer uses merged tint. Subagents use a leading icon instead of fill.
  */
 function agentNameToneClass(agent) {
-  if (isPrimaryAgent(agent)) return 'bg-brand/15';
+  if (isPrimaryAgent(agent) || isSecondaryBuilder(agent)) return 'bg-brand/15';
   if (isReviewerAgent(agent)) return 'bg-merged/10';
-  if (isSubagentBuilder(agent)) return 'bg-info/10';
   return '';
+}
+
+function AgentTreeRoleIcon({ agent, pinnedAgentId }) {
+  let tooltip = null;
+  let icon = null;
+  if (isPrimaryAgent(agent)) {
+    tooltip = primaryBuilderRowTooltip(pinnedAgentId, agent.id);
+    icon = <Crown className="w-3 h-3 text-brand" aria-label="Primary builder" />;
+  } else if (isSecondaryBuilder(agent)) {
+    tooltip = SECONDARY_BUILDER_ROW_TOOLTIP;
+    icon = <Bot className="w-3 h-3 text-accent" strokeWidth={2} aria-hidden />;
+  } else if (isReviewerAgent(agent)) {
+    tooltip = REVIEWER_ROW_TOOLTIP;
+    icon = <ClipboardCheck className="w-3 h-3 text-merged" strokeWidth={2} aria-hidden />;
+  } else if (isSubagentBuilder(agent)) {
+    tooltip = SUBAGENT_ROW_TOOLTIP;
+    icon = <Network className="w-3 h-3 text-info" strokeWidth={2} aria-hidden />;
+  }
+  if (!tooltip || !icon) return null;
+  return (
+    <Tooltip content={tooltip} wrap wide className="inline-flex shrink-0">
+      {icon}
+    </Tooltip>
+  );
 }
 
 function selectedAgentRowBorderClass(isCurrent, sessionHighlighted) {
   if (!isCurrent) return 'border-transparent hover:bg-control/50';
   if (sessionHighlighted) return 'border-faint';
   return 'border-control-hover';
+}
+
+function AgentTreeNameLabel({ agent, agentRef, title, isCurrent, pinnedAgentId }) {
+  const nameLabel = (
+    <span
+      className={`min-w-0 truncate rounded px-1 text-[11px] leading-4 inline-flex items-center gap-1 ${agentNameToneClass(
+        agent
+      )} ${isCurrent ? 'text-fg' : 'text-secondary'}`}
+    >
+      <AgentTreeRoleIcon agent={agent} pinnedAgentId={pinnedAgentId} />
+      {agentRef != null ? (
+        <span className="shrink-0 font-mono text-[10px] text-faint tabular-nums">#{agentRef}</span>
+      ) : null}
+      <span className="truncate">{title}</span>
+    </span>
+  );
+  return nameLabel;
 }
 
 function AgentTreeRow({ agent, ...rest }) {
@@ -164,6 +281,11 @@ function AgentTreeRow({ agent, ...rest }) {
     onCommitRename,
     onCancelRename,
     onRequestRename,
+    pinnedAgentId,
+    pinSaving,
+    onTogglePin,
+    onAddBuilder,
+    showAddBuilder,
     sessionHighlighted,
   } = rest;
   const isCurrent = currentAgentId != null && Number(currentAgentId) === agent.id;
@@ -179,7 +301,7 @@ function AgentTreeRow({ agent, ...rest }) {
         data-agent-name={agent.name || title}
         data-selected={isCurrent ? 'true' : 'false'}
         aria-current={isCurrent ? 'true' : undefined}
-        className={`group flex items-center gap-1.5 rounded-md border py-1 pl-1 pr-1.5 transition-colors ${selectedAgentRowBorderClass(
+        className={`group/row flex items-center gap-1.5 rounded-md border py-1 pl-1 pr-1.5 transition-colors ${selectedAgentRowBorderClass(
           isCurrent,
           sessionHighlighted
         )}`}
@@ -213,21 +335,31 @@ function AgentTreeRow({ agent, ...rest }) {
               className="h-4 flex-1 min-w-0 rounded border border-line bg-control px-1.5 py-0 text-xs text-heading"
             />
           ) : (
-            <span
-              className={`min-w-0 truncate rounded px-1 text-[11px] leading-4 inline-flex items-center gap-1 ${agentNameToneClass(
-                agent
-              )} ${isCurrent ? 'text-fg' : 'text-secondary'}`}
-            >
-              {agentRef != null ? (
-                <span className="shrink-0 font-mono text-[10px] text-faint tabular-nums">
-                  #{agentRef}
-                </span>
-              ) : null}
-              <span className="truncate">{title}</span>
-            </span>
+            <AgentTreeNameLabel
+              agent={agent}
+              agentRef={agentRef}
+              title={title}
+              isCurrent={isCurrent}
+              pinnedAgentId={pinnedAgentId}
+            />
           )}
           <AgentTreeStatus status={agent.status} />
         </button>
+        <AgentTreeAddBuilder
+          agent={agent}
+          canManage={canManage}
+          renaming={renaming}
+          onAddBuilder={onAddBuilder}
+          showAddBuilder={showAddBuilder}
+        />
+        <AgentTreePin
+          agent={agent}
+          canManage={canManage}
+          renaming={renaming}
+          pinnedAgentId={pinnedAgentId}
+          pinSaving={pinSaving}
+          onTogglePin={onTogglePin}
+        />
         <AgentTreeEdit
           agent={agent}
           canManage={canManage}
@@ -267,35 +399,46 @@ function AgentTreeRow({ agent, ...rest }) {
  */
 export default function SessionAgentTree({
   agents,
+  sessionId,
+  pinnedAgentId = null,
   currentAgentId,
   canManage,
   onSelectAgent,
+  onPinnedAgentIdChange,
+  onAddBuilder,
+  showAddBuilder = false,
   autoExpanded = false,
   showOwnerGutter = false,
   sessionHighlighted = false,
 }) {
-  const list = buildSessionAgentList(agents);
+  const list = buildSessionAgentList(agents, pinnedAgentId);
   const [renamingAgentId, setRenamingAgentId] = useState(null);
   const [renameValue, setRenameValue] = useState('');
   const [renameSaving, setRenameSaving] = useState(false);
+  const [pinSaving, setPinSaving] = useState(false);
   // null = follow the auto-expanded default; true/false = manual caret override.
   const [manuallyExpanded, setManuallyExpanded] = useState(null);
 
   if (!list.length) return null;
 
-  const primary = list.find(isPrimaryAgent) ?? null;
-  const others = primary ? list.filter((a) => a.id !== primary.id) : list;
-  const grouped = Boolean(primary);
-  const collapseLocked = isAgentTreeCollapseLocked(list, currentAgentId);
+  const primaryAgent = list.find(isPrimaryAgent) ?? null;
+  const headAgent = list[0] ?? null;
+  const tailAfterHead = headAgent ? list.slice(1) : list;
+  const primaryPinnedSlot =
+    primaryAgent && headAgent && primaryAgent.id !== headAgent.id ? primaryAgent : null;
+  const collapsibleOthers = primaryPinnedSlot
+    ? tailAfterHead.filter((a) => a.id !== primaryAgent.id)
+    : tailAfterHead;
+  const grouped = Boolean(headAgent) && collapsibleOthers.length > 0;
+  const collapseLocked = isAgentTreeCollapseLocked(list, currentAgentId, headAgent?.id);
   const expanded = collapseLocked || (manuallyExpanded ?? autoExpanded);
-  const caret =
-    grouped && others.length > 0
-      ? {
-          expanded,
-          collapseLocked,
-          onToggle: () => setManuallyExpanded(!expanded),
-        }
-      : null;
+  const caret = grouped
+    ? {
+        expanded,
+        collapseLocked,
+        onToggle: () => setManuallyExpanded(!expanded),
+      }
+    : null;
 
   const startRename = (agent) => {
     if (!isSecondaryBuilder(agent)) return;
@@ -307,6 +450,22 @@ export default function SessionAgentTree({
     if (renameSaving) return;
     setRenamingAgentId(null);
     setRenameValue('');
+  };
+
+  const togglePin = async (agent) => {
+    if (pinSaving || sessionId == null) return;
+    const isPinned =
+      pinnedAgentId != null && pinnedAgentId !== '' && Number(pinnedAgentId) === agent.id;
+    const nextId = isPinned ? null : agent.id;
+    setPinSaving(true);
+    try {
+      await sessionsService.patch(sessionId, { pinned_agent_id: nextId });
+      onPinnedAgentIdChange?.(nextId);
+    } catch (err) {
+      toastError(isPinned ? 'Failed to unpin agent' : 'Failed to pin agent', err);
+    } finally {
+      setPinSaving(false);
+    }
   };
 
   const commitRename = async (agent) => {
@@ -340,10 +499,19 @@ export default function SessionAgentTree({
     onCommitRename: commitRename,
     onCancelRename: cancelRename,
     onRequestRename: startRename,
+    pinnedAgentId,
+    pinSaving,
+    onTogglePin: togglePin,
+    onAddBuilder,
+    showAddBuilder,
     sessionHighlighted,
   };
 
-  const visibleAgents = [...(primary ? [primary] : []), ...(!grouped || expanded ? others : [])];
+  const visibleAgents = [
+    ...(headAgent ? [headAgent] : []),
+    ...(primaryPinnedSlot ? [primaryPinnedSlot] : []),
+    ...(!grouped || expanded ? collapsibleOthers : []),
+  ];
 
   return (
     <div className="mt-0.5 flex items-start gap-2">

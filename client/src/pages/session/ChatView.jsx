@@ -24,7 +24,6 @@ import { subscribeSseReconnect } from '../../utils/sseReconnect.js';
 import { mergeFailureToastLabel } from '../../utils/mergeSessionErrors.js';
 import ChatMessage from '../../components/ChatMessage.tsx';
 import ChatWorkSummary from '../../components/chat/ChatWorkSummary.tsx';
-import { titleFromPrompt } from '@baguette/shared/agent-naming.js';
 import { groupChatDisplayMessages } from '@baguette/shared/chat-display-groups.js';
 import {
   collectRunningBashToolsForDock,
@@ -48,7 +47,7 @@ import PrDraftToggleButton, {
 import QueuedScheduledDrawer from '../../components/chat/QueuedScheduledDrawer.tsx';
 import SessionTodosDrawer from '../../components/chat/SessionTodosDrawer.tsx';
 import { useComposerSessionTodos } from '../../hooks/useComposerSessionTodos.js';
-import { fileToContentBlock } from '../../utils/fileToContentBlock.js';
+import { buildUserMessageContent } from '../../utils/buildUserMessageContent.js';
 import { usePersistentState } from '../../hooks/usePersistentState.js';
 import { useCurrentUser } from '../../context/CurrentUserContext.jsx';
 import { isSessionOwner } from '@baguette/shared/session-sharing.js';
@@ -56,7 +55,6 @@ import MergeConfirmModal from '../../components/MergeConfirmModal.jsx';
 import { useMergePrEntry } from '../../hooks/useMergePrEntry.js';
 import ScheduleMessageModal from '../../components/ScheduleMessageModal.jsx';
 import SendRegularlyModal from '../../components/SendRegularlyModal.jsx';
-import StartSubagentModal from '../../components/StartSubagentModal.jsx';
 import ChatMessagesViewport, { CHAT_COLUMN_CLASS } from '../../components/ChatMessagesViewport.jsx';
 import PendingInitialPromptMessage from '../../components/chat/PendingInitialPromptMessage.jsx';
 import { shouldShowPendingInitialPrompt } from './pendingInitialPrompt.js';
@@ -135,6 +133,10 @@ export default function ChatView({
   onPush,
   pushing = false,
   onDeletePermanently,
+  onOpenAddBuilder,
+  addBuilderOpen = false,
+  addBuilderSaving = false,
+  addBuilderComposerClearNonce = 0,
 }) {
   const { currentUser } = useCurrentUser();
   const isOwner = isSessionOwner(session, currentUser);
@@ -169,7 +171,8 @@ export default function ChatView({
   const [queue, setQueue] = useState([]);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [showRegularlyModal, setShowRegularlyModal] = useState(false);
-  const [showStartSubagentModal, setShowStartSubagentModal] = useState(false);
+  const openedAddBuilderFromComposerRef = useRef(false);
+  const addBuilderClearNonceAtOpenRef = useRef(0);
   const [creatingLoop, setCreatingLoop] = useState(false);
   const [tiedLoops, setTiedLoops] = useState([]);
   const { loopEditUrl } = useFilterRoutes();
@@ -241,7 +244,9 @@ export default function ChatView({
     [costByAgentId]
   );
   const activeAgentCostLabel = activeAgent ? agentUsageCostLabel(activeAgent) : null;
-  const canSendDraft = Boolean((input.trim() || files.length) && session?.id && !sending);
+  const canSendDraft = Boolean(
+    (input.trim() || files.length) && session?.id && !sending && !addBuilderSaving
+  );
   const canQuickSend = Boolean(session?.id && activeAgent?.id);
   const runningAgentCount = useMemo(
     () => agents.filter((a) => isAgentTurnActive(a.status)).length,
@@ -253,7 +258,9 @@ export default function ChatView({
       ? agentSource.agent_sdk.charAt(0).toUpperCase() + agentSource.agent_sdk.slice(1)
       : 'Agent';
   const hasInputMessage = Boolean(input.trim());
-  const canOpenScheduleMenu = Boolean(hasInputMessage && session?.id && !sending);
+  const canOpenScheduleMenu = Boolean(
+    hasInputMessage && session?.id && !sending && !addBuilderSaving
+  );
   const chatSessionId = session?.id;
   const chatSessionIdRef = useRef(chatSessionId);
   useEffect(() => {
@@ -511,13 +518,7 @@ export default function ChatView({
     return () => observer.disconnect();
   }, [handleLoadMore, hasMore, scrollContainerRef]);
 
-  const buildContent = async (text, filesToSend) => {
-    if (filesToSend.length) {
-      const fileBlocks = await Promise.all(filesToSend.map(fileToContentBlock));
-      return text ? [{ type: 'text', text }, ...fileBlocks] : fileBlocks;
-    }
-    return text;
-  };
+  const buildContent = buildUserMessageContent;
 
   const sendMessage = async (
     messageJson,
@@ -543,7 +544,7 @@ export default function ChatView({
   };
 
   const scheduleMessageAt = async (sendAtIso) => {
-    if ((!input.trim() && !files.length) || !session?.id || sending) return;
+    if ((!input.trim() && !files.length) || !session?.id || sending || addBuilderSaving) return;
     const text = input.trim();
     setError(null);
     setFileError(null);
@@ -651,74 +652,34 @@ export default function ChatView({
     !readonly && showMessageComposer && activeAgent?.agent_type !== 'reviewer';
 
   const openStartSubagentModal = () => {
-    if ((!input.trim() && !files.length) || !session?.id || sending) return;
-    setShowStartSubagentModal(true);
+    if (!session?.id || !onOpenAddBuilder || addBuilderSaving) return;
+    openedAddBuilderFromComposerRef.current = true;
+    addBuilderClearNonceAtOpenRef.current = addBuilderComposerClearNonce;
+    onOpenAddBuilder({
+      prompt: input.trim(),
+      files: [...files],
+      fromComposer: true,
+    });
   };
 
-  const closeStartSubagentModal = () => {
-    if (sending) return;
-    setShowStartSubagentModal(false);
-  };
+  useEffect(() => {
+    if (addBuilderOpen || addBuilderSaving || !openedAddBuilderFromComposerRef.current) return;
+    if (addBuilderComposerClearNonce !== addBuilderClearNonceAtOpenRef.current) return;
+    openedAddBuilderFromComposerRef.current = false;
+  }, [addBuilderOpen, addBuilderSaving, addBuilderComposerClearNonce]);
 
-  const handleStartSubagentBuilder = async ({ name, agent_config_id, model, model_params }) => {
-    if ((!input.trim() && !files.length) || !session?.id || sending) return;
-    const text = input.trim();
-    const label = typeof name === 'string' ? name.trim() : '';
-    if (!label) return;
-    setError(null);
-    setFileError(null);
-    const filesToSend = files;
+  useEffect(() => {
+    if (!addBuilderComposerClearNonce) return;
+    if (!openedAddBuilderFromComposerRef.current) return;
+    setInput('');
     setFiles([]);
-    setSending(true);
-    let content;
-    try {
-      content = await buildContent(text, filesToSend);
-    } catch (err) {
-      setFileError(err?.message ?? 'Failed to read attached files');
-      setInput(text);
-      setFiles(filesToSend);
-      setSending(false);
-      return;
-    }
-    const messageJson = JSON.stringify({ type: 'user', message: { role: 'user', content } });
-    let newAgent;
-    try {
-      const payload = {
-        session_id: session.id,
-        agent_type: 'builder',
-        name: label,
-      };
-      if (agent_config_id != null) payload.agent_config_id = agent_config_id;
-      if (model) payload.model = model;
-      if (model_params !== undefined) payload.model_params = model_params;
-      newAgent = await agentsService.create(payload);
-    } catch (err) {
-      setInput(text);
-      setFiles(filesToSend);
-      toastFeathersError('Failed to start subagent', err);
-      setSending(false);
-      return;
-    }
-    setShowStartSubagentModal(false);
-    if (newAgent?.id != null) {
-      onSelectAgent?.(newAgent);
-    }
-    try {
-      await sendMessage(messageJson, { agent: newAgent });
-      setInput('');
-      persistentState.clear();
-    } catch (err) {
-      setInput(text);
-      setFiles(filesToSend);
-      toastFeathersError('Failed to send message', err);
-    } finally {
-      setSending(false);
-    }
-  };
+    persistentState.clear();
+    openedAddBuilderFromComposerRef.current = false;
+  }, [addBuilderComposerClearNonce, persistentState]);
 
   const handleSend = async (e, { force = false } = {}) => {
     e?.preventDefault();
-    if ((!input.trim() && !files.length) || !session?.id || sending) return;
+    if ((!input.trim() && !files.length) || !session?.id || sending || addBuilderSaving) return;
     const text = input.trim();
     setError(null);
     setFileError(null);
@@ -1066,7 +1027,7 @@ export default function ChatView({
                     onChange={setInput}
                     onSubmit={handleSend}
                     placeholder={`Message ${agentDisplayName}...`}
-                    sending={sending}
+                    sending={sending || addBuilderSaving}
                     agentName={activeAgent?.name}
                     agentType={activeAgent?.agent_type}
                     agents={agents}
@@ -1139,11 +1100,11 @@ export default function ChatView({
                               <button
                                 type="button"
                                 role="menuitem"
-                                disabled={!canSendDraft}
+                                disabled={addBuilderSaving}
                                 onClick={openStartSubagentModal}
                                 className="w-full text-left px-3 py-2 text-sm text-heading hover:bg-control disabled:opacity-50 disabled:pointer-events-none"
                               >
-                                Start subagent
+                                Add builder
                               </button>
                             ) : null}
                             <button
@@ -1178,19 +1139,6 @@ export default function ChatView({
           onCancel={closeRegularlyModal}
           saving={creatingLoop}
           defaultName={input.trim().split('\n')[0].slice(0, 60)}
-        />
-      )}
-      {showStartSubagentModal && session?.id && (
-        <StartSubagentModal
-          sessionId={session.id}
-          prompt={input.trim()}
-          defaultLabel={titleFromPrompt(input)}
-          initialAgentConfigId={session.agent_config_id ?? agentSource?.agent_config_id ?? null}
-          initialModel={session.model ?? composerModel}
-          initialModelParams={session.model_params ?? composerModelParams}
-          onConfirm={(opts) => void handleStartSubagentBuilder(opts)}
-          onCancel={closeStartSubagentModal}
-          saving={sending}
         />
       )}
       {showMergeModal && (
