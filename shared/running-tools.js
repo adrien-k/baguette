@@ -3,6 +3,8 @@
  */
 
 import { findLastTurnStartIndex } from './turn-model.js';
+import { isInteractiveDockToolCall } from './interactive-tools-dock.js';
+import { toolCallViewId } from './tool-dock-ids.js';
 import { isBashToolName, resolveBashCommand } from './resolve-bash-command.js';
 
 function stripWorktreePath(filePath, sessionPath) {
@@ -150,10 +152,7 @@ function isRunningToolCallView(msg) {
   return msg.result == null;
 }
 
-/** Stable dock/pinning id for a typed tool_call view. */
-function toolCallViewId(msg) {
-  return msg.call_id ?? `tool-${msg.id}`;
-}
+export { toolCallViewId, hasHumanUserReplyAfter } from './tool-dock-ids.js';
 
 /**
  * @param {object[]} messages - reconciled session messages (visible in chat)
@@ -229,9 +228,15 @@ export function runningBashToolIds(dockItems) {
  * @param {object} msg - parsed ChatMessageView
  * @param {Set<string>} pinnedIds
  */
+export function shouldHidePinnedToolCallInFlow(msg, pinnedIds) {
+  if (!pinnedIds?.size || msg?.type !== 'tool_call') return false;
+  const id = toolCallViewId(msg);
+  if (!pinnedIds.has(id)) return false;
+  if (isPinnableRunningToolCallView(msg)) return true;
+  return isInteractiveDockToolCall(msg);
+}
+
+/** @deprecated use shouldHidePinnedToolCallInFlow — kept for tests */
 export function shouldHideRunningToolCallInFlow(msg, pinnedIds) {
-  if (!pinnedIds?.size) return false;
-  if (!isPinnableRunningToolCallView(msg)) return false;
-  const id = msg.call_id ?? null;
-  return id != null && pinnedIds.has(id);
+  return shouldHidePinnedToolCallInFlow(msg, pinnedIds);
 }

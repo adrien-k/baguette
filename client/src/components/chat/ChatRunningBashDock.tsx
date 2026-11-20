@@ -7,7 +7,7 @@ export type RunningToolDockItem = {
   startedAt?: string | null;
 };
 
-/** Running Bash, RunTask, and AwaitDetachedTask tool_call rows pinned above the composer until done. */
+/** Running commands and interactive tool_call rows pinned above the composer. */
 export default function ChatRunningBashDock({
   items,
   sessionPath,
@@ -50,7 +50,7 @@ export default function ChatRunningBashDock({
       className="flex flex-col gap-2 py-2 border-t border-line/60"
       role="status"
       aria-live="polite"
-      aria-label="Running commands"
+      aria-label="Running commands and pending actions"
     >
       {items.map(({ id, message }) => (
         <ToolCallBlock
