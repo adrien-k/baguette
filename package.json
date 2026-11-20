@@ -38,6 +38,7 @@
     "gen-icons": "node client/scripts/gen-icons.mjs",
     "start": "NODE_ENV=production node scripts/start-server.mjs",
     "migrate": "node scripts/migrate-latest.js",
+    "seed:dev": "node scripts/seed-dev-data.mjs",
     "migrate:make": "knex migrate:make --knexfile knexfile.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",

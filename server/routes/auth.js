@@ -181,12 +181,21 @@ export function createAuthRoutes(app) {
           user = await db('users').where({ username: identity.username }).first();
         }
         if (!user) {
+          if (identity.username === 'dev') {
+            res
+              .status(503)
+              .type('text')
+              .send(
+                'Dev user is not seeded. Run baguette init or `pnpm run migrate && pnpm run seed:dev` in this worktree.'
+              );
+            return;
+          }
           const created = await app.service('users').create(
             {
               github_id: identity.github_id,
               username: identity.username,
               email: identity.email,
-              access_token: identity.username === 'dev' ? devGhKey : '',
+              access_token: '',
               status: USER_STATUS_APPROVED,
               admin: true,
               onboarding_completed: true,
@@ -203,23 +212,25 @@ export function createAuthRoutes(app) {
           }
         }
 
-        const mockConfigId = await ensureMockAgentConfig(db, user.id);
-        if (mockConfigId && isMockAgentSdkEnabled()) {
-          const mockDefaultModel = {
-            model: MOCK_STANDARD_MODEL_ID,
-            model_params: null,
-          };
-          const devUser = await db('users').where({ id: user.id }).first();
-          await app.service('users').patch(
-            user.id,
-            {
-              agent_default_config_id: mockConfigId,
-              agent_default_model: mockDefaultModel,
-              reviewer_default_config_id: mockConfigId,
-              reviewer_default_model: mockDefaultModel,
-            },
-            { user: devUser }
-          );
+        if (identity.username !== 'dev') {
+          const mockConfigId = await ensureMockAgentConfig(db, user.id);
+          if (mockConfigId && isMockAgentSdkEnabled()) {
+            const mockDefaultModel = {
+              model: MOCK_STANDARD_MODEL_ID,
+              model_params: null,
+            };
+            const devUser = await db('users').where({ id: user.id }).first();
+            await app.service('users').patch(
+              user.id,
+              {
+                agent_default_config_id: mockConfigId,
+                agent_default_model: mockDefaultModel,
+                reviewer_default_config_id: mockConfigId,
+                reviewer_default_model: mockDefaultModel,
+              },
+              { user: devUser }
+            );
+          }
         }
 
         setBootstrapUserCookie(res, user.id);

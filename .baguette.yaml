@@ -9,6 +9,15 @@ config:
     MOCK_AGENT_SLEEP_MS: '0'
     MOCK_AGENT_STEP_DELAY_MS: '2000'
     DEV_USER_GH_KEY: '${{ baguette.secrets.DEV_USER_GH_KEY }}'
+    # Same keys as `agents-integration-test` — used by `pnpm run seed:dev` for dev agent_configs.
+    SDK_TESTS_CURSOR_API_KEY: '${{ baguette.secrets.CURSOR_API_KEY }}'
+    SDK_TESTS_CURSOR_MODEL: glm-5p3-flash
+    SDK_TESTS_PI_API_KEY: '${{ baguette.secrets.OPEN_CODE_GO_API_KEY }}'
+    SDK_TESTS_PI_MODEL: opencode-go/glm-5.3-flash
+    SDK_TESTS_PI_API_KEY_ENV_VAR: OPENCODE_GO_API_KEY
+    SDK_TESTS_CLAUDE_AUTH_TOKEN: '${{ baguette.secrets.OPEN_CODE_GO_API_KEY }}'
+    SDK_TESTS_CLAUDE_API_URL: 'https://opencode.ai/inference/go/anthropic'
+    SDK_TESTS_CLAUDE_MODEL: claude-haiku-5-5
     PUBLIC_HOST: '${{ baguette.services.app.public_uri }}'
     SOCKET_PATH: '/_baguette/ws/${{ baguette.session.short_id }}'
   init: |
@@ -42,6 +51,8 @@ config:
       run: pnpm run migrate
     dev-data:load:
       run: .baguette/scripts/dev-data-load.sh
+    dev-data:seed:
+      run: pnpm run seed:dev
     dev-data:persist:
       run: .baguette/scripts/dev-data-persist.sh
       confirm: true
