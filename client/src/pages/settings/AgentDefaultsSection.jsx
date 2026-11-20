@@ -19,6 +19,22 @@ import {
   usageLimitInputText,
 } from '../../utils/usageLimitActions.jsx';
 
+function SectionActions({ saving, saved, disabled, onSave, onClear }) {
+  return (
+    <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-line/60">
+      <SettingsSaveRow saving={saving} saved={saved} disabled={disabled} onSave={onSave} />
+      <button
+        type="button"
+        onClick={onClear}
+        disabled={disabled || saving}
+        className="text-xs text-faint hover:text-secondary disabled:opacity-50"
+      >
+        Clear
+      </button>
+    </div>
+  );
+}
+
 export default function AgentDefaultsSection({ settings, onSave }) {
   const { user } = useAuth();
   const { loading: configsLoading } = useAgentConfigs();
@@ -44,10 +60,9 @@ export default function AgentDefaultsSection({ settings, onSave }) {
     DEFAULT_USAGE_LIMIT_ACTION
   );
   const [defaultUsageLimitText, setDefaultUsageLimitText] = useState('');
-  const [defaultUsageLimitConfigured, setDefaultUsageLimitConfigured] = useState(false);
 
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [savingSection, setSavingSection] = useState(null);
+  const [savedSection, setSavedSection] = useState(null);
 
   const hydrateFromSettings = useCallback(() => {
     if (!settings) return;
@@ -80,8 +95,6 @@ export default function AgentDefaultsSection({ settings, onSave }) {
         ? JSON.stringify(settings.utility_default_model.model_params)
         : null
     );
-    const hasDefaultUsage = Boolean(settings.default_usage_limit_action);
-    setDefaultUsageLimitConfigured(hasDefaultUsage);
     setDefaultUsageLimitAction(settings.default_usage_limit_action ?? DEFAULT_USAGE_LIMIT_ACTION);
     setDefaultUsageLimitText(usageLimitInputText(settings.default_usage_limit));
   }, [settings]);
@@ -104,26 +117,30 @@ export default function AgentDefaultsSection({ settings, onSave }) {
     return { model, model_params };
   };
 
-  const handleSave = async () => {
+  const flashSaved = (section) => {
+    setSavedSection(section);
+    setTimeout(() => setSavedSection(null), 2000);
+  };
+
+  const patchSection = async (section, payload, errorLabel) => {
     if (!user?.id) return;
-    const usageLimit = parseUsageLimit(defaultUsageLimitText);
-    if (defaultUsageLimitAction === 'continue' && usageLimit === undefined) {
-      toastError(
-        'Invalid overage usage limit',
-        new Error('Overage usage limit must be a dollar amount >= 0, or empty for unlimited')
-      );
-      return;
-    }
-    setSaving(true);
-    setSaved(false);
-    const usageLimitPayload = defaultUsageLimitConfigured
-      ? {
-          default_usage_limit_action: defaultUsageLimitAction,
-          default_usage_limit: defaultUsageLimitAction === 'continue' ? usageLimit : null,
-        }
-      : {};
+    setSavingSection(section);
+    setSavedSection(null);
     try {
-      const updated = await usersService.patch(user.id, {
+      const updated = await usersService.patch(user.id, payload);
+      onSave(updated);
+      flashSaved(section);
+    } catch (err) {
+      toastError(errorLabel, err);
+    } finally {
+      setSavingSection(null);
+    }
+  };
+
+  const saveSessionModels = () =>
+    patchSection(
+      'session',
+      {
         agent_default_config_id: agentConfigId,
         agent_default_model: agentConfigId
           ? buildModelPayload(agentModel, agentModelParamsJson)
@@ -132,58 +149,87 @@ export default function AgentDefaultsSection({ settings, onSave }) {
         reviewer_default_model: reviewerConfigId
           ? buildModelPayload(reviewerModel, reviewerModelParamsJson)
           : null,
+        utility_default_config_id: utilityConfigId,
+        utility_default_model: utilityConfigId
+          ? buildModelPayload(utilityModel, utilityModelParamsJson)
+          : null,
+      },
+      'Failed to save session models'
+    );
+
+  const clearSessionModels = () =>
+    patchSection(
+      'session',
+      {
+        agent_default_config_id: null,
+        agent_default_model: null,
+        reviewer_default_config_id: null,
+        reviewer_default_model: null,
+        utility_default_config_id: null,
+        utility_default_model: null,
+      },
+      'Failed to clear session models'
+    );
+
+  const saveMcpModels = () =>
+    patchSection(
+      'mcp',
+      {
         subagent_default_mode: subagentMode,
         subagent_default_config_id: subagentMode === 'config' ? subagentConfigId : null,
         subagent_default_model:
           subagentMode === 'config' && subagentConfigId
             ? buildModelPayload(subagentModel, subagentModelParamsJson)
             : null,
-        utility_default_config_id: utilityConfigId,
-        utility_default_model: utilityConfigId
-          ? buildModelPayload(utilityModel, utilityModelParamsJson)
-          : null,
-        ...usageLimitPayload,
-      });
-      onSave(updated);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    } catch (err) {
-      toastError('Failed to save agent defaults', err);
-    } finally {
-      setSaving(false);
-    }
-  };
+      },
+      'Failed to save MCP models'
+    );
 
-  const handleClear = async () => {
-    if (!user?.id) return;
-    setSaving(true);
-    setSaved(false);
-    try {
-      const updated = await usersService.patch(user.id, {
-        agent_default_config_id: null,
-        agent_default_model: null,
-        reviewer_default_config_id: null,
-        reviewer_default_model: null,
+  const clearMcpModels = () =>
+    patchSection(
+      'mcp',
+      {
         subagent_default_mode: SUBAGENT_DEFAULT_INHERIT,
         subagent_default_config_id: null,
         subagent_default_model: null,
-        utility_default_config_id: null,
-        utility_default_model: null,
+      },
+      'Failed to clear MCP models'
+    );
+
+  const saveSessionOptions = () => {
+    const usageLimit = parseUsageLimit(defaultUsageLimitText);
+    if (defaultUsageLimitAction === 'continue' && usageLimit === undefined) {
+      toastError(
+        'Invalid overage usage limit',
+        new Error('Overage usage limit must be a dollar amount >= 0, or empty for unlimited')
+      );
+      return;
+    }
+    patchSection(
+      'options',
+      {
+        default_usage_limit_action: defaultUsageLimitAction,
+        default_usage_limit: defaultUsageLimitAction === 'continue' ? usageLimit : null,
+      },
+      'Failed to save session options'
+    );
+  };
+
+  const clearSessionOptions = () =>
+    patchSection(
+      'options',
+      {
         default_usage_limit_action: null,
         default_usage_limit: null,
-      });
-      onSave(updated);
-      hydrateFromSettings();
-    } catch (err) {
-      toastError('Failed to clear agent defaults', err);
-    } finally {
-      setSaving(false);
-    }
-  };
+      },
+      'Failed to clear session options'
+    );
 
   if (configsLoading) {
     return <p className="text-sm text-faint">Loading configurations…</p>;
   }
+
+  const busy = savingSection != null;
 
   return (
     <div className="space-y-6">
@@ -237,6 +283,13 @@ export default function AgentDefaultsSection({ settings, onSave }) {
             modelModeRadioName="reviewer-default-model-mode"
           />
         </div>
+        <SectionActions
+          saving={savingSection === 'session'}
+          saved={savedSection === 'session'}
+          onSave={saveSessionModels}
+          onClear={clearSessionModels}
+          disabled={busy && savingSection !== 'session'}
+        />
       </SettingsSection>
 
       <SettingsSection
@@ -254,6 +307,13 @@ export default function AgentDefaultsSection({ settings, onSave }) {
           onModelChange={setSubagentModel}
           onModelParamsJsonChange={setSubagentModelParamsJson}
         />
+        <SectionActions
+          saving={savingSection === 'mcp'}
+          saved={savedSection === 'mcp'}
+          onSave={saveMcpModels}
+          onClear={clearMcpModels}
+          disabled={busy && savingSection !== 'mcp'}
+        />
       </SettingsSection>
 
       <SettingsSection
@@ -262,31 +322,18 @@ export default function AgentDefaultsSection({ settings, onSave }) {
       >
         <DefaultUsageLimitsFields
           action={defaultUsageLimitAction}
-          onActionChange={(next) => {
-            setDefaultUsageLimitConfigured(true);
-            setDefaultUsageLimitAction(next);
-          }}
+          onActionChange={setDefaultUsageLimitAction}
           limitText={defaultUsageLimitText}
-          onLimitTextChange={(text) => {
-            setDefaultUsageLimitConfigured(true);
-            setDefaultUsageLimitText(text);
-          }}
+          onLimitTextChange={setDefaultUsageLimitText}
+        />
+        <SectionActions
+          saving={savingSection === 'options'}
+          saved={savedSection === 'options'}
+          onSave={saveSessionOptions}
+          onClear={clearSessionOptions}
+          disabled={busy && savingSection !== 'options'}
         />
       </SettingsSection>
-
-      <div className="flex flex-wrap items-center gap-3 -mt-2">
-        <SettingsSaveRow saving={saving} saved={saved} onSave={handleSave}>
-          Save session &amp; MCP defaults
-        </SettingsSaveRow>
-        <button
-          type="button"
-          onClick={handleClear}
-          disabled={saving}
-          className="text-xs text-faint hover:text-secondary disabled:opacity-50"
-        >
-          Clear defaults
-        </button>
-      </div>
     </div>
   );
 }
