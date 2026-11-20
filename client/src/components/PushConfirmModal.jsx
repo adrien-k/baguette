@@ -39,6 +39,8 @@ export default function PushConfirmModal({
 }) {
   const [forceMode, setForceMode] = useState(initialForceMode || '');
   const [branch, setBranch] = useState(initialBranch || '');
+  const effectiveBranch = agentRequest ? initialBranch || '' : branch;
+  const effectiveForceMode = agentRequest ? initialForceMode || '' : forceMode;
   const [createPr, setCreatePr] = useState(true);
   const [localSha, setLocalSha] = useState(null);
   const [remoteSha, setRemoteSha] = useState(null);
@@ -54,14 +56,14 @@ export default function PushConfirmModal({
 
   const { branches, loading: loadingBranches } = useGetBranches(agentRequest ? null : repo);
 
-  const isPureForce = forceMode === 'force';
+  const isPureForce = effectiveForceMode === 'force';
   let forceModeLabel = 'Normal push';
-  if (forceMode === 'force') forceModeLabel = 'Force (--force)';
-  else if (forceMode === 'lease') forceModeLabel = 'Force with lease (--force-with-lease)';
+  if (effectiveForceMode === 'force') forceModeLabel = 'Force (--force)';
+  else if (effectiveForceMode === 'lease') forceModeLabel = 'Force with lease (--force-with-lease)';
   const approvalTriggers = agentRequest
     ? gitPushApprovalTriggers({
         forceMode: initialForceMode || null,
-        targetBranch: initialBranch || branch || null,
+        targetBranch: initialBranch || null,
         sourceBranch: initialSourceBranch || null,
         sessionRemoteBranch: sessionRemoteBranch || localBranch || null,
         sessionLocalBranch: sessionLocalBranch || localBranch || null,
@@ -70,7 +72,7 @@ export default function PushConfirmModal({
     : [];
 
   useEffect(() => {
-    if (!sessionId || !branch) {
+    if (!sessionId || !effectiveBranch) {
       setLocalSha(null);
       setRemoteSha(null);
       return;
@@ -80,7 +82,7 @@ export default function PushConfirmModal({
     sessionsService
       .shas({
         id: sessionId,
-        branch,
+        branch: effectiveBranch,
         ...(initialSourceBranch ? { source_branch: initialSourceBranch } : {}),
       })
       .then((res) => {
@@ -100,12 +102,12 @@ export default function PushConfirmModal({
     return () => {
       cancelled = true;
     };
-  }, [sessionId, branch, initialSourceBranch]);
+  }, [sessionId, effectiveBranch, initialSourceBranch]);
 
   const confirmPush = () =>
     onConfirm({
-      forceMode: forceMode || null,
-      branch: branch || null,
+      forceMode: agentRequest ? initialForceMode || null : forceMode || null,
+      branch: agentRequest ? initialBranch || null : branch || null,
       sourceBranch: initialSourceBranch || null,
       createPr: agentRequest ? false : createPr,
       syncPr: !agentRequest,
@@ -170,7 +172,9 @@ export default function PushConfirmModal({
         <div>
           <label className={`block text-xs ${TEXT_MUTED} mb-1`}>Branch</label>
           {agentRequest ? (
-            <p className={`text-sm font-mono ${TEXT_HEADING} break-all`}>origin/{branch}</p>
+            <p className={`text-sm font-mono ${TEXT_HEADING} break-all`}>
+              origin/{effectiveBranch}
+            </p>
           ) : (
             <SearchableSelect
               value={branch}
@@ -182,11 +186,11 @@ export default function PushConfirmModal({
               emptyText="No branches found"
             />
           )}
-          {(initialSourceBranch || (localBranch && localBranch !== branch)) && (
+          {(initialSourceBranch || (localBranch && localBranch !== effectiveBranch)) && (
             <div className={`mt-1.5 font-mono text-[10px] ${TEXT_FAINT}`}>
               {initialSourceBranch
-                ? `${initialSourceBranch} → origin/${branch}`
-                : `local ${localBranch} → origin/${branch}`}
+                ? `${initialSourceBranch} → origin/${effectiveBranch}`
+                : `local ${localBranch} → origin/${effectiveBranch}`}
             </div>
           )}
           {(localSha || remoteSha) && (
@@ -194,7 +198,7 @@ export default function PushConfirmModal({
               <span title={initialSourceBranch || 'Local HEAD'}>{localSha ?? '?'}</span>
               <span className="text-faint">/</span>
               <span
-                title={`origin/${branch}`}
+                title={`origin/${effectiveBranch}`}
                 className={remoteSha && remoteSha !== localSha ? 'text-fg-muted' : 'text-faint'}
               >
                 {loadingShas ? '…' : (remoteSha ?? 'no remote')}
@@ -220,7 +224,7 @@ export default function PushConfirmModal({
           )}
         </div>
 
-        {forceMode === 'force' && (
+        {effectiveForceMode === 'force' && (
           <div className={`flex items-start gap-2 text-xs ${TINT_WARN_SOFT} rounded-lg px-3 py-2`}>
             <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
             <span>
@@ -229,7 +233,7 @@ export default function PushConfirmModal({
             </span>
           </div>
         )}
-        {forceMode === 'lease' && (
+        {effectiveForceMode === 'lease' && (
           <div className={`flex items-start gap-2 text-xs ${TINT_WARN_SOFT} rounded-lg px-3 py-2`}>
             <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
             <span>

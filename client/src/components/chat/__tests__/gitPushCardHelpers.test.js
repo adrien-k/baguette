@@ -3,6 +3,7 @@ import {
   buildGitPushApprovalRequestEvent,
   gitPushApprovalTriggers,
   gitPushNeedsApproval,
+  resolveGitPushBranches,
 } from '../gitPushCardHelpers.js';
 
 const SESSION = {
@@ -40,6 +41,34 @@ describe('gitPushApprovalTriggers', () => {
       autoPushOff: true,
     });
     expect(triggers.map((t) => t.key)).toEqual(['source', 'auto_push_off']);
+    const autoPushTrigger = triggers.find((t) => t.key === 'auto_push_off');
+    expect(autoPushTrigger.detail).toBe('Auto-push is disabled, so this push needs approval.');
+  });
+
+  it('uses neutral auto-push copy when auto-push is the only trigger', () => {
+    const triggers = gitPushApprovalTriggers({
+      targetBranch: SESSION.remote_branch,
+      sessionRemoteBranch: SESSION.remote_branch,
+      sessionLocalBranch: SESSION.local_branch,
+      autoPushOff: true,
+    });
+    expect(triggers).toHaveLength(1);
+    expect(triggers[0].detail).toBe(
+      'Session-branch pushes need your approval while auto-push is disabled.'
+    );
+  });
+
+  it('prefers source_branch over local_branch for the push source ref', () => {
+    const { targetBranch, localBranch } = resolveGitPushBranches(
+      { source_branch: 'v1.2.0' },
+      {
+        local_branch: 'feature/session-local',
+        target_branch: 'development',
+      },
+      SESSION
+    );
+    expect(targetBranch).toBe('development');
+    expect(localBranch).toBe('v1.2.0');
   });
 
   it('builds push:request payload to reopen the approval modal', () => {

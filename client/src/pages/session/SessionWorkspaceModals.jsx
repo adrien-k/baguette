@@ -63,6 +63,7 @@ export default function SessionWorkspaceModals({
       )}
       {showPushModal && (
         <PushConfirmModal
+          key={pushRequest?.requestId ?? 'manual-push'}
           sessionId={session?.id}
           repo={repos.find((r) => r.full_name === session?.repo_full_name) ?? null}
           commitsToPush={commitsToPush}

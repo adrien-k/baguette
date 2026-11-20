@@ -446,7 +446,7 @@ export default function Session() {
       request_id: requestId,
     }) => {
       if (sid != null && sessionId != null && String(sid) !== String(sessionId)) return;
-      setPushRequest({
+      const nextRequest = {
         branch,
         sourceBranch: sourceBranch || '',
         forceMode: forceMode || null,
@@ -454,6 +454,23 @@ export default function Session() {
         autoPushOff: autoPushOff === true || autoPushOffSnake === true,
         agentRequest: agentRequest !== false,
         requestId: requestId ?? null,
+      };
+      const nextRequestId = requestId ?? null;
+      setPushRequest((prev) => {
+        if (prev?.agentRequest && prev.requestId && prev.requestId !== nextRequestId && sessionId) {
+          sessionsService
+            .recordGitPushApprovalOutcome({
+              id: sessionId,
+              request_id: prev.requestId,
+              outcome: 'canceled',
+            })
+            .catch((err) => toastError('Failed to record push cancellation', err));
+          sessionsService.emit('push:approval-cancelled', {
+            session_id: sessionId,
+            request_id: prev.requestId,
+          });
+        }
+        return nextRequest;
       });
       setShowPushModal(true);
     },

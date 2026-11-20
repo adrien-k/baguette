@@ -77,10 +77,14 @@ export function gitPushApprovalTriggers({
   }
 
   if (autoPushOff) {
+    const autoPushDetail =
+      triggers.length > 0
+        ? 'Auto-push is disabled, so this push needs approval.'
+        : 'Session-branch pushes need your approval while auto-push is disabled.';
     triggers.push({
       key: 'auto_push_off',
       title: 'Auto-push is off',
-      detail: 'Session-branch pushes need your approval while auto-push is disabled.',
+      detail: autoPushDetail,
     });
   }
 
@@ -137,11 +141,20 @@ export function resolveGitPushBranches(args, mcpResult, session) {
     argsBranch ||
     (typeof session?.remote_branch === 'string' && session.remote_branch) ||
     'session branch';
-  const localBranch =
-    (typeof mcpResult?.local_branch === 'string' &&
-      mcpResult.local_branch &&
-      mcpResult.local_branch) ||
-    null;
+  const sourceFromResult =
+    typeof mcpResult?.source_branch === 'string' && mcpResult.source_branch.trim()
+      ? mcpResult.source_branch.trim()
+      : null;
+  const sourceFromArgs =
+    typeof args?.source_branch === 'string' && args.source_branch.trim()
+      ? args.source_branch.trim()
+      : null;
+  const sourceBranch = sourceFromResult ?? sourceFromArgs ?? null;
+  const localBranchFromResult =
+    typeof mcpResult?.local_branch === 'string' && mcpResult.local_branch
+      ? mcpResult.local_branch
+      : null;
+  const localBranch = sourceBranch ?? localBranchFromResult ?? null;
 
   return { targetBranch, localBranch };
 }

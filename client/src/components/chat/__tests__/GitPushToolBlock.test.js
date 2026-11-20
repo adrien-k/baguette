@@ -266,6 +266,23 @@ describe('GitPushToolBlock', () => {
     expect(html).not.toContain('Waiting for the user to accept or reject');
   });
 
+  it('shows source_branch as the left-hand ref instead of session local_branch', () => {
+    const html = renderCardStatic({
+      args: { source_branch: 'v1.0.0', branch: 'development' },
+      result: toolResult({
+        ok: true,
+        approval_requested: true,
+        request_id: APPROVAL_REQUEST_ID,
+        source_branch: 'v1.0.0',
+        target_branch: 'development',
+        local_branch: 'adrien-baguette/feature',
+      }),
+    });
+    expect(html).toContain('v1.0.0');
+    expect(html).toContain('development');
+    expect(html).not.toContain('adrien-baguette/feature');
+  });
+
   it('ignores push:complete for a different request id', async () => {
     renderCard({
       args: { branch: 'development' },
