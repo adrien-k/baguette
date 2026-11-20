@@ -51,6 +51,9 @@ describe('seedDevEnvironment', () => {
     const repo = await db('repos').where({ full_name: DEV_REPO_FULL_NAME }).first();
     expect(repo?.access_mode).toBe('local');
 
+    const userRepo = await db('user_repos').where({ user_id: user.id, repo_id: repo.id }).first();
+    expect(Number(userRepo?.show_in_all_sessions)).toBe(1);
+
     const sessions = await db('sessions').where({ user_id: user.id }).orderBy('id', 'asc');
     expect(sessions.length).toBeGreaterThanOrEqual(1);
 

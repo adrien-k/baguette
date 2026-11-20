@@ -190,7 +190,7 @@ async function ensureDevRepo(db, userId) {
   await db('user_repos').insert({
     user_id: userId,
     repo_id: repoId,
-    show_in_all_sessions: 0,
+    show_in_all_sessions: 1,
   });
   return {
     id: repoId,
