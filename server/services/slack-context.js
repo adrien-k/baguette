@@ -34,7 +34,7 @@ export function slackClock(ts) {
 export function createSlackContext() {
   const channelInfos = new Map();
 
-  /** "[01:35] Jan Havlena (<@U1>): text [files: a.json]" — who said it, when, and what. */
+  /** "[01:35] Jane Doe (<@U1>): text [files: a.json]" — who said it, when, and what. */
   async function formatMessage(slackApp, message) {
     const who = await slackUserLabel(slackApp.bot_token, message.user);
     const readable = await resolveSlackText(

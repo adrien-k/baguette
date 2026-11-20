@@ -83,14 +83,14 @@ describe('slackUserProfile', () => {
   it('returns the display name, real name and username', async () => {
     slack.getUserInfo.mockResolvedValue({
       id: 'U1',
-      name: 'Honza',
-      realName: 'Jan Havlena',
-      username: 'honza',
+      name: 'Jane',
+      realName: 'Jane Doe',
+      username: 'jane',
     });
     expect(await slackUserProfile('xoxb-1', 'U1')).toEqual({
-      name: 'Honza',
-      realName: 'Jan Havlena',
-      username: 'honza',
+      name: 'Jane',
+      realName: 'Jane Doe',
+      username: 'jane',
     });
   });
 
@@ -104,11 +104,11 @@ describe('slackUserLabel with a real name and a handle', () => {
   it('shows the real name, the handle and the mention', async () => {
     slack.getUserInfo.mockResolvedValue({
       id: 'U1',
-      name: 'Honza',
-      realName: 'Jan Havlena',
-      username: 'honza',
+      name: 'Jane',
+      realName: 'Jane Doe',
+      username: 'jane',
     });
-    expect(await slackUserLabel('xoxb-1', 'U1')).toBe('Jan Havlena (@honza · <@U1>)');
+    expect(await slackUserLabel('xoxb-1', 'U1')).toBe('Jane Doe (@jane · <@U1>)');
   });
 
   it('does not repeat a handle that equals the name', async () => {
@@ -119,10 +119,10 @@ describe('slackUserLabel with a real name and a handle', () => {
   it('uses the display name when there is no real name', async () => {
     slack.getUserInfo.mockResolvedValue({
       id: 'U1',
-      name: 'Honza',
+      name: 'Jane',
       realName: null,
       username: null,
     });
-    expect(await slackUserLabel('xoxb-1', 'U1')).toBe('Honza (<@U1>)');
+    expect(await slackUserLabel('xoxb-1', 'U1')).toBe('Jane (<@U1>)');
   });
 });

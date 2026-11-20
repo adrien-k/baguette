@@ -487,13 +487,13 @@ describe('reading', () => {
     mockSlack(
       {
         ok: true,
-        user: { name: 'jan', real_name: 'Jan H', profile: { display_name: 'Honza', title: 'Dev' } },
+        user: { name: 'jan', real_name: 'Jan H', profile: { display_name: 'Jane', title: 'Dev' } },
       },
       { ok: true, user: { name: 'bot1', is_bot: true, profile: {} } }
     );
     expect(await getUserInfo(TOKEN, 'U1')).toMatchObject({
       id: 'U1',
-      name: 'Honza',
+      name: 'Jane',
       realName: 'Jan H',
       title: 'Dev',
     });

@@ -10,7 +10,7 @@ import { resolveSlackText } from '../slack-mentions.js';
 import { resetSlackUserCache } from '../slack-users.js';
 
 const PEOPLE = {
-  U1: { name: 'Honza', realName: 'Jan Havlena', username: 'honza' },
+  U1: { name: 'Jane', realName: 'Jane Doe', username: 'jane' },
   U2: { name: 'Eva', realName: 'Eva Nováková', username: 'eva' },
 };
 
@@ -34,7 +34,7 @@ describe('people', () => {
   it('resolves every mention, each person once', async () => {
     const text = await resolve('<@U1> and <@U2> and <@U1> again');
     expect(text).toBe(
-      'Jan Havlena (@honza · <@U1>) and Eva Nováková (@eva · <@U2>) and Jan Havlena (@honza · <@U1>) again'
+      'Jane Doe (@jane · <@U1>) and Eva Nováková (@eva · <@U2>) and Jane Doe (@jane · <@U1>) again'
     );
     expect(slack.getUserInfo).toHaveBeenCalledTimes(2);
   });
@@ -49,7 +49,7 @@ describe('people', () => {
 
   it('calls the bot itself "you"', async () => {
     expect(await resolve('<@UBOT> and <@U1>', { botUserId: 'UBOT' })).toBe(
-      'you and Jan Havlena (@honza · <@U1>)'
+      'you and Jane Doe (@jane · <@U1>)'
     );
     expect(slack.getUserInfo).not.toHaveBeenCalledWith('xoxb-1', 'UBOT');
   });

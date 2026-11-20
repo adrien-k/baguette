@@ -47,7 +47,7 @@ export async function slackUserName(token, userId) {
 }
 
 /**
- * "Jan Havlena (@honza · <@U123>)" — the real name, the handle, and the mention the agent can use
+ * "Jane Doe (@jane · <@U123>)" — the real name, the handle, and the mention the agent can use
  * to address them. Falls back to "<@U123>" when the user cannot be looked up.
  */
 export async function slackUserLabel(token, userId) {
@@ -59,7 +59,7 @@ export async function slackUserLabel(token, userId) {
   return `${name} (${handle}<@${userId}>)`;
 }
 
-/** The handle people read for a user: "@honza", else their display name, else the bare id. */
+/** The handle people read for a user: "@jane", else their display name, else the bare id. */
 export async function slackUserHandle(token, userId) {
   const profile = await slackUserProfile(token, userId);
   const handle = profile?.username || profile?.name;
