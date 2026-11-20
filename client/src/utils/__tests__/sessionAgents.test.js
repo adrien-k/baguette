@@ -58,7 +58,7 @@ describe('agent display labels', () => {
       { id: 3, is_primary: 0, agent_type: 'reviewer' },
     ];
     const headId = 2;
-    expect(isAgentTreeCollapseLocked(agents, 1, headId)).toBe(true);
+    expect(isAgentTreeCollapseLocked(agents, 1, headId)).toBe(false);
     expect(isAgentTreeCollapseLocked(agents, 3, headId)).toBe(true);
     expect(isAgentTreeCollapseLocked(agents, 2, headId)).toBe(false);
     expect(isAgentTreeCollapseLocked(agents, '2', headId)).toBe(false);

@@ -70,8 +70,8 @@ export function isPrimaryAgent(agent) {
 }
 
 /**
- * The session-list caret must not hide other agents while one of them is the
- * open chat — collapsing would drop the selected row out of the tree.
+ * The session-list caret must not hide the open chat agent when collapsed.
+ * Primary in the second row (pinned non-primary head) stays visible — not locked.
  * @param {SessionAgentSummary[]} agents
  * @param {number | string | null | undefined} currentAgentId
  * @param {number | string | null | undefined} headAgentId top row (pinned or primary)
@@ -81,7 +81,12 @@ export function isAgentTreeCollapseLocked(agents, currentAgentId, headAgentId) {
   if (headAgentId == null || headAgentId === '') return false;
   const selected = (agents ?? []).find((agent) => Number(agent.id) === Number(currentAgentId));
   if (!selected) return false;
-  return Number(selected.id) !== Number(headAgentId);
+  if (Number(selected.id) === Number(headAgentId)) return false;
+  const primary = (agents ?? []).find(isPrimaryAgent);
+  if (primary && isPrimaryAgent(selected) && Number(primary.id) !== Number(headAgentId)) {
+    return false;
+  }
+  return true;
 }
 
 /** Stable list order for agents panel and switchers (ref ascending, then id). */
