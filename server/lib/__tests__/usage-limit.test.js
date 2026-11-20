@@ -164,8 +164,8 @@ describe('userDefaultUsageLimitsPatchError', () => {
   });
 
   it('rejects invalid action', () => {
-    expect(userDefaultUsageLimitsPatchError({ default_usage_limit_action: 'pause' })).toMatch(
-      /default_usage_limit_action/
+    expect(userDefaultUsageLimitsPatchError({ default_usage_limit_action: 'pause' })).toBe(
+      'default_usage_limit_action must be one of: stop, wait, continue'
     );
   });
 });

@@ -68,8 +68,9 @@ export async function applyUserDefaultUsageLimitsOnCreate(context) {
   if (!row?.default_usage_limit_action) return context;
 
   if (!hasAction) context.data.usage_limit_action = row.default_usage_limit_action;
-  const action = context.data.usage_limit_action ?? row.default_usage_limit_action;
-  if (!hasLimit && action === 'continue') {
+  // Apply the account dollar cap only when both fields were omitted. An explicit
+  // `continue` without `usage_limit` means unlimited overage (column null).
+  if (!hasAction && !hasLimit && context.data.usage_limit_action === 'continue') {
     context.data.usage_limit = row.default_usage_limit ?? null;
   }
   return context;
@@ -93,9 +94,10 @@ export function userDefaultUsageLimitsPatchError(data) {
   };
   const error = usageLimitFieldsError(mapped);
   if (error) {
-    return error
-      .replaceAll('usage_limit_action', 'default_usage_limit_action')
-      .replaceAll('usage_limit', 'default_usage_limit');
+    if (error.includes('usage_limit_action')) {
+      return error.replaceAll('usage_limit_action', 'default_usage_limit_action');
+    }
+    return error.replaceAll('usage_limit', 'default_usage_limit');
   }
   if (mapped.usage_limit_action !== undefined) {
     data.default_usage_limit_action = mapped.usage_limit_action ?? null;
