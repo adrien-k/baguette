@@ -253,7 +253,13 @@ async function applyDevUserDefaults(db, userId, configs) {
 }
 
 async function gitCommitDevRepo(cwd, message) {
-  await execFileAsync('git', ['add', '-A'], { cwd, stdio: 'pipe' });
+  await execFileAsync('git', ['add', '.baguette.yaml', 'README.md'], { cwd, stdio: 'pipe' });
+  const { stdout: staged } = await execFileAsync('git', ['diff', '--cached', '--name-only'], {
+    cwd,
+    stdio: 'pipe',
+  });
+  if (!staged.trim()) return;
+
   const gitEnv = {
     ...process.env,
     GIT_AUTHOR_NAME: 'Baguette Dev Seed',
