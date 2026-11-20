@@ -126,6 +126,7 @@ import {
 import { getAgentById } from '../agents-db.js';
 import {
   usageLimitFieldsError,
+  applyUserDefaultUsageLimitsOnCreate,
   USAGE_LIMIT_RESUME_PROMPT,
   computeResumeAtMs,
   MAX_UNKNOWN_RESET_RETRIES,
@@ -3220,6 +3221,7 @@ const sessionsHooks = {
     create: [
       scopeByUser,
       coerceIsSharedOnWrite,
+      applyUserDefaultUsageLimitsOnCreate,
       normalizeUsageLimitOnWrite,
       ensureShortId,
       seedLastActivityOnCreate,

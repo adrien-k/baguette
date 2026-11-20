@@ -931,8 +931,12 @@ export default function Session() {
             repos.find((r) => r.full_name === repoFullName)
           ),
         };
-    if (usageLimitAction) params.usage_limit_action = usageLimitAction;
-    if (usageLimit != null) params.usage_limit = usageLimit;
+    if (usageLimitAction) {
+      params.usage_limit_action = usageLimitAction;
+      if (usageLimitAction === 'continue') {
+        params.usage_limit = usageLimit ?? null;
+      }
+    }
     if (agentConfigId) params.agent_config_id = agentConfigId;
     if (model) params.model = model;
     if (modelParams) params.model_params = modelParams;
@@ -1298,7 +1302,6 @@ export default function Session() {
                 builderAllowRepoChoice={loopWorkspace.builderAllowRepoChoice}
                 onCreateLoop={loopWorkspace.handleCreateLoop}
                 onUpdateLoop={loopWorkspace.handleUpdateLoop}
-                onCancelLoopEdit={loopWorkspace.handleCancelLoopEdit}
                 onDeleteLoop={() => loopWorkspace.handleDeleteLoop()}
                 runSessions={loopWorkspace.runSessions}
                 runsLoading={loopWorkspace.runsLoading}
