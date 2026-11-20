@@ -58,6 +58,7 @@ import {
 } from '../../services/agent-message-dispatch.js';
 import { createMessageStreamWriter } from '../../services/message-writer-factory.ts';
 import { prepareAgentTurnCompaction } from '../../services/agent-turn-compaction.js';
+import { ensureAgentSystemPromptMessage } from '../../services/ensure-agent-system-prompt-message.js';
 import { sessionMessageIdentity } from '../../services/feathers/message-create-fields.js';
 import type { MessageStreamWriter } from '../../../shared/message-stream-writer.ts';
 import type { SystemMessagePayload } from '../../../shared/session-messages.ts';
@@ -443,6 +444,9 @@ ${body}`,
       },
       { agent, db: this.app.get('db') as never, app: this.app, agentSdk: CURSOR_AGENT_SDK_KEY }
     );
+    if (agent) {
+      await ensureAgentSystemPromptMessage(this.app, session, agent, systemPrompt);
+    }
     return this.writePromptRule(session, 'build', {
       description: 'Baguette session rules (always applied)',
       body: systemPrompt,

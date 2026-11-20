@@ -45,6 +45,7 @@ import {
 } from '../../services/agent-message-dispatch.js';
 import { createMessageStreamWriter } from '../../services/message-writer-factory.ts';
 import { prepareAgentTurnCompaction } from '../../services/agent-turn-compaction.js';
+import { ensureAgentSystemPromptMessage } from '../../services/ensure-agent-system-prompt-message.js';
 import { sessionMessageIdentity } from '../../services/feathers/message-create-fields.js';
 import { claudeResultErrorText } from './mapping.ts';
 import { processClaudeQueryStream, type ClaudeStreamTurnOutcome } from './sdk-turn.ts';
@@ -795,6 +796,16 @@ export class ClaudeAgentService {
         modelParams,
         agent,
       });
+    }
+
+    if (channel !== 'review' && agent) {
+      const promptAppend =
+        typeof queryOptions.systemPrompt === 'object' &&
+        queryOptions.systemPrompt !== null &&
+        'append' in queryOptions.systemPrompt
+          ? String(queryOptions.systemPrompt.append ?? '')
+          : '';
+      await ensureAgentSystemPromptMessage(this.app, sessionRow, agent, promptAppend);
     }
 
     const absoluteSessionPath = resolveDataDirRelativePath(sessionRow.session_path) || '';

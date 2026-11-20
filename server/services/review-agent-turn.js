@@ -14,6 +14,7 @@ import { getReviewerAgent } from './agents-db.js';
 import { patchAgentInternal } from './feathers/agents.service.js';
 import { getSdkPlugin, listSdkPlugins } from '../agent-sdks/registry.js';
 import { ensureFailedTurnResult } from './agent-error-message.js';
+import { ensureAgentSystemPromptMessage } from './ensure-agent-system-prompt-message.js';
 
 export function reviewTurnKey(agentId) {
   return `review:${agentId}`;
@@ -49,12 +50,6 @@ function reviewerRowIdentity(agent, data = {}, agentSdk = null) {
     model_params: turnModel.modelParams,
     agent_config_id: reviewTurnAgentConfigIdFromData(agent, data),
   });
-}
-
-function reviewerHasStoredSession(agent, sdk = agent?.agent_sdk) {
-  const hasStored = getSdkPlugin(sdk)?.hasStoredSession;
-  if (!hasStored) return false;
-  return Boolean(hasStored(agent));
 }
 
 function reviewTurnAgentMetadata(agentSdk, { model, modelParams }) {
@@ -205,12 +200,8 @@ class ReviewAgentTurn {
       app: this.app,
       agentSdk: reviewer?.agent_sdk ?? null,
     });
-    if (reviewer && !reviewerHasStoredSession(reviewer)) {
-      await this._persist(session, reviewer, {
-        type: 'system',
-        subtype: 'prompt',
-        content: systemPrompt,
-      });
+    if (reviewer) {
+      await ensureAgentSystemPromptMessage(this.app, session, reviewer, systemPrompt);
     }
     return systemPrompt;
   }

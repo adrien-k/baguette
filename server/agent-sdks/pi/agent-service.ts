@@ -45,6 +45,7 @@ import {
   registerBaguetteToolMessageCompactionHook,
   unregisterBaguetteToolMessageCompactionHook,
 } from '../../services/agent-turn-compaction.js';
+import { ensureAgentSystemPromptMessage } from '../../services/ensure-agent-system-prompt-message.js';
 import { sessionMessageIdentity } from '../../services/feathers/message-create-fields.js';
 import type { MessageStreamWriter } from '../../../shared/message-stream-writer.ts';
 import type { SystemMessagePayload } from '../../../shared/session-messages.ts';
@@ -191,6 +192,7 @@ export class PiAgentService {
       storedPiSessionId,
       appendSystemPrompt,
       agent,
+      channel,
     }: {
       model?: string | null;
       modelParams?: unknown;
@@ -223,6 +225,9 @@ export class PiAgentService {
     await writePiUserMcpConfig(agentDir, userMcp);
     const systemAppend =
       appendSystemPrompt ?? (await this._buildAppendSystemPrompt(session, agent));
+    if (agent && channel !== 'review') {
+      await ensureAgentSystemPromptMessage(this.app, session, agent, systemAppend[0] ?? '');
+    }
     const resourceLoader = new DefaultResourceLoader({
       cwd,
       agentDir: agentDir ?? cwd,
