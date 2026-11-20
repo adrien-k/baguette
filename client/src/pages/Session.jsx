@@ -1244,8 +1244,8 @@ export default function Session() {
           onDeleteLoop={loopWorkspace.handleDeleteLoop}
           sidebarSessions={sidebarSessions}
           routeSessionId={routeSessionId}
-          // Session title is the filled highlight. Agent chat outlines the open agent
-          // in that same color (review/diff: session fill only).
+          // Session highlight fills the title and agent tree; the open agent
+          // border contrasts on that fill (review/diff: session fill only).
           routeAgentId={chatViewOpen ? (activeAgent?.id ?? null) : null}
           autoExpandId={lastOpenedSessionId}
           isMobileList={!isMdUp}
