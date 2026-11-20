@@ -132,7 +132,7 @@ function AgentTreeAddBuilder({ agent, canManage, renaming, onAddBuilder, showAdd
         e.stopPropagation();
         onAddBuilder();
       }}
-      className="shrink-0 p-0.5 rounded text-faint hover:text-fg md:opacity-0 md:group-hover/row:opacity-100 focus-visible:opacity-100 transition-opacity"
+      className="shrink-0 p-0.5 rounded text-faint hover:text-fg"
     >
       <Plus className="w-3 h-3" aria-hidden />
     </button>
