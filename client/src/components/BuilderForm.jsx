@@ -227,7 +227,6 @@ export default function BuilderForm({
 
   useEffect(() => {
     if (editingLoop || userSettings == null) return;
-    if (hasPersistedPromptRef.current) return;
     if (seededUsageLimitsRef.current) return;
     if (
       persistKey &&
@@ -255,6 +254,8 @@ export default function BuilderForm({
   // the models fetch waits for it so the persisted default never resolves against
   // another SDK's list.
   const [sdkModelSeeded, setSdkModelSeeded] = useState(false);
+  /** Bumped when Clear runs so mount-style seed effects re-run without a scope change. */
+  const [formSeedToken, setFormSeedToken] = useState(0);
   const { configOptions, loading: configsLoading } = useAgentConfigs();
   const { getMeta } = useSdkMetas();
   const selectedConfig =
@@ -351,7 +352,7 @@ export default function BuilderForm({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- scope + readiness only; configOptions read inside effect
-  }, [editingLoop, userSettings?.id, configsLoading, selectedRepo?.id, isGlobal]);
+  }, [editingLoop, userSettings?.id, configsLoading, selectedRepo?.id, isGlobal, formSeedToken]);
   const {
     branches,
     loading: loadingBranches,
@@ -373,7 +374,7 @@ export default function BuilderForm({
     const defaultBranch = selectedRepo?.default_branch || branches[0];
     if (defaultBranch) setBranch(defaultBranch);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repoFullName, selectedRepo?.default_branch, branches]);
+  }, [repoFullName, selectedRepo?.default_branch, branches, formSeedToken]);
 
   useEffect(() => {
     if (isGlobal && sessionStartMode === 'same-branch') setSessionStartMode('new-branch');
@@ -530,6 +531,11 @@ export default function BuilderForm({
     const next = {};
     for (const server of mcpCatalog) next[String(server.id)] = !!server.enabled;
     setMcpEnabled(next);
+    if (!isGlobal && repoFullName && branches.length) {
+      const defaultBranch = selectedRepo?.default_branch || branches[0];
+      if (defaultBranch && branches.includes(defaultBranch)) setBranch(defaultBranch);
+    }
+    setFormSeedToken((n) => n + 1);
   };
 
   const handleClearForm = () => {
