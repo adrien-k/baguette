@@ -1,4 +1,5 @@
 import { baguetteMcpShortName } from '../../shared/baguette-mcp-tool-names.js';
+import { parseMcpJsonResult } from '../../shared/parse-mcp-json-result.js';
 
 const GIT_PUSH_OUTCOMES = new Set(['canceled', 'pushed', 'failed']);
 
@@ -33,8 +34,8 @@ export function findGitPushToolMessageRow(rows, requestId) {
       continue;
     }
     if (!isGitPushToolPayload(payload)) continue;
-    const data = gitPushResultData(payload);
-    if (data?.request_id === requestId) return { row, payload };
+    const parsed = parseMcpJsonResult(payload.result);
+    if (parsed?.request_id === requestId) return { row, payload };
   }
   return null;
 }

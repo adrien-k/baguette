@@ -16,6 +16,7 @@ import {
   isLoopUserMessage,
   isMcpUserMessage,
 } from '@baguette/shared/turn-model.js';
+import { hasHumanUserReplyAfter } from '@baguette/shared/running-tools.js';
 import InjectedUserTurnBlock from './chat/InjectedUserTurnBlock.jsx';
 import McpAgentBlock from './chat/McpAgentBlock.tsx';
 import MessageTimestamp from './chat/MessageTimestamp.tsx';
@@ -52,7 +53,7 @@ export type ChatMessageProps = {
   agentName?: string;
   messageIndex: number | null;
   allMessages: ChatMessageView[] | null;
-  pinnedRunningBashIds?: Set<string>;
+  pinnedToolDockIds?: Set<string>;
   agents?: Array<{
     id: number;
     ref?: number;
@@ -223,7 +224,7 @@ function TypedMessage(
     sessionPath,
     sessionId,
     agentName = 'Agent',
-    pinnedRunningBashIds,
+    pinnedToolDockIds,
     userReplied,
     agents,
     onSelectAgent,
@@ -243,7 +244,7 @@ function TypedMessage(
 
     case 'tool_call': {
       const call = message as TypedMessageView & { call_id?: string | null };
-      if (pinnedRunningBashIds?.has(call.call_id ?? `tool-${message.id}`)) return null;
+      if (pinnedToolDockIds?.has(call.call_id ?? `tool-${message.id}`)) return null;
       return (
         <ToolCallBlock
           message={message}
@@ -325,14 +326,10 @@ export default function ChatMessage(props: ChatMessageProps) {
     return null;
   }
 
-  const userReplied = (() => {
-    if (!allMessages || messageIndex == null) return false;
-    return allMessages.slice(messageIndex + 1).some((m) => {
-      if (!isHumanUserMessage(m)) return false;
-      const source = (m as { source?: string }).source;
-      return source !== 'baguette' && source !== 'loop';
-    });
-  })();
+  const userReplied =
+    allMessages != null && messageIndex != null
+      ? hasHumanUserReplyAfter(allMessages, messageIndex)
+      : false;
 
   return (
     <TypedMessage {...props} message={message as TypedMessageView} userReplied={userReplied} />

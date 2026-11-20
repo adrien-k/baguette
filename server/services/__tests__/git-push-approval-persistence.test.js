@@ -7,6 +7,27 @@ import {
 
 const REQUEST_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 
+function gitPushOkEnvelopeMessageJson(requestId) {
+  const inner = {
+    ok: true,
+    approval_requested: true,
+    request_id: requestId,
+    target_branch: 'development',
+  };
+  const text = JSON.stringify(inner, null, 2);
+  return JSON.stringify({
+    type: 'tool_call',
+    kind: 'mcp',
+    name: 'mcp__baguette__GitPush',
+    args: { tool: 'GitPush', branch: 'development' },
+    result: {
+      status: 'ok',
+      content: text,
+      data: { content: [{ type: 'text', text }] },
+    },
+  });
+}
+
 function gitPushMessageJson(requestId) {
   const data = {
     ok: true,
@@ -35,6 +56,41 @@ describe('git-push-approval-persistence', () => {
     ];
     const match = findGitPushToolMessageRow(rows, REQUEST_ID);
     expect(match?.row.id).toBe(2);
+  });
+
+  it('findGitPushToolMessageRow matches request_id inside ok() envelope data', () => {
+    const rows = [{ id: 3, message_json: gitPushOkEnvelopeMessageJson(REQUEST_ID) }];
+    const match = findGitPushToolMessageRow(rows, REQUEST_ID);
+    expect(match?.row.id).toBe(3);
+  });
+
+  it('persistGitPushApprovalOutcome patches ok() envelope tool_call rows', async () => {
+    const row = { id: 100, message_json: gitPushOkEnvelopeMessageJson(REQUEST_ID) };
+    const patch = vi.fn().mockResolvedValue({ id: 100 });
+    const orderBy = vi.fn().mockResolvedValue([row]);
+    const db = () => ({
+      where: vi.fn().mockReturnThis(),
+      whereRaw: vi.fn().mockReturnThis(),
+      orderBy,
+    });
+    const app = {
+      get: (key) => (key === 'db' ? db : undefined),
+      service: () => ({ patch }),
+    };
+
+    const result = await persistGitPushApprovalOutcome(
+      app,
+      { id: 7, user_id: 3 },
+      {
+        requestId: REQUEST_ID,
+        outcome: 'canceled',
+      }
+    );
+
+    expect(result.patched).toBe(true);
+    const payload = JSON.parse(patch.mock.calls[0][1].message_json);
+    expect(payload.result.data.approval_outcome).toBe('canceled');
+    expect(payload.result.data.approval_requested).toBe(false);
   });
 
   it('loadGitPushToolCallRowsForRequest queries by request_id substring', async () => {

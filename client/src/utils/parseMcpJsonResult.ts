@@ -31,8 +31,19 @@ function mcpDataHasPayload(data: Record<string, unknown>): boolean {
     data.task_id != null ||
     data.ok === true ||
     data.ok === false ||
-    data.error != null
+    data.error != null ||
+    data.approval_requested === true ||
+    data.approval_requested === false ||
+    data.approval_outcome != null
   );
+}
+
+function mergeContentBlocksWithFields(
+  obj: Record<string, unknown>,
+  fromBlocks: McpResultData
+): McpResultData {
+  const { content: _content, ...fields } = obj;
+  return { ...fromBlocks, ...fields };
 }
 
 function parsedFromMcpTextBlocks(obj: Record<string, unknown>): McpResultData | null {
@@ -57,9 +68,15 @@ export function parseMcpJsonResult(result: unknown): McpResultData | null {
         const base = fromMcpBlocks ?? fromContent;
         return base ? { ...base, ...data } : (data as McpResultData);
       }
+      const fromDataBlocks = parsedFromMcpTextBlocks(data);
+      if (fromDataBlocks) {
+        return mergeContentBlocksWithFields(data, fromDataBlocks);
+      }
     }
 
-    if (fromMcpBlocks) return fromMcpBlocks;
+    if (fromMcpBlocks) {
+      return mergeContentBlocksWithFields(obj as Record<string, unknown>, fromMcpBlocks);
+    }
     if (fromContent) return fromContent;
     return obj;
   }
