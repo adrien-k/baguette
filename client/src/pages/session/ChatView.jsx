@@ -659,10 +659,10 @@ export default function ChatView({
   };
 
   useEffect(() => {
-    if (addBuilderOpen || !openedAddBuilderFromComposerRef.current) return;
+    if (addBuilderOpen || addBuilderSaving || !openedAddBuilderFromComposerRef.current) return;
     if (addBuilderComposerClearNonce !== addBuilderClearNonceAtOpenRef.current) return;
     openedAddBuilderFromComposerRef.current = false;
-  }, [addBuilderOpen, addBuilderComposerClearNonce]);
+  }, [addBuilderOpen, addBuilderSaving, addBuilderComposerClearNonce]);
 
   useEffect(() => {
     if (!addBuilderComposerClearNonce) return;
