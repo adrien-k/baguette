@@ -124,6 +124,9 @@ describe('seedDevEnvironment', () => {
 
     const hub = sessions.find((s) => s.short_id === 'devhub1');
     expect(hub?.session_path).toContain('devhub1');
+    expect(hub?.local_branch).toBeTruthy();
+    expect(hub?.remote_branch).toBeTruthy();
+    expect(hub.local_branch).toContain('devhub1');
     const primary = await db('agents').where({ session_id: hub.id, is_primary: 1 }).first();
     expect(primary?.model).toBe(MOCK_STANDARD_MODEL_ID);
 

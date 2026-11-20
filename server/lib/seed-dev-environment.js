@@ -11,12 +11,11 @@ import path from 'node:path';
 import * as yaml from 'js-yaml';
 import {
   DATA_DIR,
-  REPOS_DIR,
   normalizeRepoPathForStorage,
   resolveRepoPath,
   storedRepoPath,
 } from '../config.js';
-import { initLocalRepo } from '../services/github.js';
+import { createWorktree, initLocalRepo, uniqueLocalBranch } from '../services/github.js';
 import { insertTestAgentConfig } from '../test-utils/agent-configs.js';
 import { readLiveSdkEnv } from '../test-utils/sdk-live-env.js';
 import { insertSessionWithPrimaryBuilder } from '../test-utils/session-agents.js';
@@ -116,23 +115,30 @@ async function defaultBranchForRepo(repoAbs) {
   }
 }
 
-function sessionWorktreeAbs(strippedName, shortId) {
-  return path.join(REPOS_DIR, strippedName, 'sessions', shortId, 'worktree');
-}
-
 function sessionWorktreeStored(strippedName, shortId) {
   return `repos/${strippedName}/sessions/${shortId}/worktree`;
 }
 
-async function ensureSessionGitWorktree(mainRepoAbs, strippedName, shortId, branch) {
-  const worktreeAbs = sessionWorktreeAbs(strippedName, shortId);
-  await execFileAsync('git', ['worktree', 'add', '--detach', worktreeAbs, branch], {
-    cwd: mainRepoAbs,
-    stdio: 'pipe',
-  });
+/** Session worktree with a unique local branch (same pattern as session provisioning). */
+async function ensureSessionGitWorktree(repo, shortId, startBranch) {
+  const strippedName = repo.stripped_name ?? DEV_REPO_STRIPPED;
+  const localBranch = uniqueLocalBranch(startBranch, shortId);
+  const { worktreePath } = await createWorktree(
+    {
+      stripped_name: strippedName,
+      repo_path: repo.repo_path,
+      full_name: repo.full_name ?? DEV_REPO_FULL_NAME,
+    },
+    startBranch,
+    shortId,
+    '', // local repos have no origin
+    { localBranch }
+  );
   return {
-    absolute: worktreeAbs,
+    absolute: worktreePath,
     stored: sessionWorktreeStored(strippedName, shortId),
+    localBranch,
+    remoteBranch: startBranch,
   };
 }
 
@@ -388,7 +394,7 @@ async function seedShowcaseSession(db, userId, repo, configs) {
   if (existing) return;
 
   const branch = repo.default_branch;
-  await ensureSessionGitWorktree(repo.mainAbs, DEV_REPO_STRIPPED, shortId, branch);
+  const worktree = await ensureSessionGitWorktree(repo, shortId, branch);
 
   const modelParams = stringifyModelParamsForStorage(mock.env.modelParams);
   const sessionId = await insertSessionWithPrimaryBuilder(db, {
@@ -400,7 +406,9 @@ async function seedShowcaseSession(db, userId, repo, configs) {
     label: 'Dev hub (mock agents)',
     initial_prompt: 'Local dev seed — explore subagents in the sidebar.',
     status: 'stopped',
-    session_path: sessionWorktreeStored(DEV_REPO_STRIPPED, shortId),
+    session_path: worktree.stored,
+    local_branch: worktree.localBranch,
+    remote_branch: worktree.remoteBranch,
     auto_push: 0,
     agent_config_id: mock.id,
     agent_sdk: 'mock',
@@ -492,7 +500,7 @@ async function seedSecondarySession(db, userId, repo, configs, sdk, shortId, lab
   if (existing) return;
 
   const branch = repo.default_branch;
-  await ensureSessionGitWorktree(repo.mainAbs, DEV_REPO_STRIPPED, shortId, branch);
+  const worktree = await ensureSessionGitWorktree(repo, shortId, branch);
   const modelParams = stringifyModelParamsForStorage(entry.env.modelParams);
 
   const sessionId = await insertSessionWithPrimaryBuilder(db, {
@@ -504,7 +512,9 @@ async function seedSecondarySession(db, userId, repo, configs, sdk, shortId, lab
     label,
     initial_prompt: `Dev seed session (${sdk}).`,
     status: sdk === 'cursor' ? 'completed' : 'stopped',
-    session_path: sessionWorktreeStored(DEV_REPO_STRIPPED, shortId),
+    session_path: worktree.stored,
+    local_branch: worktree.localBranch,
+    remote_branch: worktree.remoteBranch,
     auto_push: 0,
     agent_config_id: entry.id,
     agent_sdk: sdk,
