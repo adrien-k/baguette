@@ -23,8 +23,7 @@ import {
 
 const WIDE_VIEWPORT = { width: 1280, height: 800 };
 
-const AUTO_PUSH_OFF_CONFIRM =
-  /Confirmation is required because[\s\S]*auto-push is off[\s\S]*one-time manual push/;
+const AUTO_PUSH_OFF_CONFIRM = /Why confirmation is required[\s\S]*Auto-push is off/;
 
 /** The Push modal overlay (MODAL_OVERLAY_CLASS includes bg-scrim; only modals use it). */
 function pushModal(page) {
@@ -209,6 +208,7 @@ test.describe('GitPush approval flow', () => {
     const modal = pushModal(page);
     await expect(modal).toBeVisible({ timeout: 120_000 });
     await expect(modal.getByText(MOCK_E2E_GITPUSH_REASON)).toBeVisible();
+    await expect(modal.getByText('Different target branch')).toBeVisible();
     await expect(modal.getByText('origin/development', { exact: true })).toBeVisible();
     await expect(modal.getByText(/local .*→ origin\/development/)).toBeVisible();
     await expect(modal.getByText(/overwrites remote history/)).toHaveCount(0);
@@ -262,6 +262,7 @@ test.describe('GitPush approval flow', () => {
     const modal = pushModal(page);
     await expect(modal).toBeVisible({ timeout: 120_000 });
     await expect(modal.getByText(MOCK_E2E_GITPUSH_REASON)).toBeVisible();
+    await expect(modal.getByText('Force push')).toBeVisible();
     await expect(modal.getByText(/--force\s*overwrites remote history/)).toBeVisible();
     await expect(modal.getByRole('button', { name: 'Accept', exact: true })).toBeVisible();
     await expect(modal.getByText(AUTO_PUSH_OFF_CONFIRM)).toHaveCount(0);

@@ -6,6 +6,7 @@ import { sessionsService } from '../feathers.js';
 import Toggle from './Toggle.jsx';
 import Modal, { ModalActions, ModalHeader } from './Modal.jsx';
 import { GHOST_BUTTON_CLASS } from '../utils/buttonStyles.js';
+import { gitPushApprovalTriggers } from './chat/gitPushCardHelpers.js';
 import {
   HAIRLINE,
   INPUT_CLASS,
@@ -24,6 +25,8 @@ export default function PushConfirmModal({
   initialSourceBranch = '',
   initialForceMode,
   localBranch = '',
+  sessionRemoteBranch = '',
+  sessionLocalBranch = '',
   reason = null,
   autoPushOff = false,
   agentRequest = false,
@@ -55,12 +58,16 @@ export default function PushConfirmModal({
   let forceModeLabel = 'Normal push';
   if (forceMode === 'force') forceModeLabel = 'Force (--force)';
   else if (forceMode === 'lease') forceModeLabel = 'Force with lease (--force-with-lease)';
-  const autoPushOffOnlyReason =
-    agentRequest &&
-    autoPushOff &&
-    !initialForceMode &&
-    !initialSourceBranch &&
-    (!branch || branch === localBranch);
+  const approvalTriggers = agentRequest
+    ? gitPushApprovalTriggers({
+        forceMode: initialForceMode || null,
+        targetBranch: initialBranch || branch || null,
+        sourceBranch: initialSourceBranch || null,
+        sessionRemoteBranch: sessionRemoteBranch || localBranch || null,
+        sessionLocalBranch: sessionLocalBranch || localBranch || null,
+        autoPushOff,
+      })
+    : [];
 
   useEffect(() => {
     if (!sessionId || !branch) {
@@ -117,12 +124,25 @@ export default function PushConfirmModal({
         </p>
       ) : null}
 
-      {autoPushOffOnlyReason ? (
-        <p className={`${TEXT_MUTED} text-sm mb-3 leading-snug`}>
-          Confirmation is required because{' '}
-          <strong className={TEXT_HEADING}>auto-push is off</strong> for this session — this is a
-          one-time manual push.
-        </p>
+      {agentRequest && approvalTriggers.length > 0 ? (
+        <div
+          className={`mb-3 rounded-lg border border-warning/40 ${TINT_WARN_SOFT} px-3 py-2.5 space-y-2`}
+        >
+          <p className={`text-[10px] font-semibold uppercase tracking-wide ${TEXT_MUTED}`}>
+            Why confirmation is required
+          </p>
+          <ul className="space-y-2">
+            {approvalTriggers.map((trigger) => (
+              <li key={trigger.key} className="flex items-start gap-2 text-xs leading-snug">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-warning" />
+                <div className="min-w-0">
+                  <p className={`font-medium ${TEXT_HEADING}`}>{trigger.title}</p>
+                  <p className={TEXT_MUTED}>{trigger.detail}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : null}
 
       {reason ? (

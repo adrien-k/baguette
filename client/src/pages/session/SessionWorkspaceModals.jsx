@@ -70,6 +70,8 @@ export default function SessionWorkspaceModals({
           initialSourceBranch={pushRequest?.sourceBranch || ''}
           initialForceMode={pushRequest?.forceMode || null}
           localBranch={session?.remote_branch || session?.local_branch || ''}
+          sessionRemoteBranch={session?.remote_branch || ''}
+          sessionLocalBranch={session?.local_branch || ''}
           reason={pushRequest?.reason || null}
           autoPushOff={pushRequest?.autoPushOff === true}
           agentRequest={pushRequest?.agentRequest === true}

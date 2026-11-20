@@ -25,6 +25,68 @@ export function gitPushNeedsApproval(args, session) {
   return isForcePush || isNonSessionBranch || autoPushOff || !!sourceBranch;
 }
 
+/** Human-readable triggers that require GitPush user approval (matches git-push MCP handler). */
+export function gitPushApprovalTriggers({
+  forceMode = null,
+  targetBranch = null,
+  sourceBranch = null,
+  sessionRemoteBranch = null,
+  sessionLocalBranch = null,
+  autoPushOff = false,
+}) {
+  const triggers = [];
+  const sessionBranch = sessionRemoteBranch || sessionLocalBranch || null;
+  const trimmedSource =
+    typeof sourceBranch === 'string' && sourceBranch.trim() ? sourceBranch.trim() : null;
+  const explicitTarget =
+    typeof targetBranch === 'string' && targetBranch.trim() ? targetBranch.trim() : null;
+
+  if (forceMode === 'force') {
+    triggers.push({
+      key: 'force',
+      title: 'Force push',
+      detail: 'Uses --force and can overwrite remote history.',
+    });
+  } else if (forceMode === 'lease') {
+    triggers.push({
+      key: 'force_lease',
+      title: 'Force with lease',
+      detail: 'Uses --force-with-lease.',
+    });
+  }
+
+  if (trimmedSource) {
+    triggers.push({
+      key: 'source',
+      title: 'Different source ref',
+      detail: `Pushes from ${trimmedSource} instead of the usual session HEAD.`,
+    });
+  }
+
+  const isNonSessionBranch =
+    explicitTarget &&
+    sessionBranch &&
+    explicitTarget !== sessionBranch &&
+    explicitTarget !== sessionLocalBranch;
+  if (isNonSessionBranch) {
+    triggers.push({
+      key: 'target',
+      title: 'Different target branch',
+      detail: `Destination is origin/${explicitTarget}, not the session branch (${sessionBranch}).`,
+    });
+  }
+
+  if (autoPushOff) {
+    triggers.push({
+      key: 'auto_push_off',
+      title: 'Auto-push is off',
+      detail: 'Session-branch pushes need your approval while auto-push is disabled.',
+    });
+  }
+
+  return triggers;
+}
+
 export function resolveGitPushBranches(args, mcpResult, session) {
   const argsBranch = typeof args?.branch === 'string' && args.branch ? args.branch : null;
   const resultBranch =
