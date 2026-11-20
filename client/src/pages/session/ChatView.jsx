@@ -37,7 +37,6 @@ import ChatPushChangesButton from '../../components/chat/ChatPushChangesButton.t
 import ChatQuickActionButton, {
   CHAT_ACTION_BUTTON_CLASS,
 } from '../../components/chat/ChatQuickActionButton.tsx';
-import ChatRecipesSection from '../../components/chat/ChatRecipesSection.tsx';
 import { useSessionChatRecipes } from '../../hooks/useSessionChatRecipes.js';
 import FileAttachmentPicker from '../../components/FileAttachmentPicker.jsx';
 import AgentMessageComposer from '../../components/AgentMessageComposer.jsx';
@@ -228,6 +227,18 @@ export default function ChatView({
   const activeSubagent = isSubagentBuilder(activeAgent);
   const showMessageComposer = !activeSubagent;
   const showSessionChatFooterExtras = showSessionChatFooterExtrasForAgent(activeAgent);
+  const showComposerRecipes =
+    !readonly &&
+    showMessageComposer &&
+    !isProvisioning &&
+    session?.pr_status !== 'merged' &&
+    chatRecipes.length > 0;
+  const handleRecipeSelect = useCallback(
+    (prompt) => {
+      setInput(prompt);
+    },
+    [setInput]
+  );
   const { usage: sessionUsage, loading: sessionUsageLoading } = useSessionUsage(session?.id);
   const costByAgentId = useMemo(
     () => usageCostByAgentId(sessionUsage?.by_agent),
@@ -946,18 +957,6 @@ export default function ChatView({
                     />
                   </div>
                 )}
-              {!readonly &&
-                showSessionChatFooterExtras &&
-                !isProvisioning &&
-                !isGlobalSession(session) &&
-                !isRunning &&
-                session?.pr_status !== 'merged' && (
-                  <ChatRecipesSection
-                    recipes={chatRecipes}
-                    disabled={!canQuickSend}
-                    onRun={handleQuickSend}
-                  />
-                )}
               {session && showSessionChatFooterExtras && !isProvisioning && (
                 <ChatSessionPlanLinks sessionId={session.id} />
               )}
@@ -1083,6 +1082,8 @@ export default function ChatView({
                         </span>
                       ) : null
                     }
+                    recipes={showComposerRecipes ? chatRecipes : undefined}
+                    onRecipeSelect={showComposerRecipes ? handleRecipeSelect : undefined}
                     agentConfigKey={
                       agentSource?.agent_config_id != null
                         ? String(agentSource.agent_config_id)

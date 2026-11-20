@@ -10,7 +10,7 @@ function shouldSkipRecipes(session) {
   return session.status === 'archiving' || session.status === 'archived';
 }
 
-/** Chat footer recipes (built-in + `.baguette.yaml` custom). */
+/** Composer recipes dropdown (built-in + `.baguette.yaml` custom). */
 export function useSessionChatRecipes(session, activeAgent) {
   const sessionId = session?.id;
   const agentType = activeAgent?.agent_type ?? 'builder';
