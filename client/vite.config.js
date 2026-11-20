@@ -40,9 +40,12 @@ export default defineConfig({
     dedupe: ['react', 'react-dom'],
   },
   build: {
+    // The big chunks are mermaid's diagram engines (elk is ~1.5 MB). They are already split off and
+    // only fetched when a diagram is shown, so the default 500 kB warning does not apply to them.
+    chunkSizeWarningLimit: 1600,
     rolldownOptions: {
       output: {
-        advancedChunks: {
+        codeSplitting: {
           groups: [
             {
               name: 'vendor-react',
