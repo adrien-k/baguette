@@ -34,7 +34,7 @@ export async function agentHasSystemPromptMessage(db, sessionId, agentId) {
  * @param {object} agent
  * @param {string | null | undefined} agentSdk
  */
-export async function buildChatSystemPromptForAgent(app, session, agent, agentSdk) {
+async function buildChatSystemPromptForAgent(app, session, agent, agentSdk) {
   if (!session?.id || !agent?.id) return '';
   const absoluteCwd = session.session_path
     ? resolveDataDirRelativePath(session.session_path)
