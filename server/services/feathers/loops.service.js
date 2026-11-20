@@ -25,6 +25,7 @@ import {
   parseAutoLoadSkillLabels,
   serializeAutoLoadSkillLabels,
 } from '../skill-resolution.js';
+import { usageLimitFieldsError } from '../../lib/usage-limit.js';
 
 /** Fields a client may set. Everything else (bookkeeping, user_id) is server-owned. */
 const WRITABLE_FIELDS = [
@@ -34,6 +35,8 @@ const WRITABLE_FIELDS = [
   'prompt',
   'create_new_branch',
   'auto_push',
+  'usage_limit_action',
+  'usage_limit',
   'single_session',
   'is_global',
   'agent_sdk',
@@ -274,6 +277,8 @@ function sessionDataFromLoop(loop) {
     initial_prompt: loop.prompt,
     create_new_branch: !!loop.create_new_branch,
     auto_push: !!loop.auto_push,
+    usage_limit_action: loop.usage_limit_action ?? 'stop',
+    usage_limit: loop.usage_limit ?? null,
   };
   if (loop.is_global) {
     data.is_global = true;
@@ -434,6 +439,12 @@ async function normalizeAgentConfigOnLoopWrite(context) {
   return context;
 }
 
+/** `usage_limit_action` / `usage_limit` are optional but must be valid when sent. */
+function assertUsageLimitFields(data) {
+  const error = usageLimitFieldsError(data);
+  if (error) throw new BadRequest(error);
+}
+
 function normalizeCreate(context) {
   const data = context.data;
   data.is_global = !!data.is_global;
@@ -446,6 +457,7 @@ function normalizeCreate(context) {
     throw new BadRequest('base_branch is required');
   }
   if (!data.prompt?.trim()) throw new BadRequest('prompt is required');
+  assertUsageLimitFields(data);
 
   applySchedule(data, normalizeSchedulePayload(data));
   data.enabled = data.enabled === undefined ? true : !!data.enabled;
@@ -516,6 +528,7 @@ function normalizePatch(context) {
   if (context.params.provider && 'session_id' in data) delete data.session_id;
 
   if ('prompt' in data && !data.prompt?.trim()) throw new BadRequest('prompt is required');
+  assertUsageLimitFields(data);
   for (const field of [
     'enabled',
     'create_new_branch',

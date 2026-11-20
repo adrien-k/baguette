@@ -216,6 +216,8 @@ export type SystemMessagePayload = {
   content?: string;
   text?: string;
   task_status?: string;
+  /** ISO time a usage-limit wait ends (status rows from `onUsageLimit`). */
+  usage_limit_resume_at?: string;
   estimated_tokens?: number | null;
   estimated_tokens_delta?: number | null;
   tool_use_id?: string;

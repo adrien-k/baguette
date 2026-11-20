@@ -1,5 +1,6 @@
 import { CheckCircle } from 'lucide-react';
 import CollapsibleMarkdown from '../chat/CollapsibleMarkdown.tsx';
+import RunPlanButton from '../chat/RunPlanButton.tsx';
 import SessionTodosPanel from './SessionTodosPanel.jsx';
 import { NEUTRAL_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 
@@ -23,6 +24,7 @@ export default function SessionPlanSection({
   plan,
   todos,
   sessionId,
+  runPlanAgentId,
   editable = false,
   completing = false,
   onComplete,
@@ -33,7 +35,8 @@ export default function SessionPlanSection({
 
   return (
     <section
-      className={`space-y-4 rounded-xl border p-3 sm:p-4 ${
+      id={plan.ref != null ? `plan-${plan.ref}` : undefined}
+      className={`space-y-4 rounded-xl border p-3 sm:p-4 scroll-mt-4 ${
         isCompleted ? 'border-line bg-inset/20 opacity-90' : 'border-line bg-inset/30'
       }`}
     >
@@ -58,6 +61,14 @@ export default function SessionPlanSection({
         </CollapsibleMarkdown>
       ) : (
         <p className="text-sm text-faint">No plan content yet.</p>
+      )}
+      {editable && !isCompleted && (
+        <div className="space-y-2">
+          <RunPlanButton sessionId={sessionId} agentId={runPlanAgentId} planRef={plan.ref} />
+          <p className="text-xs text-faint">
+            or continue chatting with the agent to refine the plan
+          </p>
+        </div>
       )}
       <div className="space-y-3">
         <h3 className="text-xs font-medium uppercase tracking-wide text-faint">Todos</h3>

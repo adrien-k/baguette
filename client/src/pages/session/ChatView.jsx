@@ -32,6 +32,7 @@ import {
 } from '@baguette/shared/running-tools.js';
 import ChatRunningBashDock from '../../components/chat/ChatRunningBashDock.tsx';
 import ChatCostSummary from '../../components/chat/ChatCostSummary.tsx';
+import ChatSessionPlanLinks from '../../components/chat/ChatSessionPlanLinks.tsx';
 import ChatPushChangesButton from '../../components/chat/ChatPushChangesButton.tsx';
 import ChatQuickActionButton, {
   CHAT_ACTION_BUTTON_CLASS,
@@ -957,6 +958,9 @@ export default function ChatView({
                     onRun={handleQuickSend}
                   />
                 )}
+              {session && showSessionChatFooterExtras && !isProvisioning && (
+                <ChatSessionPlanLinks sessionId={session.id} />
+              )}
               {session && showSessionChatFooterExtras && !isRunning && !isProvisioning && (
                 <ChatCostSummary usage={sessionUsage} loading={sessionUsageLoading} />
               )}

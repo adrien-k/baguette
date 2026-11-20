@@ -33,6 +33,7 @@ vi.mock('../../../services/agent-settings.js', () => ({
 }));
 
 vi.mock('../../../services/baguette-config.js', () => ({
+  BAGUETTE_DIR: '.baguette',
   loadBaguetteConfig: vi.fn(),
   loadBaguetteAgentPrompt: vi.fn().mockResolvedValue(null),
   interpolateEnv: vi.fn(),
@@ -126,6 +127,9 @@ function makeMockApp(db) {
   const getClaudeEnv = vi.fn().mockResolvedValue({});
   const deleteSessionTasks = vi.fn();
   const createTask = vi.fn().mockResolvedValue({});
+  const onUsageLimit = vi.fn().mockResolvedValue({ action: 'stop', resume_at: null });
+  const checkUsageLimitGate = vi.fn().mockResolvedValue(null);
+  const insertUsageRow = vi.fn().mockResolvedValue(0);
   const reviewAgentTurnStub = {
     onAgentTurnComplete: vi.fn().mockResolvedValue(undefined),
     _persistStatus: vi.fn().mockResolvedValue(undefined),
@@ -154,7 +158,9 @@ function makeMockApp(db) {
           onActivity: async () => {},
           onTurnStart: async () => {},
           onTurnComplete: async () => {},
-          insertUsageRow: vi.fn().mockResolvedValue(0),
+          onUsageLimit,
+          checkUsageLimitGate,
+          insertUsageRow,
           get: async (id) => db('sessions').where({ id }).first(),
         };
       if (name === 'agents') return { patch: agentPatch };
@@ -170,6 +176,9 @@ function makeMockApp(db) {
     _sessionRemove: sessionRemove,
     _sessionEmit: sessionEmit,
     _messageCreate: messageCreate,
+    _onUsageLimit: onUsageLimit,
+    _checkUsageLimitGate: checkUsageLimitGate,
+    _insertUsageRow: insertUsageRow,
   };
 }
 
@@ -737,7 +746,7 @@ describe('ClaudeAgentService', () => {
   // ── 5. Assistant failure ───────────────────────────────────────────────────
 
   describe('assistant failure', () => {
-    it('bubbles a quota-shaped failed result via app:error and marks the agent failed', async () => {
+    it('hands a quota-shaped failed result to the usage-limit policy and stops the agent', async () => {
       const service = Object.assign(new ClaudeAgentService(), {
         app: mockApp,
         _db: mockApp.get('db'),
@@ -747,11 +756,7 @@ describe('ClaudeAgentService', () => {
       // usage-limit text instead of the stream throwing.
       query.mockImplementation(() =>
         makeAsyncIterable([
-          {
-            type: 'system',
-            subtype: 'init',
-            session_id: 'sdk-1',
-          },
+          { type: 'system', subtype: 'init', session_id: 'sdk-1' },
           {
             type: 'result',
             subtype: 'error_during_execution',
@@ -769,29 +774,53 @@ describe('ClaudeAgentService', () => {
       });
 
       await vi.waitFor(() => {
-        expect(mockApp._sessionEmit).toHaveBeenCalledWith(
-          'app:error',
-          expect.objectContaining({
-            sessionId: BASE_SESSION_ID,
-            message: expect.stringContaining('usage limit'),
-          })
+        expect(mockApp._onUsageLimit).toHaveBeenCalledWith(
+          BASE_SESSION_ID,
+          BASE_BUILDER.id,
+          expect.objectContaining({ sdk: 'claude', reason: 'rejected' })
         );
       });
       await vi.waitFor(() => {
         expect(mockApp._agentPatch).toHaveBeenCalledWith(
           BASE_BUILDER.id,
-          {
-            status: 'failed',
-            active_turn_id: null,
-          },
+          { status: 'stopped', active_turn_id: null },
           expect.anything()
         );
       });
-      // No extra status row: the turn_result row already renders the error inline.
-      expect(mockApp._messageCreate).not.toHaveBeenCalledWith(
-        expect.objectContaining({ subtype: 'status' }),
-        expect.anything()
+      // The policy notice replaces the generic failure toast.
+      expect(mockApp._sessionEmit).not.toHaveBeenCalledWith('app:error', expect.anything());
+    });
+
+    it('stops a turn when a rejected rate_limit_event arrives mid-stream', async () => {
+      const service = Object.assign(new ClaudeAgentService(), {
+        app: mockApp,
+        _db: mockApp.get('db'),
+      });
+      query.mockImplementation(() =>
+        makeAsyncIterable([
+          { type: 'system', subtype: 'init', session_id: 'sdk-1' },
+          {
+            type: 'rate_limit_event',
+            rate_limit_info: {
+              status: 'rejected',
+              rateLimitType: 'five_hour',
+              resetsAt: 1793064000,
+            },
+          },
+        ])
       );
+      const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
+      await service.createAgentSession(sessionRow, BASE_BUILDER, {
+        model: BASE_BUILDER.model,
+        turnAgentConfigId: BASE_BUILDER.agent_config_id,
+      });
+      await vi.waitFor(() => {
+        expect(mockApp._onUsageLimit).toHaveBeenCalledWith(
+          BASE_SESSION_ID,
+          BASE_BUILDER.id,
+          expect.objectContaining({ reset_at_ms: 1793064000_000 })
+        );
+      });
     });
 
     it('fails the turn and surfaces app:error when the query ends without a result', async () => {
@@ -974,6 +1003,127 @@ describe('ClaudeAgentService', () => {
   });
 
   // ── 6. handleMessageCreated ───────────────────────────────────────────────
+
+  // ── Usage-limit policy: every action × limit hit / not hit ────────────────
+
+  describe('usage limit policy', () => {
+    const overageOn = {
+      type: 'rate_limit_event',
+      rate_limit_info: { status: 'allowed', isUsingOverage: true, resetsAt: 1793064000 },
+    };
+    const rejected = {
+      type: 'rate_limit_event',
+      rate_limit_info: { status: 'rejected', resetsAt: 1793064000 },
+    };
+    // ~$15 at Sonnet output rates: over any small cap. 20k tokens ≈ $0.30.
+    const assistant = (id, outputTokens) => ({
+      type: 'assistant',
+      message: {
+        id,
+        model: 'claude-sonnet-4-5',
+        content: [],
+        usage: { input_tokens: 0, output_tokens: outputTokens },
+      },
+    });
+    const done = { type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0 };
+    const init = { type: 'system', subtype: 'init', session_id: 'sdk-1' };
+
+    async function runTurn(policy, messages) {
+      await db('sessions').where({ id: BASE_SESSION_ID }).update(policy);
+      query.mockImplementation(() => makeAsyncIterable([init, ...messages]));
+      const service = Object.assign(new ClaudeAgentService(), {
+        app: mockApp,
+        _db: mockApp.get('db'),
+      });
+      const sessionRow = await db('sessions').where({ id: BASE_SESSION_ID }).first();
+      await service.createAgentSession(sessionRow, BASE_BUILDER, {
+        model: BASE_BUILDER.model,
+        turnAgentConfigId: BASE_BUILDER.agent_config_id,
+      });
+      await vi.waitFor(() => {
+        expect(mockApp._agentPatch).toHaveBeenCalledWith(
+          BASE_BUILDER.id,
+          expect.objectContaining({ status: expect.stringMatching(/completed|stopped/) }),
+          expect.anything()
+        );
+      });
+      return db('sessions').where({ id: BASE_SESSION_ID }).first();
+    }
+
+    const reasonOf = () => mockApp._onUsageLimit.mock.calls.at(-1)?.[2]?.reason;
+
+    it.each(['stop', 'wait', 'continue'])(
+      '%s: a turn that never hits a limit just completes',
+      async (action) => {
+        const row = await runTurn({ usage_limit_action: action }, [assistant('a', 1000), done]);
+        expect(mockApp._onUsageLimit).not.toHaveBeenCalled();
+        expect(row.usage_limit_spent).toBe(0);
+      }
+    );
+
+    it.each(['stop', 'wait', 'continue'])(
+      '%s: a rejected subscription limit is reported to the policy',
+      async (action) => {
+        await runTurn({ usage_limit_action: action }, [rejected]);
+        expect(reasonOf()).toBe('rejected');
+        expect(mockApp._onUsageLimit.mock.calls[0][2].reset_at_ms).toBe(1793064000_000);
+      }
+    );
+
+    it.each(['stop', 'wait'])('%s: drawing paid overage is refused', async (action) => {
+      await runTurn({ usage_limit_action: action }, [overageOn, assistant('a', 1000), done]);
+      expect(reasonOf()).toBe('overage_disabled');
+    });
+
+    it('continue + unlimited: overage runs to completion and the spend is recorded', async () => {
+      const row = await runTurn({ usage_limit_action: 'continue', usage_limit: null }, [
+        overageOn,
+        assistant('a', 1_000_000),
+        done,
+      ]);
+      expect(mockApp._onUsageLimit).not.toHaveBeenCalled();
+      expect(row.usage_limit_spent).toBeGreaterThan(1);
+    });
+
+    it('continue + under the cap: completes and records the spend', async () => {
+      const row = await runTurn({ usage_limit_action: 'continue', usage_limit: 100 }, [
+        overageOn,
+        assistant('a', 20_000),
+        done,
+      ]);
+      expect(mockApp._onUsageLimit).not.toHaveBeenCalled();
+      expect(row.usage_limit_spent).toBeGreaterThan(0);
+      expect(row.usage_limit_spent).toBeLessThan(1);
+    });
+
+    it('continue + over the cap: stops with the session usage limit and records the spend', async () => {
+      const row = await runTurn({ usage_limit_action: 'continue', usage_limit: 1 }, [
+        overageOn,
+        assistant('a', 1_000_000),
+        done,
+      ]);
+      expect(reasonOf()).toBe('usage_limit');
+      expect(row.usage_limit_spent).toBeGreaterThan(1);
+    });
+
+    it('continue: spend from earlier turns counts toward the cap', async () => {
+      await runTurn({ usage_limit_action: 'continue', usage_limit: 1, usage_limit_spent: 0.9 }, [
+        overageOn,
+        assistant('a', 20_000),
+        done,
+      ]);
+      expect(reasonOf()).toBe('usage_limit');
+    });
+
+    it('records the usage of a turn cut mid-stream by the cap', async () => {
+      await runTurn({ usage_limit_action: 'continue', usage_limit: 1 }, [
+        overageOn,
+        assistant('a', 1_000_000),
+      ]);
+      await vi.waitFor(() => expect(mockApp._insertUsageRow).toHaveBeenCalled());
+      expect(mockApp._insertUsageRow.mock.calls[0][1]).toMatchObject({ output_tokens: 1_000_000 });
+    });
+  });
 
   describe('handleMessageCreated', () => {
     it('does nothing for non-user messages', async () => {
@@ -1184,6 +1334,41 @@ describe('ClaudeAgentService', () => {
         })
       ).rejects.toThrow('Agent configuration not found');
 
+      expect(query).not.toHaveBeenCalled();
+    });
+
+    it('does not start a turn on a used-up plan window: stops the agent and applies the policy', async () => {
+      const service = Object.assign(new ClaudeAgentService(), {
+        app: mockApp,
+        _db: mockApp.get('db'),
+      });
+      const configId = BASE_BUILDER.agent_config_id;
+      mockApp._checkUsageLimitGate.mockResolvedValueOnce({
+        label: 'Claude',
+        sdk: 'claude',
+        reason: 'rejected',
+        reset_at_ms: 1793064000_000,
+      });
+      const createAgentSessionSpy = vi.spyOn(service, 'createAgentSession');
+
+      await service.handleMessageCreated({
+        session_id: BASE_SESSION_ID,
+        agent_id: BASE_BUILDER.id,
+        type: 'user',
+        model: 'sonnet',
+        agent_config_id: configId,
+        message_json: JSON.stringify({ type: 'user', message: { role: 'user', content: 'Hi' } }),
+      });
+
+      expect(mockApp._checkUsageLimitGate).toHaveBeenCalledWith(BASE_SESSION_ID, BASE_BUILDER.id, {
+        agentConfigId: configId,
+      });
+      expect(mockApp._onUsageLimit).toHaveBeenCalledWith(
+        BASE_SESSION_ID,
+        BASE_BUILDER.id,
+        expect.objectContaining({ reason: 'rejected', reset_at_ms: 1793064000_000 })
+      );
+      expect(createAgentSessionSpy).not.toHaveBeenCalled();
       expect(query).not.toHaveBeenCalled();
     });
 

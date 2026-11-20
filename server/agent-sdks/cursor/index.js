@@ -9,6 +9,7 @@ import {
 } from './mapping.ts';
 import { registerCursorAgentService } from './agent-service.ts';
 import { toolListToCursorCustomTools } from './adapt-tools.js';
+import { fetchCursorSubscriptionLimits } from './subscription-limits.js';
 import { usageLabelExtras } from './usage-label-extras.js';
 import { CURSOR_AGENT_SDK_KEY, CURSOR_AGENT_SDK_LABEL, CURSOR_AGENT_SERVICE_PATH } from './meta.js';
 
@@ -86,4 +87,6 @@ export const cursorAgentSdkPlugin = {
   },
 
   usageLabelExtras,
+
+  fetchSubscriptionLimits: fetchCursorSubscriptionLimits,
 };

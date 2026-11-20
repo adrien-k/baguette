@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import SessionPlanSection from '../../components/session/SessionPlanSection.jsx';
 import SessionTodosPanel from '../../components/session/SessionTodosPanel.jsx';
@@ -17,9 +18,10 @@ function comparePlans(a, b) {
   return (a.id ?? 0) - (b.id ?? 0);
 }
 
-export default function PlanView({ session, readonly = false }) {
+export default function PlanView({ session, readonly = false, runPlanAgentId = null }) {
   const sessionId = session?.id;
   const editable = !readonly;
+  const { hash } = useLocation();
   const [completingId, setCompletingId] = useState(null);
   const [completedExpanded, setCompletedExpanded] = useState(false);
 
@@ -62,6 +64,12 @@ export default function PlanView({ session, readonly = false }) {
     };
   }, [plans, todos]);
 
+  useEffect(() => {
+    if (!hash.startsWith('#plan-') || plansLoading || todosLoading) return;
+    const el = document.getElementById(hash.slice(1));
+    el?.scrollIntoView({ block: 'start' });
+  }, [hash, plansLoading, todosLoading]);
+
   const handleComplete = async (plan) => {
     if (plan.id == null) return;
     const label = plan.ref != null ? `#${plan.ref}` : 'this plan';
@@ -82,6 +90,7 @@ export default function PlanView({ session, readonly = false }) {
       plan={plan}
       todos={todosByPlanId.get(plan.id) ?? EMPTY_TODOS}
       sessionId={sessionId}
+      runPlanAgentId={runPlanAgentId}
       editable={editable}
       completing={completingId === plan.id}
       onComplete={handleComplete}

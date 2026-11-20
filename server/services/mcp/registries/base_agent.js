@@ -7,12 +7,13 @@ import { createListModelsTool } from '../tools/list-models.js';
 import { createListPresetModelsTool } from '../tools/list-preset-models.js';
 import { createStartSubagentTool } from '../tools/start-subagent.js';
 import { createListAgentsTool } from '../tools/list-agents.js';
-import { createAwaitSubagentTool } from '../tools/await-subagent.js';
+import { createAwaitAgentTool } from '../tools/await-agent.js';
 import { createStopSubagentTool } from '../tools/stop-subagent.js';
 import { createCreateSessionTool } from '../tools/create-session.js';
 import { createSearchSessionsTool } from '../tools/search-sessions.js';
 import { createGetSessionTool } from '../tools/get-session.js';
 import { createGetSessionStatusTool } from '../tools/get-session-status.js';
+import { createGetSessionUsageLimitsTool } from '../tools/get-session-usage-limits.js';
 import { createPrReadTool } from '../tools/pr-read.js';
 import { createListRunningTasksTool } from '../tools/list-running-tasks.js';
 import { createCreateSessionMessageTool } from '../tools/create-session-message.js';
@@ -45,6 +46,7 @@ function sessionToolsFromContext(ctx) {
     createSearchSessionsTool(ctx),
     createGetSessionTool(ctx),
     createGetSessionStatusTool(ctx),
+    createGetSessionUsageLimitsTool(ctx),
     createPrReadTool(ctx),
     createListRunningTasksTool(ctx),
     createCreateSessionMessageTool(ctx),
@@ -92,7 +94,7 @@ export function buildBaseAgentTools(user, app, { callerSession = null, callerAge
     createListPresetModelsTool(ctx),
     createStartSubagentTool(ctx),
     createListAgentsTool(ctx),
-    createAwaitSubagentTool(ctx),
+    createAwaitAgentTool(ctx),
     createStopSubagentTool(ctx),
     createCreateSessionTool(ctx),
     createListMissingModelPricesTool(ctx),

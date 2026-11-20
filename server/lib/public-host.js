@@ -11,6 +11,8 @@ export function resolveUseHttps(processEnv = process.env) {
 
 /** Load `.env` from the package root (same path as `server/config.js`). */
 export function loadRootDotenv() {
+  // Tests must not depend on a developer's local .env (PUBLIC_HOST, AUTH_GITHUB_*, ...).
+  if (process.env.NODE_ENV === 'test') return;
   dotenv.config({ path: path.join(packageRoot(), '.env') });
 }
 

@@ -100,7 +100,7 @@ import {
 import { patchAgentInternal } from './agents.service.js';
 import { setAgentTurnTerminal } from '../agent-turn-patch.js';
 import { getReviewAgentTurn } from '../review-agent-turn.js';
-import { listSdkPlugins, storedSessionIdColumns } from '../../agent-sdks/registry.js';
+import { getSdkPlugin, listSdkPlugins, storedSessionIdColumns } from '../../agent-sdks/registry.js';
 import {
   getPreviewServiceDefinitions,
   getSessionPreviewUrl,
@@ -124,6 +124,17 @@ import {
   serializeAutoLoadSkillLabels,
 } from '../skill-resolution.js';
 import { getAgentById } from '../agents-db.js';
+import {
+  usageLimitFieldsError,
+  USAGE_LIMIT_RESUME_PROMPT,
+  computeResumeAtMs,
+  MAX_UNKNOWN_RESET_RETRIES,
+  usageLimitStatusText,
+  allowsOverage,
+  blockingLimitWindow,
+  nearlyFull,
+} from '../../lib/usage-limit.js';
+import { getCachedSubscriptionLimits } from '../../lib/subscription-limits.js';
 import { normalizeUsageAgentType } from '../../../shared/usage-agent-type.js';
 import { getCodeserverUrl } from '../codeserver-handler.js';
 import { removeSessionDockerResources } from '../docker-session.js';
@@ -170,6 +181,13 @@ export class SessionsService extends KnexService {
     super(options);
     /** @type {Record<number, number>} When `onActivity` last ran per session (ms since epoch). */
     this._sessionActivityLastBumpMs = Object.create(null);
+    /** Consecutive limit hits with no reset time per session id (see `onUsageLimit`). */
+    this.usageLimitRetries = new Map();
+    /**
+     * Per `continue` session: whether the plan was seen under its limit (`sawBelow`) and
+     * whether the crossing was already announced (`notified`). See `noteOverageCrossing`.
+     */
+    this.overageCrossings = new Map();
   }
 
   setup(app) {
@@ -489,7 +507,7 @@ export class SessionsService extends KnexService {
       '',
       'Other agents in this session were also interrupted by the restart:',
       ...lines,
-      'Re-synchronize with ListAgents / AwaitSubagent as needed, and do not redo work a resumed subagent is already doing.',
+      'Re-synchronize with ListAgents / AwaitAgent as needed, and do not redo work a resumed subagent is already doing.',
     ].join('\n');
   }
 
@@ -1838,7 +1856,218 @@ export class SessionsService extends KnexService {
     }
   }
 
+  /**
+   * A subscription limit (or the session's usage limit) ended an agent turn.
+   * Persists a status row, then per `usage_limit_action`: `stop` (and `continue`, once its
+   * credits are spent) leaves the session stopped, `wait` schedules a "continue" message just
+   * after the limit resets. Each resumed turn re-enters this path at the next limit, so a
+   * waiting session keeps going through as many windows as the work needs.
+   *
+   * Never throws: the turn is already over, so a failure here is logged and the session just
+   * stays stopped.
+   *
+   * @param {{label: string, sdk: string, reason: string, reset_at_ms?: number | null}} limit
+   * @returns {Promise<{action: string, resume_at: string | null} | null>}
+   */
+  async onUsageLimit(sessionId, agentId, limit) {
+    try {
+      const db = this.app.get('db');
+      const session = await db('sessions').where({ id: sessionId }).first();
+      const agent = agentId != null ? await getAgentById(db, agentId) : null;
+      if (!session || !agent) return null;
+
+      const resetAtMs = limit.reset_at_ms ?? null;
+      // `continue` also ends as `stop` here: it only gets this far once its credits are spent.
+      let action = session.usage_limit_action === 'wait' ? 'wait' : 'stop';
+      let resumeAtMs = null;
+      let gaveUp = false;
+      if (action === 'wait') {
+        // No reset time: back off between retries and stop after a few, so a weekly limit
+        // days from resetting does not start an agent turn every half hour.
+        const attempt = resetAtMs == null ? (this.usageLimitRetries.get(sessionId) ?? 0) : 0;
+        if (attempt >= MAX_UNKNOWN_RESET_RETRIES) {
+          this.usageLimitRetries.delete(sessionId);
+          action = 'stop';
+          gaveUp = true;
+        } else {
+          if (resetAtMs == null) this.usageLimitRetries.set(sessionId, attempt + 1);
+          else this.usageLimitRetries.delete(sessionId);
+          resumeAtMs = computeResumeAtMs(resetAtMs, Date.now(), Math.random, attempt);
+          try {
+            await this.scheduleUsageLimitResume(session, agent, limit.sdk, resumeAtMs);
+          } catch (err) {
+            // Without a schedule the notice must not promise a resume.
+            logger.warn(
+              { sessionId, err: err?.message },
+              'sessions: failed to schedule limit resume'
+            );
+            action = 'stop';
+            resumeAtMs = null;
+          }
+        }
+      }
+
+      const status = usageLimitStatusText({
+        label: limit.label,
+        reason: limit.reason,
+        action,
+        resetAtMs,
+      });
+      const notice = gaveUp
+        ? `${status} Gave up waiting: the reset time is unknown after ${MAX_UNKNOWN_RESET_RETRIES} retries.`
+        : status;
+      await this.app.service('messages').create(
+        {
+          session_id: sessionId,
+          type: 'system',
+          subtype: 'status',
+          message_json: JSON.stringify({
+            type: 'system',
+            subtype: 'status',
+            status: notice,
+            usage_limit_resume_at: resumeAtMs ? new Date(resumeAtMs).toISOString() : undefined,
+          }),
+          ...sessionMessageIdentity(agent, { agent_sdk: limit.sdk }),
+        },
+        { provider: undefined, user: { id: session.user_id } }
+      );
+      // Patch the session so open sidebars pick up `usage_limit_resume_at` right away.
+      if (resumeAtMs) await this.onActivity(session);
+      return { action, resume_at: resumeAtMs ? new Date(resumeAtMs).toISOString() : null };
+    } catch (err) {
+      logger.warn({ sessionId, err: err?.message }, 'sessions: usage limit handling failed');
+      return null;
+    }
+  }
+
+  /**
+   * Is the plan's session/weekly window used up for a session that must not spend paid
+   * overage (`stop` / `wait`)? Providers keep serving requests on overage once a window is
+   * full, so this check — before a turn starts and periodically during one — is what keeps
+   * those sessions from silently spending credits. `continue` sessions are never blocked
+   * here (their dollar cap is enforced by the agent's usage guard).
+   *
+   * Fails open: an unreadable limits lookup returns null rather than blocking the agent.
+   * Not an API method (it is not listed in `methods`).
+   *
+   * @param {{agentConfigId?: number | null, fresh?: boolean}} [options]
+   *   `fresh` always re-reads, bypassing the ~55s limits cache.
+   * @returns {Promise<{label: string, sdk: string, reason: string, reset_at_ms: number | null} | null>}
+   */
+  async checkUsageLimitGate(sessionId, agentId, { agentConfigId = null, fresh = false } = {}) {
+    try {
+      const db = this.app.get('db');
+      const session = await db('sessions').where({ id: sessionId }).first();
+      if (!session) return null;
+      const agent = agentId != null ? await getAgentById(db, agentId) : null;
+      const sdk = agent?.agent_sdk;
+      const plugin = sdk ? getSdkPlugin(sdk) : null;
+      if (typeof plugin?.fetchSubscriptionLimits !== 'function') return null;
+      const configId = agentConfigId ?? session.agent_config_id ?? null;
+      const key = `${session.user_id}:${sdk}:${configId ?? ''}`;
+      const fetcher = () =>
+        plugin.fetchSubscriptionLimits({
+          app: this.app,
+          userId: session.user_id,
+          agentConfigId: configId,
+        });
+      // Reads are cached (~55s) because a read can spawn a CLI process. A reading that is
+      // close to full is re-read before it is trusted — in either direction.
+      let result = await getCachedSubscriptionLimits(key, fetcher, { refresh: fresh });
+      if (!fresh && nearlyFull(result)) {
+        result = await getCachedSubscriptionLimits(key, fetcher, { refresh: true });
+      }
+      const blocking = blockingLimitWindow(result);
+      if (allowsOverage(session.usage_limit_action)) {
+        await this.noteOverageCrossing(session, agent, plugin.label ?? sdk, Boolean(blocking));
+        return null;
+      }
+      if (!blocking) return null;
+      return {
+        label: plugin.label ?? sdk,
+        sdk,
+        reason: 'rejected',
+        reset_at_ms: blocking.resetAtMs,
+      };
+    } catch (err) {
+      logger.warn({ sessionId, err: err?.message }, 'sessions: usage limit check failed');
+      return null;
+    }
+  }
+
+  /**
+   * `continue` sessions keep running past a full plan window on overage credits. Say so once,
+   * when the plan is seen going from under its limit to over it while the session is live —
+   * not on every check, and not for a session that starts out already over the limit.
+   * In-memory (a server restart just forgets), and never throws.
+   */
+  async noteOverageCrossing(session, agent, label, overLimit) {
+    try {
+      const state = this.overageCrossings.get(session.id) ?? { sawBelow: false, notified: false };
+      this.overageCrossings.set(session.id, state);
+      if (!overLimit) {
+        state.sawBelow = true;
+        state.notified = false;
+        return;
+      }
+      if (!state.sawBelow || state.notified) return;
+      state.notified = true;
+      await this.app.service('messages').create(
+        {
+          session_id: session.id,
+          type: 'system',
+          subtype: 'status',
+          message_json: JSON.stringify({
+            type: 'system',
+            subtype: 'status',
+            status: `${label} usage limit reached, continuing using overage credits.`,
+          }),
+          ...sessionMessageIdentity(agent, { agent_sdk: agent.agent_sdk }),
+        },
+        { provider: undefined, user: { id: session.user_id } }
+      );
+    } catch (err) {
+      logger.warn({ sessionId: session.id, err: err?.message }, 'sessions: overage notice failed');
+    }
+  }
+
+  /**
+   * Drop the pending limit resume(s) of a session, when the user turns `wait` off.
+   * Not an API method: it is not listed in `methods`.
+   */
+  async cancelUsageLimitResume(sessionId) {
+    this.usageLimitRetries.delete(sessionId);
+    return this.app
+      .get('db')('queued_messages')
+      .where({
+        session_id: sessionId,
+        kind: 'scheduled',
+        message_json: buildUserTurnMessageJson(USAGE_LIMIT_RESUME_PROMPT),
+      })
+      .delete();
+  }
+
+  /** One pending "continue" message per agent: a newer limit hit replaces the earlier one. */
+  async scheduleUsageLimitResume(session, agent, sdk, resumeAtMs) {
+    const message_json = buildUserTurnMessageJson(USAGE_LIMIT_RESUME_PROMPT);
+    await this.app
+      .get('db')('queued_messages')
+      .where({ session_id: session.id, agent_id: agent.id, kind: 'scheduled', message_json })
+      .delete();
+    await this.app.service('queued-messages').schedule(
+      {
+        session_id: session.id,
+        message_json,
+        send_at: new Date(resumeAtMs).toISOString(),
+        ...sessionMessageIdentity(agent, { agent_sdk: sdk }),
+      },
+      { user: { id: session.user_id } }
+    );
+  }
+
   async onTurnComplete(sessionId, agentId = null) {
+    // A turn that finished normally ends any run of limit hits with an unknown reset time.
+    this.usageLimitRetries.delete(sessionId);
     const db = this.app.get('db');
     const session = await db('sessions').where({ id: sessionId }).first();
     if (!session) return;
@@ -1996,6 +2225,23 @@ function coerceIsSharedOnWrite(context) {
   if ('is_shared' in (context.data || {})) {
     context.data.is_shared = context.data.is_shared ? 1 : 0;
   }
+  return context;
+}
+
+/** Turning `wait` off must also drop the resume it already scheduled. */
+async function cancelResumeWhenNotWaiting(context) {
+  if (!context.data || !('usage_limit_action' in context.data)) return context;
+  if (context.result?.usage_limit_action === 'wait') return context;
+  if (context.result?.id != null) await context.service.cancelUsageLimitResume(context.result.id);
+  return context;
+}
+
+/** Validate the usage-limit policy fields `usage_limit_action` and `usage_limit` on write. */
+function normalizeUsageLimitOnWrite(context) {
+  // `usage_limit_spent` is server bookkeeping: a client must not reset its own budget.
+  if (context.params.provider && context.data) delete context.data.usage_limit_spent;
+  const error = usageLimitFieldsError(context.data || {});
+  if (error) throw new BadRequest(error);
   return context;
 }
 
@@ -2557,6 +2803,30 @@ async function withHasWebserver(session, { forExternalClient = false } = {}) {
   return forExternalClient ? withoutShortId(shaped) : shaped;
 }
 
+/**
+ * Rows of sessions waiting out a usage limit get `usage_limit_resume_at`: the send time of
+ * their pending resume message (one query for the whole page).
+ */
+async function attachUsageLimitResume(context) {
+  const result = context.result;
+  if (!result) return context;
+  let sessions = [result];
+  if (Array.isArray(result.data)) sessions = result.data;
+  else if (Array.isArray(result)) sessions = result;
+  const ids = sessions.map((s) => s.id).filter((id) => id != null);
+  if (!ids.length) return context;
+  const pending = await context.app
+    .get('db')('queued_messages')
+    .whereIn('session_id', ids)
+    .where({ kind: 'scheduled', message_json: buildUserTurnMessageJson(USAGE_LIMIT_RESUME_PROMPT) })
+    .groupBy('session_id')
+    .select('session_id')
+    .min('send_at as send_at');
+  const resumeBySession = new Map(pending.map((r) => [r.session_id, r.send_at]));
+  for (const s of sessions) s.usage_limit_resume_at = resumeBySession.get(s.id) ?? null;
+  return context;
+}
+
 async function addHasWebserver(context) {
   const result = context.result;
   if (!result) return context;
@@ -2950,6 +3220,7 @@ const sessionsHooks = {
     create: [
       scopeByUser,
       coerceIsSharedOnWrite,
+      normalizeUsageLimitOnWrite,
       ensureShortId,
       seedLastActivityOnCreate,
       validateSessionCreate,
@@ -2966,6 +3237,7 @@ const sessionsHooks = {
       handleSessionLastViewedPatch,
       requireOwnSession,
       coerceIsSharedOnWrite,
+      normalizeUsageLimitOnWrite,
       clampAutoPushForLocalRepo,
       touchPrMetadataUpdatedAtOnPatch,
       redirectAgentFieldsOnSessionPatch,
@@ -2999,12 +3271,19 @@ const sessionsHooks = {
     startPreviewService: [resolveSessionFromData, requireOwnResolvedSession],
   },
   after: {
-    find: [attachOwners, attachViewerLastViewed, mergeSessionAgentFields, addHasWebserver],
+    find: [
+      attachOwners,
+      attachViewerLastViewed,
+      mergeSessionAgentFields,
+      attachUsageLimitResume,
+      addHasWebserver,
+    ],
     get: [
       attachOwners,
       attachViewerLastViewed,
       refreshPrStatusAfterGet,
       mergeSessionAgentFields,
+      attachUsageLimitResume,
       addHasWebserver,
     ],
     create: [
@@ -3019,6 +3298,8 @@ const sessionsHooks = {
       attachViewerLastViewed,
       mergeSessionAgentFields,
       syncSessionSettingsAfterPatch,
+      cancelResumeWhenNotWaiting,
+      attachUsageLimitResume,
       addHasWebserver,
       stampWasShared,
     ],

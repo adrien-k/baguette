@@ -1,4 +1,4 @@
-import { Archive } from 'lucide-react';
+import { Archive, Clock } from 'lucide-react';
 import { SessionStatusIcon } from './SessionCard.jsx';
 import { prListIndicatorProps } from '../utils/prStatusStyles.js';
 import { isAnyAgentAwaitingUser, isAnyAgentRunning } from '../utils/sessionAgents.js';
@@ -30,6 +30,15 @@ export default function SessionStatusIndicator({ session, size = 'sm' }) {
   }
   if (isAnyAgentAwaitingUser(session)) {
     return <SessionStatusIcon status="approval" compact={size === 'sm'} aria-hidden />;
+  }
+  if (session.usage_limit_resume_at) {
+    return (
+      <Clock
+        className={`${iconSize} text-warning shrink-0`}
+        aria-label="Waiting for reset"
+        title="Waiting for reset"
+      />
+    );
   }
   if (hasPr) {
     const { icon: PrIcon, iconClass, title } = prListIndicatorProps(session);

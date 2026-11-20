@@ -37,8 +37,8 @@ describe('resolveSubagentTargetFromMcpTool', () => {
     });
   });
 
-  it('uses AwaitSubagent args when result is missing', () => {
-    expect(resolveSubagentTargetFromMcpTool('AwaitSubagent', { agent_ref: 3 }, null)).toEqual({
+  it('uses AwaitAgent args when result is missing', () => {
+    expect(resolveSubagentTargetFromMcpTool('AwaitAgent', { agent_ref: 3 }, null)).toEqual({
       agentId: null,
       agentRef: 3,
       name: null,
@@ -145,9 +145,9 @@ describe('findRunningStartSubagentInSession', () => {
 });
 
 describe('resolveOpenSubagentFromMcpTool', () => {
-  it('opens by agent ref on AwaitSubagent before the result arrives', () => {
+  it('opens by agent ref on AwaitAgent before the result arrives', () => {
     expect(
-      resolveOpenSubagentFromMcpTool(agents, 'AwaitSubagent', { agent_ref: 3 }, null, {
+      resolveOpenSubagentFromMcpTool(agents, 'AwaitAgent', { agent_ref: 3 }, null, {
         isRunning: true,
       })
     ).toEqual(agents[1]);

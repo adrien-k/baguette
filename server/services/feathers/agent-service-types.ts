@@ -28,6 +28,7 @@ type QueryBuilderMethods = {
   first(): Promise<Record<string, unknown> | undefined>;
   insert(row: Record<string, unknown>): Promise<unknown>;
   update(patch: Record<string, unknown>): Promise<unknown>;
+  increment(column: string, amount: number): Promise<unknown>;
   delete(): Promise<unknown>;
   distinct(column: string): Promise<Array<Record<string, unknown>>>;
 };

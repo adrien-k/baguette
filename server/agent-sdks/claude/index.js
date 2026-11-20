@@ -12,6 +12,7 @@ import {
   CLAUDE_API_KEY_ENV_OPTIONS,
 } from '../../../shared/agent-config-api-key-env.js';
 import { toolListToClaudeMcpServer } from './adapt-tools.js';
+import { fetchClaudeSubscriptionLimits } from './subscription-limits.js';
 import { resetUsageTotals } from './usage-totals.js';
 import { normalizeAnthropicBaseUrl } from './env.js';
 import { CLAUDE_AGENT_SDK_KEY, CLAUDE_AGENT_SDK_LABEL, CLAUDE_AGENT_SERVICE_PATH } from './meta.js';
@@ -90,4 +91,6 @@ export const claudeAgentSdkPlugin = {
   },
 
   resetUsageTotals,
+
+  fetchSubscriptionLimits: fetchClaudeSubscriptionLimits,
 };

@@ -13,6 +13,8 @@ import {
   devLogin,
   expectChatTextWithReload,
   saveE2eScreenshot,
+  seedE2eSessionPlan,
+  settleForScreenshot,
   startMockBuilderSession,
 } from './helpers.js';
 
@@ -28,6 +30,25 @@ test.describe('mock agent plan and questions', () => {
     await expect(page.getByText('Plan created')).toBeVisible({ timeout: 120_000 });
     await expect(page.getByRole('heading', { name: 'E2E mock plan' })).toBeVisible();
     await saveE2eScreenshot(page, 'plan-review-card.png', { fullPage: true });
+
+    await seedE2eSessionPlan(page);
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'E2E mock plan' })).toBeVisible({
+      timeout: 60_000,
+    });
+
+    const planFooterLink = page.getByRole('link', { name: 'Plan #1' });
+    await expect(planFooterLink).toBeVisible({ timeout: 30_000 });
+    await planFooterLink.scrollIntoViewIfNeeded();
+    await settleForScreenshot(page);
+    await saveE2eScreenshot(page, 'chat-plan-footer-links.png', { fullPage: true });
+
+    await page.getByRole('button', { name: 'Plan', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Run the plan' })).toBeVisible();
+    await settleForScreenshot(page);
+    await saveE2eScreenshot(page, 'plan-tab-run-button.png', { fullPage: true });
+
+    await page.getByRole('button', { name: 'Chat', exact: true }).click();
     await page.getByRole('button', { name: 'Run the plan' }).click();
 
     await expect(page.getByText(MOCK_E2E_PLAN_RUN_SUMMARY)).toBeVisible({ timeout: 120_000 });

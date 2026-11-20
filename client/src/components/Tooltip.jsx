@@ -23,6 +23,8 @@ export default function Tooltip({
   wrap = false,
   wide = false,
   interactive = false,
+  /** Classes for the wrapper around `children`; use `flex w-full` to fill a row. */
+  className = 'inline-flex items-stretch',
 }) {
   const [open, setOpen] = useState(false);
 
@@ -51,7 +53,7 @@ export default function Tooltip({
 
   return (
     <>
-      <span ref={setReference} {...getReferenceProps()} className="inline-flex items-stretch">
+      <span ref={setReference} {...getReferenceProps()} className={className}>
         {children}
       </span>
       <FloatingPortal>
