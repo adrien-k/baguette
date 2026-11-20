@@ -1,7 +1,7 @@
 import { KnexService } from '@feathersjs/knex';
 import { BadRequest, NotFound } from 'feathers/errors';
 import { resolveDataDirRelativePath } from '../../config.js';
-import { listSkillEntries } from '../skill-resolution.js';
+import { listSkillEntries, readSkillByLabel } from '../skill-resolution.js';
 import { requireUser, scopeByUser, only } from './hooks.js';
 
 const LABEL_MAX = 120;
@@ -26,6 +26,25 @@ class SkillsService extends KnexService {
     }
     const skills = await listSkillEntries(this.app, userId, { repoPath });
     return { skills };
+  }
+
+  /** Load full skill body by label (settings, project, or built-in). */
+  async readByLabel(data, params) {
+    const userId = params.user?.id;
+    if (userId == null) throw new BadRequest('Not authenticated');
+    const label = String(data?.label ?? '').trim();
+    if (!label) throw new BadRequest('label is required');
+    let sessionPath = null;
+    const repoId = data?.repo_id;
+    if (repoId != null) {
+      const repo = await this.app.get('db')('repos').where({ id: repoId }).first();
+      if (repo) {
+        sessionPath = resolveDataDirRelativePath(repo.repo_path) || repo.repo_path;
+      }
+    }
+    const skill = await readSkillByLabel(this.app, userId, { sessionPath, label });
+    if (!skill) throw new NotFound('Skill not found');
+    return skill;
   }
 }
 
@@ -109,12 +128,13 @@ export function registerSkillsService(app, path = 'skills') {
       id: 'id',
       paginate: false,
     }),
-    { methods: ['find', 'get', 'create', 'patch', 'remove', 'listCatalog'] }
+    { methods: ['find', 'get', 'create', 'patch', 'remove', 'listCatalog', 'readByLabel'] }
   );
   app.service(path).hooks({
     before: {
       all: [requireUser, scopeByUser],
       listCatalog: [requireUser],
+      readByLabel: [requireUser],
       create: [only(WRITABLE), beforeCreate, assertUniqueLabel],
       patch: [requireOwnSkill, only(WRITABLE), beforePatch, assertUniqueLabel],
       remove: [requireOwnSkill],
