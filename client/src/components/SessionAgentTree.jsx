@@ -40,7 +40,7 @@ const PRIMARY_BUILDER_ROW_TOOLTIP =
 const SECONDARY_BUILDER_ROW_TOOLTIP = 'Extra builder added from the UI';
 
 const REVIEWER_ROW_TOOLTIP =
-  'Session reviewer — reviews the diff and files issues on the Review tab rather than shipping builder chat.';
+  'Session reviewer — reviews the diff and manage issues on the Issues tab';
 
 const SUBAGENT_ROW_TOOLTIP =
   'MCP subagent started by a builder (StartSubagent). Chat here is read-only — new work is sent via MCP, not the composer.';
