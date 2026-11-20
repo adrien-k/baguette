@@ -14,3 +14,4 @@ else
 fi
 
 pnpm run migrate
+pnpm run seed:dev

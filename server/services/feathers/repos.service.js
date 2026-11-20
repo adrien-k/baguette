@@ -527,7 +527,7 @@ class ReposService extends KnexService {
     }
 
     await db('user_repos')
-      .insert({ user_id: params.user.id, repo_id: repo.id })
+      .insert({ user_id: params.user.id, repo_id: repo.id, show_in_all_sessions: 1 })
       .onConflict(['user_id', 'repo_id'])
       .ignore();
 

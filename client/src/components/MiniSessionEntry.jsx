@@ -24,6 +24,8 @@ export default function MiniSessionEntry({
   routeAgentId = null,
   autoExpandId = null,
   isMobileList = false,
+  onAddBuilder = null,
+  showAddBuilder = false,
 }) {
   const navigate = useNavigate();
   const { currentUser } = useCurrentUser();
@@ -120,9 +122,19 @@ export default function MiniSessionEntry({
         {agentTree.length > 0 && (
           <SessionAgentTree
             agents={agentTree}
+            sessionId={s.id}
+            pinnedAgentId={s.pinned_agent_id ?? null}
             currentAgentId={routeAgentId}
             canManage={isOwner && !isArchived && !isArchiving}
             onSelectAgent={(agent) => navigate(agentChatUrl(agent.id))}
+            onAddBuilder={
+              showAddBuilder && onAddBuilder
+                ? () => {
+                    onAddBuilder(s);
+                  }
+                : undefined
+            }
+            showAddBuilder={showAddBuilder && isOwner && !isArchived && !isArchiving}
             autoExpanded={autoExpanded}
             showOwnerGutter={showOwner}
             sessionHighlighted={isCurrent}

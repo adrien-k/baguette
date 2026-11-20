@@ -293,6 +293,43 @@ export async function selectAgentInTree(page, name) {
   await row.locator('button:not([data-testid="agent-tree-toggle"])').first().click();
 }
 
+/** Pin/unpin control for a secondary builder row (hover the row first on desktop). */
+export function agentTreePinButton(page, agentName) {
+  return sessionAgentTreeRow(page, agentName).getByRole('button', {
+    name: new RegExp(`^(Pin|Unpin) agent — ${escapeRegExp(agentName)}`),
+  });
+}
+
+export async function hoverAgentTreeRow(page, agentName) {
+  await sessionAgentTreeRow(page, agentName).hover();
+}
+
+export async function clickAgentTreePin(page, agentName) {
+  await hoverAgentTreeRow(page, agentName);
+  await agentTreePinButton(page, agentName).click();
+}
+
+/** Session URL with `agent` query removed so the pinned default applies on load. */
+export function sessionChatUrlWithoutAgentQuery(page) {
+  const url = new URL(page.url());
+  url.searchParams.delete('agent');
+  return url.toString();
+}
+
+export async function fetchSessionForPage(page) {
+  const routeId = parseSessionIdFromUrl(page.url());
+  const sessionId = await e2eNumericSessionId(routeId);
+  const res = await page.request.get(`/api/sessions/${sessionId}`);
+  expect(res.ok()).toBe(true);
+  return res.json();
+}
+
+export async function currentSessionSidebarEntry(page) {
+  const routeId = parseSessionIdFromUrl(page.url());
+  const sessionId = await e2eNumericSessionId(routeId);
+  return page.locator(`[data-testid="mini-session-entry"][data-session-id="${sessionId}"]`);
+}
+
 /** Wait until no agent with `name` is running (API poll — the tree only shows a spinner while running). */
 export async function waitForAgentNotRunning(page, name, timeout = 120_000) {
   await expect
@@ -306,19 +343,19 @@ export async function waitForAgentNotRunning(page, name, timeout = 120_000) {
     .toBe(0);
 }
 
-/** Open **Start subagent** from the composer Send (Schedule) menu; composer text must already be set. */
+/** Open **Add builder** from the composer Send (Schedule) menu; composer text must already be set. */
 export async function openStartSubagentModalFromComposer(page) {
   await page.getByTitle('Schedule', { exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Start subagent' }).click();
-  await expect(page.getByRole('heading', { name: 'Start subagent' })).toBeVisible();
+  await page.getByRole('menuitem', { name: 'Add builder' }).click();
+  await expect(page.getByRole('heading', { name: 'Add builder' })).toBeVisible();
 }
 
 export async function confirmStartSubagentModal(page) {
-  await page.getByRole('button', { name: 'Start subagent' }).click();
+  await page.getByRole('button', { name: 'Add builder' }).click();
 }
 
 /**
- * Create an extra builder from the composer's Send menu ("Start subagent").
+ * Create an extra builder from the composer's Send menu ("Add builder").
  *
  * The start-subagent modal prefills the label from the prompt's first four words, so
  * `name` must be at most four words. The prompt sent to it appends the quick mock prompt
@@ -678,14 +715,17 @@ export async function seedE2eUsageDashboard(page) {
   const { default: Database } = await import('better-sqlite3');
   const db = new Database(E2E_DB_PATH, { timeout: 10_000, fileMustExist: true });
   try {
-    const otherUserId = Number(
-      db
-        .prepare(
-          `INSERT INTO users (github_id, username, status)
-           VALUES (?, ?, 'approved')`
-        )
-        .run(9_000_001, 'e2e-other').lastInsertRowid
-    );
+    const existingOther = db.prepare('SELECT id FROM users WHERE username = ?').get('e2e-other');
+    const otherUserId = existingOther
+      ? Number(existingOther.id)
+      : Number(
+          db
+            .prepare(
+              `INSERT INTO users (github_id, username, status, onboarding_completed)
+               VALUES (?, ?, 'approved', 1)`
+            )
+            .run(9_000_001, 'e2e-other').lastInsertRowid
+        );
 
     const insert = db.prepare(
       `INSERT INTO usage (
