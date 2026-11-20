@@ -1298,7 +1298,6 @@ export default function Session() {
                 builderAllowRepoChoice={loopWorkspace.builderAllowRepoChoice}
                 onCreateLoop={loopWorkspace.handleCreateLoop}
                 onUpdateLoop={loopWorkspace.handleUpdateLoop}
-                onCancelLoopEdit={loopWorkspace.handleCancelLoopEdit}
                 onDeleteLoop={() => loopWorkspace.handleDeleteLoop()}
                 runSessions={loopWorkspace.runSessions}
                 runsLoading={loopWorkspace.runsLoading}

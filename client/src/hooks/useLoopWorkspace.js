@@ -146,11 +146,6 @@ export function useLoopWorkspace({ routeLoopId, isNewLoopRoute = false, loops = 
     );
   };
 
-  const handleCancelLoopEdit = useCallback(() => {
-    if (isNewLoopRoute) navigate(loopsHomeUrl);
-    else setLoopTab('overview');
-  }, [isNewLoopRoute, navigate, loopsHomeUrl]);
-
   const handleRunLoop = useCallback(async () => {
     if (!loop?.id || !loop.enabled || runningLoop) return;
     setRunningLoop(true);
@@ -238,7 +233,6 @@ export function useLoopWorkspace({ routeLoopId, isNewLoopRoute = false, loops = 
     builderAllowRepoChoice,
     handleCreateLoop,
     handleUpdateLoop,
-    handleCancelLoopEdit,
     handleDeleteLoop,
     handleRunLoop,
     runningLoop,

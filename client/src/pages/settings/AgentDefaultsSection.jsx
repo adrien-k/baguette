@@ -19,18 +19,10 @@ import {
   usageLimitInputText,
 } from '../../utils/usageLimitActions.jsx';
 
-function SectionActions({ saving, saved, disabled, onSave, onClear }) {
+function SectionActions({ saving, saved, disabled, onSave }) {
   return (
-    <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-line/60">
+    <div className="pt-2 border-t border-line/60">
       <SettingsSaveRow saving={saving} saved={saved} disabled={disabled} onSave={onSave} />
-      <button
-        type="button"
-        onClick={onClear}
-        disabled={disabled || saving}
-        className="text-xs text-faint hover:text-secondary disabled:opacity-50"
-      >
-        Clear
-      </button>
     </div>
   );
 }
@@ -157,20 +149,6 @@ export default function AgentDefaultsSection({ settings, onSave }) {
       'Failed to save session models'
     );
 
-  const clearSessionModels = () =>
-    patchSection(
-      'session',
-      {
-        agent_default_config_id: null,
-        agent_default_model: null,
-        reviewer_default_config_id: null,
-        reviewer_default_model: null,
-        utility_default_config_id: null,
-        utility_default_model: null,
-      },
-      'Failed to clear session models'
-    );
-
   const saveMcpModels = () =>
     patchSection(
       'mcp',
@@ -183,17 +161,6 @@ export default function AgentDefaultsSection({ settings, onSave }) {
             : null,
       },
       'Failed to save MCP models'
-    );
-
-  const clearMcpModels = () =>
-    patchSection(
-      'mcp',
-      {
-        subagent_default_mode: SUBAGENT_DEFAULT_INHERIT,
-        subagent_default_config_id: null,
-        subagent_default_model: null,
-      },
-      'Failed to clear MCP models'
     );
 
   const saveSessionOptions = () => {
@@ -214,16 +181,6 @@ export default function AgentDefaultsSection({ settings, onSave }) {
       'Failed to save session options'
     );
   };
-
-  const clearSessionOptions = () =>
-    patchSection(
-      'options',
-      {
-        default_usage_limit_action: null,
-        default_usage_limit: null,
-      },
-      'Failed to clear session options'
-    );
 
   if (configsLoading) {
     return <p className="text-sm text-faint">Loading configurations…</p>;
@@ -287,7 +244,6 @@ export default function AgentDefaultsSection({ settings, onSave }) {
           saving={savingSection === 'session'}
           saved={savedSection === 'session'}
           onSave={saveSessionModels}
-          onClear={clearSessionModels}
           disabled={busy && savingSection !== 'session'}
         />
       </SettingsSection>
@@ -311,7 +267,6 @@ export default function AgentDefaultsSection({ settings, onSave }) {
           saving={savingSection === 'mcp'}
           saved={savedSection === 'mcp'}
           onSave={saveMcpModels}
-          onClear={clearMcpModels}
           disabled={busy && savingSection !== 'mcp'}
         />
       </SettingsSection>
@@ -330,7 +285,6 @@ export default function AgentDefaultsSection({ settings, onSave }) {
           saving={savingSection === 'options'}
           saved={savedSection === 'options'}
           onSave={saveSessionOptions}
-          onClear={clearSessionOptions}
           disabled={busy && savingSection !== 'options'}
         />
       </SettingsSection>

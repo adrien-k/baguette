@@ -24,7 +24,7 @@ import { usePersistentState } from '../hooks/usePersistentState.js';
 import { useMediaQuery } from '../hooks/useMediaQuery.js';
 import { useCursorModelPrefs } from '../hooks/useAgentPreferences.js';
 import AgentMessageComposer from './AgentMessageComposer.jsx';
-import { GHOST_BUTTON_CLASS, PRIMARY_BUTTON_SIZED } from '../utils/buttonStyles.js';
+import { PRIMARY_BUTTON_SIZED } from '../utils/buttonStyles.js';
 import ComposerPrimaryMenuAddon from './ComposerPrimaryMenuAddon.jsx';
 import FileAttachmentPicker from './FileAttachmentPicker.jsx';
 import SearchableSelect from './SearchableSelect';
@@ -93,7 +93,6 @@ export default function BuilderForm({
   onCreateLoop,
   onUpdateLoop,
   onDeleteLoop,
-  onCancelEdit,
   editingLoop,
   loading,
   repoFullName: repoFullNameProp,
@@ -1069,11 +1068,6 @@ export default function BuilderForm({
 
       {isLoop && !loopReadOnly && (
         <div className="flex items-center justify-end gap-2 border-t border-line pt-4">
-          {onCancelEdit ? (
-            <button type="button" onClick={onCancelEdit} className={GHOST_BUTTON_CLASS}>
-              Cancel
-            </button>
-          ) : null}
           <button
             type="button"
             disabled={!canSubmit}
