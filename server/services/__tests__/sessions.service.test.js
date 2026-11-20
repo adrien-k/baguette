@@ -2288,6 +2288,16 @@ describe('Sessions service - find, get, create', () => {
       expect(session.auto_load_skills).toEqual(['Default A', 'Default B']);
     });
 
+    it('applies user default usage limits when usage limit fields are omitted', async () => {
+      await db('users').where({ id: userId1 }).update({
+        default_usage_limit_action: 'wait',
+      });
+      const session = await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
+      expect(session.usage_limit_action).toBe('wait');
+    });
+
     it('respects explicit auto_load_skills over user defaults', async () => {
       await db('users')
         .where({ id: userId1 })

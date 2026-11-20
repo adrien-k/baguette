@@ -12,6 +12,12 @@ import {
   normalizeSubagentDefaultMode,
 } from '@baguette/shared/subagent-default-mode.js';
 import { SettingsSaveRow } from '../../components/SettingsSection.jsx';
+import DefaultUsageLimitsFields from '../../components/settings/DefaultUsageLimitsFields.jsx';
+import {
+  DEFAULT_USAGE_LIMIT_ACTION,
+  parseUsageLimit,
+  usageLimitInputText,
+} from '../../utils/usageLimitActions.jsx';
 
 export default function AgentDefaultsSection({ settings, onSave }) {
   const { user } = useAuth();
@@ -33,6 +39,12 @@ export default function AgentDefaultsSection({ settings, onSave }) {
   const [utilityConfigId, setUtilityConfigId] = useState(null);
   const [utilityModel, setUtilityModel] = useState(null);
   const [utilityModelParamsJson, setUtilityModelParamsJson] = useState(null);
+
+  const [defaultUsageLimitAction, setDefaultUsageLimitAction] = useState(
+    DEFAULT_USAGE_LIMIT_ACTION
+  );
+  const [defaultUsageLimitText, setDefaultUsageLimitText] = useState('');
+  const [defaultUsageLimitConfigured, setDefaultUsageLimitConfigured] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -68,6 +80,10 @@ export default function AgentDefaultsSection({ settings, onSave }) {
         ? JSON.stringify(settings.utility_default_model.model_params)
         : null
     );
+    const hasDefaultUsage = Boolean(settings.default_usage_limit_action);
+    setDefaultUsageLimitConfigured(hasDefaultUsage);
+    setDefaultUsageLimitAction(settings.default_usage_limit_action ?? DEFAULT_USAGE_LIMIT_ACTION);
+    setDefaultUsageLimitText(usageLimitInputText(settings.default_usage_limit));
   }, [settings]);
 
   useEffect(() => {
@@ -90,8 +106,22 @@ export default function AgentDefaultsSection({ settings, onSave }) {
 
   const handleSave = async () => {
     if (!user?.id) return;
+    const usageLimit = parseUsageLimit(defaultUsageLimitText);
+    if (defaultUsageLimitAction === 'continue' && usageLimit === undefined) {
+      toastError(
+        'Invalid overage usage limit',
+        new Error('Overage usage limit must be a dollar amount >= 0, or empty for unlimited')
+      );
+      return;
+    }
     setSaving(true);
     setSaved(false);
+    const usageLimitPayload = defaultUsageLimitConfigured
+      ? {
+          default_usage_limit_action: defaultUsageLimitAction,
+          default_usage_limit: defaultUsageLimitAction === 'continue' ? usageLimit : null,
+        }
+      : {};
     try {
       const updated = await usersService.patch(user.id, {
         agent_default_config_id: agentConfigId,
@@ -112,6 +142,7 @@ export default function AgentDefaultsSection({ settings, onSave }) {
         utility_default_model: utilityConfigId
           ? buildModelPayload(utilityModel, utilityModelParamsJson)
           : null,
+        ...usageLimitPayload,
       });
       onSave(updated);
       setSaved(true);
@@ -138,6 +169,8 @@ export default function AgentDefaultsSection({ settings, onSave }) {
         subagent_default_model: null,
         utility_default_config_id: null,
         utility_default_model: null,
+        default_usage_limit_action: null,
+        default_usage_limit: null,
       });
       onSave(updated);
       hydrateFromSettings();
@@ -198,6 +231,18 @@ export default function AgentDefaultsSection({ settings, onSave }) {
         onModelChange={setReviewerModel}
         onModelParamsJsonChange={setReviewerModelParamsJson}
         modelModeRadioName="reviewer-default-model-mode"
+      />
+      <DefaultUsageLimitsFields
+        action={defaultUsageLimitAction}
+        onActionChange={(next) => {
+          setDefaultUsageLimitConfigured(true);
+          setDefaultUsageLimitAction(next);
+        }}
+        limitText={defaultUsageLimitText}
+        onLimitTextChange={(text) => {
+          setDefaultUsageLimitConfigured(true);
+          setDefaultUsageLimitText(text);
+        }}
       />
       <SubagentDefaultPicker
         description="Limits which model an agent can use when it starts a subagent or creates a session or loop."

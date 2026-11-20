@@ -46,6 +46,69 @@ export function usageLimitFieldsError(data) {
   return null;
 }
 
+/**
+ * Before session/loop create: fill missing usage-limit fields from the user row
+ * (Settings → Agent). Loop-spawned sessions skip — policy comes from the loop row.
+ */
+export async function applyUserDefaultUsageLimitsOnCreate(context) {
+  if (context.method !== 'create') return context;
+  if (context.data.loop_id != null) return context;
+  const hasAction = 'usage_limit_action' in context.data;
+  const hasLimit = 'usage_limit' in context.data;
+  if (hasAction && hasLimit) return context;
+
+  const userId = context.params?.user?.id ?? context.data?.user_id;
+  if (userId == null) return context;
+
+  const row = await context.app
+    .get('db')('users')
+    .where({ id: userId })
+    .select('default_usage_limit_action', 'default_usage_limit')
+    .first();
+  if (!row?.default_usage_limit_action) return context;
+
+  if (!hasAction) context.data.usage_limit_action = row.default_usage_limit_action;
+  const action = context.data.usage_limit_action ?? row.default_usage_limit_action;
+  if (!hasLimit && action === 'continue') {
+    context.data.usage_limit = row.default_usage_limit ?? null;
+  }
+  return context;
+}
+
+/**
+ * Validate `default_usage_limit_action` / `default_usage_limit` on users.patch (in place).
+ */
+export function userDefaultUsageLimitsPatchError(data) {
+  if (data.default_usage_limit_action === undefined && data.default_usage_limit === undefined) {
+    return null;
+  }
+  if (data.default_usage_limit_action === null) {
+    data.default_usage_limit = null;
+    return null;
+  }
+  const mapped = {
+    usage_limit_action:
+      data.default_usage_limit_action === undefined ? undefined : data.default_usage_limit_action,
+    usage_limit: data.default_usage_limit === undefined ? undefined : data.default_usage_limit,
+  };
+  const error = usageLimitFieldsError(mapped);
+  if (error) {
+    return error
+      .replaceAll('usage_limit_action', 'default_usage_limit_action')
+      .replaceAll('usage_limit', 'default_usage_limit');
+  }
+  if (mapped.usage_limit_action !== undefined) {
+    data.default_usage_limit_action = mapped.usage_limit_action ?? null;
+  }
+  if (mapped.usage_limit !== undefined) {
+    data.default_usage_limit = mapped.usage_limit ?? null;
+  }
+  if (data.default_usage_limit_action != null && data.default_usage_limit_action !== 'continue') {
+    data.default_usage_limit = null;
+  }
+  return null;
+}
+
 /** Only `continue` may spend paid overage. */
 export function allowsOverage(action) {
   return action === 'continue';

@@ -118,6 +118,7 @@ export default function BuilderForm({
   // be re-seeded from agent defaults or the last session.
   const hasPersistedPromptRef = useRef(Boolean(persistKey && hasPromptText(persistentState.store)));
   const seededDefaultSkillsRef = useRef(false);
+  const seededUsageLimitsRef = useRef(false);
   /** Last repo/global scope we applied lastUsed() for — avoids clobbering manual picks on user/config refetches. */
   const lastSeededScopeRef = useRef(null);
   const { repos, loading: loadingRepos } = useRepoContext();
@@ -224,6 +225,32 @@ export default function BuilderForm({
     if (!editingLoop) return;
     setLoopEnabled(!!editingLoop.enabled);
   }, [editingLoop?.id, editingLoop?.enabled]);
+
+  useEffect(() => {
+    if (editingLoop || userSettings == null) return;
+    if (hasPersistedPromptRef.current) return;
+    if (seededUsageLimitsRef.current) return;
+    if (
+      persistKey &&
+      ('usageLimitAction' in persistentState.store || 'usageLimit' in persistentState.store)
+    ) {
+      seededUsageLimitsRef.current = true;
+      return;
+    }
+    const action = userSettings.default_usage_limit_action ?? DEFAULT_USAGE_LIMIT_ACTION;
+    setUsageLimitAction(action);
+    setUsageLimitText(usageLimitInputText(userSettings.default_usage_limit));
+    seededUsageLimitsRef.current = true;
+  }, [
+    editingLoop,
+    userSettings?.default_usage_limit_action,
+    userSettings?.default_usage_limit,
+    userSettings?.id,
+    persistKey,
+    persistentState.store,
+    setUsageLimitAction,
+    setUsageLimitText,
+  ]);
 
   // Whether the initial SDK/model seeding (agent defaults or last session) has resolved;
   // the models fetch waits for it so the persisted default never resolves against
