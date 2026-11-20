@@ -28,7 +28,7 @@ const AUTO_PUSH_OFF_CONFIRM =
 
 /** The Push modal overlay (MODAL_OVERLAY_CLASS includes bg-scrim; only modals use it). */
 function pushModal(page) {
-  return page.locator('.bg-scrim', { hasText: 'Push commits' });
+  return page.locator('.bg-scrim', { hasText: 'Agent wants to push' });
 }
 
 /** GitPush tool-call card in the session chat (locator screenshot target). */
@@ -165,11 +165,10 @@ test.describe('GitPush approval flow', () => {
     await expect(modal).toBeVisible({ timeout: 120_000 });
     await expect(modal.getByText(MOCK_E2E_GITPUSH_REASON)).toBeVisible();
     await expect(modal.getByText(AUTO_PUSH_OFF_CONFIRM)).toBeVisible();
-    const sessionBranch = (
-      await modal.getByRole('button', { name: 'Change selection' }).innerText()
-    ).trim();
-    expect(sessionBranch).toBeTruthy();
-    expect(sessionBranch).not.toBe('development');
+    await expect(modal.getByText(/^origin\//)).toBeVisible();
+    const originBranchLine = (await modal.getByText(/^origin\//).innerText()).trim();
+    expect(originBranchLine).toBeTruthy();
+    expect(originBranchLine).not.toBe('origin/development');
     await expect(modal.getByText(/overwrites remote history/)).toHaveCount(0);
 
     await settleForScreenshot(page);
@@ -189,7 +188,7 @@ test.describe('GitPush approval flow', () => {
       el.style.visibility = 'visible';
     });
 
-    await modal.getByRole('button', { name: 'Cancel' }).click();
+    await modal.getByRole('button', { name: 'Reject' }).click();
     await expect(modal).toHaveCount(0);
 
     const card = await waitForGitPushCanceledOnCard(page, MOCK_E2E_GITPUSH_SESSION_SUMMARY);
@@ -210,7 +209,7 @@ test.describe('GitPush approval flow', () => {
     const modal = pushModal(page);
     await expect(modal).toBeVisible({ timeout: 120_000 });
     await expect(modal.getByText(MOCK_E2E_GITPUSH_REASON)).toBeVisible();
-    await expect(modal.getByRole('button', { name: 'Change selection' })).toHaveText('development');
+    await expect(modal.getByText('origin/development', { exact: true })).toBeVisible();
     await expect(modal.getByText(/local .*→ origin\/development/)).toBeVisible();
     await expect(modal.getByText(/overwrites remote history/)).toHaveCount(0);
     await expect(modal.getByText(/create the PR/)).toHaveCount(0);
@@ -220,7 +219,7 @@ test.describe('GitPush approval flow', () => {
     await settleForScreenshot(page);
     await saveE2eScreenshot(page, 'gitpush-development-target-modal.png');
 
-    await modal.getByRole('button', { name: 'Push', exact: true }).click();
+    await modal.getByRole('button', { name: 'Accept', exact: true }).click();
 
     await expect(page.getByText('Pushed successfully')).toBeVisible({ timeout: 30_000 });
     await expect(modal).toHaveCount(0);
@@ -264,7 +263,7 @@ test.describe('GitPush approval flow', () => {
     await expect(modal).toBeVisible({ timeout: 120_000 });
     await expect(modal.getByText(MOCK_E2E_GITPUSH_REASON)).toBeVisible();
     await expect(modal.getByText(/--force\s*overwrites remote history/)).toBeVisible();
-    await expect(modal.getByRole('button', { name: 'Force Push' })).toBeVisible();
+    await expect(modal.getByRole('button', { name: 'Accept', exact: true })).toBeVisible();
     await expect(modal.getByText(AUTO_PUSH_OFF_CONFIRM)).toHaveCount(0);
     await expect(modal.getByText('Create PR if it does not exist')).toHaveCount(0);
     await expect(modal.getByRole('checkbox')).toHaveCount(0);
@@ -272,7 +271,7 @@ test.describe('GitPush approval flow', () => {
     await settleForScreenshot(page);
     await saveE2eScreenshot(page, 'gitpush-force-approval-modal.png');
 
-    await modal.getByRole('button', { name: 'Cancel' }).click();
+    await modal.getByRole('button', { name: 'Reject' }).click();
     await expect(modal).toHaveCount(0);
 
     const card = await waitForGitPushCanceledOnCard(page, MOCK_E2E_GITPUSH_SUMMARY);

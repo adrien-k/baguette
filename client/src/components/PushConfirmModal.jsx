@@ -49,9 +49,12 @@ export default function PushConfirmModal({
     prPhrase = createPr ? ' and create the PR.' : '';
   }
 
-  const { branches, loading: loadingBranches } = useGetBranches(repo);
+  const { branches, loading: loadingBranches } = useGetBranches(agentRequest ? null : repo);
 
   const isPureForce = forceMode === 'force';
+  let forceModeLabel = 'Normal push';
+  if (forceMode === 'force') forceModeLabel = 'Force (--force)';
+  else if (forceMode === 'lease') forceModeLabel = 'Force with lease (--force-with-lease)';
   const autoPushOffOnlyReason =
     agentRequest &&
     autoPushOff &&
@@ -92,9 +95,27 @@ export default function PushConfirmModal({
     };
   }, [sessionId, branch, initialSourceBranch]);
 
+  const confirmPush = () =>
+    onConfirm({
+      forceMode: forceMode || null,
+      branch: branch || null,
+      sourceBranch: initialSourceBranch || null,
+      createPr: agentRequest ? false : createPr,
+      syncPr: !agentRequest,
+    });
+
   return (
     <Modal>
-      <ModalHeader title="Push commits" onClose={onCancel} />
+      <ModalHeader
+        title={agentRequest ? 'Agent wants to push' : 'Push commits'}
+        onClose={agentRequest ? null : onCancel}
+      />
+
+      {agentRequest ? (
+        <p className={`${TEXT_MUTED} text-sm mb-3 leading-snug`}>
+          The agent requested a push to origin. Review the details below and accept or reject.
+        </p>
+      ) : null}
 
       {autoPushOffOnlyReason ? (
         <p className={`${TEXT_MUTED} text-sm mb-3 leading-snug`}>
@@ -128,15 +149,19 @@ export default function PushConfirmModal({
       <div className="flex flex-col gap-3 mb-0 mt-4">
         <div>
           <label className={`block text-xs ${TEXT_MUTED} mb-1`}>Branch</label>
-          <SearchableSelect
-            value={branch}
-            onChange={setBranch}
-            options={branches}
-            loading={loadingBranches}
-            placeholder="Search branches..."
-            loadingText="Loading branches..."
-            emptyText="No branches found"
-          />
+          {agentRequest ? (
+            <p className={`text-sm font-mono ${TEXT_HEADING} break-all`}>origin/{branch}</p>
+          ) : (
+            <SearchableSelect
+              value={branch}
+              onChange={setBranch}
+              options={branches}
+              loading={loadingBranches}
+              placeholder="Search branches..."
+              loadingText="Loading branches..."
+              emptyText="No branches found"
+            />
+          )}
           {(initialSourceBranch || (localBranch && localBranch !== branch)) && (
             <div className={`mt-1.5 font-mono text-[10px] ${TEXT_FAINT}`}>
               {initialSourceBranch
@@ -160,15 +185,19 @@ export default function PushConfirmModal({
 
         <div>
           <label className={`block text-xs ${TEXT_MUTED} mb-1`}>Force mode</label>
-          <select
-            value={forceMode}
-            onChange={(e) => setForceMode(e.target.value)}
-            className={`${INPUT_CLASS} py-1.5 text-heading`}
-          >
-            <option value="">Normal push</option>
-            <option value="lease">Force with lease (--force-with-lease)</option>
-            <option value="force">Force (--force)</option>
-          </select>
+          {agentRequest ? (
+            <p className={`text-sm ${TEXT_HEADING}`}>{forceModeLabel}</p>
+          ) : (
+            <select
+              value={forceMode}
+              onChange={(e) => setForceMode(e.target.value)}
+              className={`${INPUT_CLASS} py-1.5 text-heading`}
+            >
+              <option value="">Normal push</option>
+              <option value="lease">Force with lease (--force-with-lease)</option>
+              <option value="force">Force (--force)</option>
+            </select>
+          )}
         </div>
 
         {forceMode === 'force' && (
@@ -189,7 +218,7 @@ export default function PushConfirmModal({
             </span>
           </div>
         )}
-        {autoPushOff && !autoPush && (
+        {autoPushOff && !autoPush && !agentRequest && (
           <div className={`flex items-start gap-2 text-xs ${TINT_WARN_SOFT} rounded-lg px-3 py-2`}>
             <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
             <span>
@@ -218,7 +247,7 @@ export default function PushConfirmModal({
           </label>
         )}
 
-        {onAutoPushChange && (
+        {onAutoPushChange && !agentRequest && (
           <div
             className={`flex items-center justify-between gap-3 rounded-lg border ${HAIRLINE} bg-control/40 px-3 py-2.5`}
           >
@@ -245,29 +274,43 @@ export default function PushConfirmModal({
       </div>
 
       <ModalActions className="flex gap-3 mt-6">
-        <button type="button" onClick={onCancel} className={`flex-1 ${GHOST_BUTTON_CLASS}`}>
-          Cancel
-        </button>
-        <button
-          type="button"
-          onClick={() =>
-            onConfirm({
-              forceMode: forceMode || null,
-              branch: branch || null,
-              sourceBranch: initialSourceBranch || null,
-              createPr: agentRequest ? false : createPr,
-              syncPr: !agentRequest,
-            })
-          }
-          className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-            isPureForce
-              ? 'bg-err hover:bg-err-hover text-on-solid'
-              : 'bg-brand hover:bg-brand-hover text-on-brand'
-          }`}
-        >
-          <ArrowUpToLine className="w-3.5 h-3.5" />
-          {isPureForce ? 'Force Push' : forceMode === 'lease' ? 'Force Push' : 'Push'}
-        </button>
+        {agentRequest ? (
+          <>
+            <button type="button" onClick={onCancel} className={`flex-1 ${GHOST_BUTTON_CLASS}`}>
+              Reject
+            </button>
+            <button
+              type="button"
+              onClick={confirmPush}
+              className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                isPureForce
+                  ? 'bg-err hover:bg-err-hover text-on-solid'
+                  : 'bg-brand hover:bg-brand-hover text-on-brand'
+              }`}
+            >
+              <ArrowUpToLine className="w-3.5 h-3.5" />
+              Accept
+            </button>
+          </>
+        ) : (
+          <>
+            <button type="button" onClick={onCancel} className={`flex-1 ${GHOST_BUTTON_CLASS}`}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={confirmPush}
+              className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                isPureForce
+                  ? 'bg-err hover:bg-err-hover text-on-solid'
+                  : 'bg-brand hover:bg-brand-hover text-on-brand'
+              }`}
+            >
+              <ArrowUpToLine className="w-3.5 h-3.5" />
+              {isPureForce ? 'Force Push' : forceMode === 'lease' ? 'Force Push' : 'Push'}
+            </button>
+          </>
+        )}
       </ModalActions>
     </Modal>
   );

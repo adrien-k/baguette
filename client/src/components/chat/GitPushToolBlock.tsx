@@ -185,7 +185,7 @@ export default function GitPushToolBlock({
         ) : null}
         {showApprovalWait && (
           <p className="text-faint leading-snug">
-            Waiting for the user to confirm or cancel in the Push modal.
+            Waiting for the user to accept or reject in the Push modal.
           </p>
         )}
         {showDirectPushMessage && <p className="text-faint leading-snug">Pushing to origin…</p>}

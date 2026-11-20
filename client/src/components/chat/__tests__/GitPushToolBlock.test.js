@@ -110,14 +110,14 @@ describe('GitPushToolBlock', () => {
     expect(html).toContain('GitPush');
     expect(html).toContain('animate-spin');
     expect(html).toContain('Pushing to origin');
-    expect(html).not.toContain('Waiting for the user to confirm or cancel');
+    expect(html).not.toContain('Waiting for the user to accept or reject');
     expect(html).toContain('ship the session branch');
   });
 
   it('shows approval wait copy while awaiting Push modal confirmation', () => {
     const html = renderCardStatic({ args: {}, result: APPROVAL_RESULT });
     expect(html).toContain('approval requested');
-    expect(html).toContain('Waiting for the user to confirm or cancel');
+    expect(html).toContain('Waiting for the user to accept or reject');
     expect(html).toContain('adrien-baguette/feature');
     expect(html).toContain('development');
     expect(html).toContain('fast-forward development with the finished feature work');
@@ -206,7 +206,7 @@ describe('GitPushToolBlock', () => {
     });
     expect(html).toContain('canceled');
     expect(html).not.toContain('approval requested');
-    expect(html).not.toContain('Waiting for the user to confirm or cancel');
+    expect(html).not.toContain('Waiting for the user to accept or reject');
   });
 
   it('after remount, persisted pushed result shows pushed badge', () => {
@@ -221,7 +221,7 @@ describe('GitPushToolBlock', () => {
     });
     expect(html).toContain('pushed');
     expect(html).not.toContain('approval requested');
-    expect(html).not.toContain('Waiting for the user to confirm or cancel');
+    expect(html).not.toContain('Waiting for the user to accept or reject');
   });
 
   it('ignores push:complete for a different request id', async () => {
