@@ -24,6 +24,9 @@ import { useAgentConfigContext } from '../context/AgentConfigContext.jsx';
 import { useAgentConfigModels } from '../hooks/useAgentConfigModels.js';
 import { parseModelField } from '../utils/models.js';
 
+const PRIMARY_BUILDER_ROW_TOOLTIP =
+  'This session’s primary builder. Messages you send without picking another agent are delivered here by default.';
+
 /** Status glyph between agent name and model — hidden for quiet idle rows. */
 function AgentTreeStatus({ status }) {
   if (isAgentTurnActive(status) || status === 'provisioning') {
@@ -172,6 +175,32 @@ function selectedAgentRowBorderClass(isCurrent, sessionHighlighted) {
   return 'border-control-hover';
 }
 
+function AgentTreeNameLabel({ agent, agentRef, title, isCurrent }) {
+  const nameLabel = (
+    <span
+      className={`min-w-0 truncate rounded px-1 text-[11px] leading-4 inline-flex items-center gap-1 ${agentNameToneClass(
+        agent
+      )} ${isCurrent ? 'text-fg' : 'text-secondary'}`}
+    >
+      {agentRef != null ? (
+        <span className="shrink-0 font-mono text-[10px] text-faint tabular-nums">#{agentRef}</span>
+      ) : null}
+      <span className="truncate">{title}</span>
+    </span>
+  );
+  if (!isPrimaryAgent(agent)) return nameLabel;
+  return (
+    <Tooltip
+      content={PRIMARY_BUILDER_ROW_TOOLTIP}
+      wrap
+      wide
+      className="min-w-0 max-w-full inline-flex"
+    >
+      {nameLabel}
+    </Tooltip>
+  );
+}
+
 function AgentTreeRow({ agent, ...rest }) {
   const { getConfig } = useAgentConfigContext();
   const config = getConfig(agent.agent_config_id);
@@ -241,18 +270,12 @@ function AgentTreeRow({ agent, ...rest }) {
               className="h-4 flex-1 min-w-0 rounded border border-line bg-control px-1.5 py-0 text-xs text-heading"
             />
           ) : (
-            <span
-              className={`min-w-0 truncate rounded px-1 text-[11px] leading-4 inline-flex items-center gap-1 ${agentNameToneClass(
-                agent
-              )} ${isCurrent ? 'text-fg' : 'text-secondary'}`}
-            >
-              {agentRef != null ? (
-                <span className="shrink-0 font-mono text-[10px] text-faint tabular-nums">
-                  #{agentRef}
-                </span>
-              ) : null}
-              <span className="truncate">{title}</span>
-            </span>
+            <AgentTreeNameLabel
+              agent={agent}
+              agentRef={agentRef}
+              title={title}
+              isCurrent={isCurrent}
+            />
           )}
           <AgentTreeStatus status={agent.status} />
         </button>
