@@ -94,6 +94,32 @@ describe('collectInteractiveToolsForDock', () => {
     expect(dock[0].id).toBe('push1');
   });
 
+  it('does not pin GitPush after canceled on ok() envelope shape', () => {
+    const inner = JSON.stringify({
+      ok: true,
+      approval_requested: true,
+      request_id: 'req-3',
+    });
+    const messages = [
+      { type: 'user', content: 'push' },
+      mcpCall(
+        'push-envelope-canceled',
+        'GitPush',
+        {},
+        {
+          status: 'ok',
+          content: inner,
+          data: {
+            content: [{ type: 'text', text: inner }],
+            approval_requested: false,
+            approval_outcome: 'canceled',
+          },
+        }
+      ),
+    ];
+    expect(collectInteractiveToolsForDock(messages)).toEqual([]);
+  });
+
   it('does not pin GitPush after approval outcome is stored', () => {
     const messages = [
       { type: 'user', content: 'push' },

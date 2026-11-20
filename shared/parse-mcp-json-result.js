@@ -43,8 +43,16 @@ function mcpDataHasPayload(data) {
     data.ok === true ||
     data.ok === false ||
     data.error != null ||
-    data.approval_requested === true
+    data.approval_requested === true ||
+    data.approval_requested === false ||
+    data.approval_outcome != null
   );
+}
+
+function dataFieldsOverInnerBlocks(data, fromDataBlocks) {
+  if (!fromDataBlocks) return null;
+  const { content: _content, ...fields } = data;
+  return { ...fromDataBlocks, ...fields };
 }
 
 function parsedFromMcpTextBlocks(obj) {
@@ -70,7 +78,8 @@ export function parseMcpJsonResult(result) {
         return base ? { ...base, ...data } : data;
       }
       const fromDataBlocks = parsedFromMcpTextBlocks(data);
-      if (fromDataBlocks) return fromDataBlocks;
+      const merged = dataFieldsOverInnerBlocks(data, fromDataBlocks);
+      if (merged) return merged;
     }
 
     if (fromMcpBlocks) return fromMcpBlocks;

@@ -17,6 +17,25 @@ describe('parseMcpJsonResult', () => {
     expect(parsed?.request_id).toBe('req-1');
   });
 
+  it('prefers canceled approval fields over stale inner ok() text', () => {
+    const inner = JSON.stringify({
+      ok: true,
+      approval_requested: true,
+      request_id: 'req-cancel',
+    });
+    const parsed = parseMcpJsonResult({
+      status: 'ok',
+      content: inner,
+      data: {
+        content: [{ type: 'text', text: inner }],
+        approval_requested: false,
+        approval_outcome: 'canceled',
+      },
+    });
+    expect(parsed?.approval_outcome).toBe('canceled');
+    expect(parsed?.approval_requested).toBe(false);
+  });
+
   it('unwraps MCP text content blocks', () => {
     const parsed = parseMcpJsonResult({
       content: [{ type: 'text', text: JSON.stringify({ ok: true, markdown: '# Plan' }) }],

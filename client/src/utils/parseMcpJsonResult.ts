@@ -31,7 +31,10 @@ function mcpDataHasPayload(data: Record<string, unknown>): boolean {
     data.task_id != null ||
     data.ok === true ||
     data.ok === false ||
-    data.error != null
+    data.error != null ||
+    data.approval_requested === true ||
+    data.approval_requested === false ||
+    data.approval_outcome != null
   );
 }
 
@@ -56,6 +59,11 @@ export function parseMcpJsonResult(result: unknown): McpResultData | null {
       if (mcpDataHasPayload(data)) {
         const base = fromMcpBlocks ?? fromContent;
         return base ? { ...base, ...data } : (data as McpResultData);
+      }
+      const fromDataBlocks = parsedFromMcpTextBlocks(data);
+      if (fromDataBlocks) {
+        const { content: _content, ...fields } = data;
+        return { ...fromDataBlocks, ...fields } as McpResultData;
       }
     }
 
