@@ -4,10 +4,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestDb } from '../../test-utils/db.js';
 
-const resolver = vi.hoisted(() => ({ resolve: vi.fn() }));
-vi.mock('../agent-mcp-model-resolver.js', async (importOriginal) => ({
-  ...(await importOriginal()),
-  resolveMcpBuilderModel: resolver.resolve,
+const resolver = vi.hoisted(() => ({ resolve: vi.fn(), defaults: vi.fn() }));
+vi.mock('../agent-mcp-model-resolver.js', () => ({ resolveMcpBuilderModel: resolver.resolve }));
+vi.mock('../agent-config-resolver.js', () => ({
+  resolveExplicitBuilderDefaults: resolver.defaults,
 }));
 
 const configs = vi.hoisted(() => ({ models: {} }));
@@ -20,7 +20,6 @@ vi.mock('../feathers/agent-configs.service.js', () => ({
 }));
 
 import { BadRequest } from 'feathers/errors';
-import { MCP_BUILDER_MODEL_SETTINGS_ERROR } from '../agent-mcp-model-resolver.js';
 import {
   createGlobalSessionModelResolver,
   pickFallbackModel,
@@ -74,21 +73,58 @@ describe('createGlobalSessionModelResolver', () => {
 
   beforeEach(() => {
     resolver.resolve.mockReset();
+    resolver.defaults.mockReset().mockResolvedValue(null);
     configs.models = {};
   });
 
   it('keeps the owner’s default model when there is one', async () => {
     const userId = await insertUser(db);
     const chosen = { agent_config_id: 9, agent_sdk: 'claude', model: 'opus', model_params: null };
-    resolver.resolve.mockResolvedValue(chosen);
+    resolver.defaults.mockResolvedValue(chosen);
     expect(await createGlobalSessionModelResolver(app)(db, userId, {})).toBe(chosen);
+    expect(resolver.resolve).not.toHaveBeenCalled();
+  });
+
+  it('does not consult the account’s agent-created-sessions policy (presets only and the like)', async () => {
+    const userId = await insertUser(db);
+    const configId = await configRow(userId);
+    configs.models[configId] = [model('claude-haiku-4-5')];
+    // The policy resolver would refuse: no preset was passed and none is enabled.
+    resolver.resolve.mockRejectedValue(new BadRequest('Preset required'));
+
+    expect(await createGlobalSessionModelResolver(app)(db, userId, { repo_id: 1 })).toMatchObject({
+      model: 'claude-haiku-4-5',
+    });
+    expect(resolver.resolve).not.toHaveBeenCalled();
+  });
+
+  it('checks a model the caller names itself the usual way', async () => {
+    const userId = await insertUser(db);
+    const chosen = {
+      agent_config_id: 4,
+      agent_sdk: 'cursor',
+      model: 'composer-2',
+      model_params: null,
+    };
+    resolver.resolve.mockResolvedValue(chosen);
+    const opts = { preset_model_id: 12 };
+
+    expect(await createGlobalSessionModelResolver(app)(db, userId, opts)).toBe(chosen);
+    expect(resolver.resolve).toHaveBeenCalledWith(db, userId, opts);
+  });
+
+  it('reports a bad model the caller named instead of falling back', async () => {
+    const userId = await insertUser(db);
+    resolver.resolve.mockRejectedValue(new BadRequest('Unknown preset'));
+    await expect(
+      createGlobalSessionModelResolver(app)(db, userId, { preset_model_id: 99 })
+    ).rejects.toThrow('Unknown preset');
   });
 
   it('falls back to Haiku when no default model is set', async () => {
     const userId = await insertUser(db);
     const configId = await configRow(userId);
     configs.models[configId] = [model('claude-sonnet-4'), model('claude-haiku-4-5')];
-    resolver.resolve.mockRejectedValue(new BadRequest(MCP_BUILDER_MODEL_SETTINGS_ERROR));
 
     expect(await createGlobalSessionModelResolver(app)(db, userId, {})).toEqual({
       agent_config_id: configId,
@@ -104,7 +140,6 @@ describe('createGlobalSessionModelResolver', () => {
     const cursor = await configRow(userId, { label: 'cursor', sdk: 'cursor' });
     configs.models[broken] = new Error('invalid api key');
     configs.models[cursor] = [model('composer-2')];
-    resolver.resolve.mockRejectedValue(new BadRequest(MCP_BUILDER_MODEL_SETTINGS_ERROR));
 
     expect(await createGlobalSessionModelResolver(app)(db, userId, {})).toMatchObject({
       agent_config_id: cursor,
@@ -120,7 +155,6 @@ describe('createGlobalSessionModelResolver', () => {
     const deleted = await configRow(userId, { deleted_at: new Date().toISOString() });
     configs.models[theirs] = [model('claude-haiku-4-5')];
     configs.models[deleted] = [model('claude-haiku-4-5')];
-    resolver.resolve.mockRejectedValue(new BadRequest(MCP_BUILDER_MODEL_SETTINGS_ERROR));
 
     await expect(createGlobalSessionModelResolver(app)(db, userId, {})).rejects.toThrow(
       /Haiku or Composer/
@@ -131,18 +165,9 @@ describe('createGlobalSessionModelResolver', () => {
     const userId = await insertUser(db);
     const configId = await configRow(userId);
     configs.models[configId] = [model('claude-sonnet-4')];
-    resolver.resolve.mockRejectedValue(new BadRequest(MCP_BUILDER_MODEL_SETTINGS_ERROR));
 
     await expect(createGlobalSessionModelResolver(app)(db, userId, {})).rejects.toThrow(
       'Settings → Agent'
-    );
-  });
-
-  it('does not hide other errors', async () => {
-    const userId = await insertUser(db);
-    resolver.resolve.mockRejectedValue(new BadRequest('Unknown preset'));
-    await expect(createGlobalSessionModelResolver(app)(db, userId, {})).rejects.toThrow(
-      'Unknown preset'
     );
   });
 });

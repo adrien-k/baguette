@@ -460,6 +460,28 @@ describe('CreateSession for Slack global sessions', () => {
     );
   });
 
+  it('does not require a preset from a Slack global session, whatever the account policy', async () => {
+    await db('users').where({ id: user.id }).update({ subagent_default_mode: 'preset' });
+    const fresh = await db('users').where({ id: user.id }).first();
+    const build = (callerSession) =>
+      createCreateSessionTool({
+        ...createAccountContext(fresh, app, { callerSession }),
+      });
+
+    expect(build({ id: 7, slack_app_id: 3 }).schema.preset_model_id.isOptional()).toBe(true);
+    expect(build({ id: 8, is_global: 1 }).schema.preset_model_id.isOptional()).toBe(false);
+
+    globalSessionModel.resolve.mockResolvedValue({
+      agent_config_id: configId,
+      model: 'haiku',
+      model_params: null,
+    });
+    const result = parseMcpToolResult(
+      await build({ id: 7, slack_app_id: 3, is_global: 1 }).handler(repoArgs)
+    );
+    expect(result.ok).toBe(true);
+  });
+
   it('does not apply that fallback to other sessions', async () => {
     const result = parseMcpToolResult(await tool({}, { id: 8, is_global: 1 }).handler(repoArgs));
     expect(result.ok).toBe(false);

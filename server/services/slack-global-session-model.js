@@ -4,10 +4,8 @@
  * An owner who set a default model keeps it.
  */
 import { BadRequest } from 'feathers/errors';
-import {
-  MCP_BUILDER_MODEL_SETTINGS_ERROR,
-  resolveMcpBuilderModel,
-} from './agent-mcp-model-resolver.js';
+import { resolveExplicitBuilderDefaults } from './agent-config-resolver.js';
+import { resolveMcpBuilderModel } from './agent-mcp-model-resolver.js';
 import { listModelsForOwnedConfig } from './feathers/agent-configs.service.js';
 
 /** Tried in this order. */
@@ -65,17 +63,23 @@ export function pickFallbackModel(candidates) {
   return null;
 }
 
+/** Whether the caller named a preset, or a configuration and model, itself. */
+const namedAModel = ({ preset_model_id, agent_config_id, model }) =>
+  preset_model_id != null || agent_config_id != null || model != null;
+
 /**
- * Same contract as `resolveMcpBuilderModel`, with the Haiku / Composer fallback when the owner has
- * no default builder model.
+ * Same contract as `resolveMcpBuilderModel`, but a Slack global session never needs anything set
+ * up first. A model it names itself is checked as usual; otherwise it gets the owner's default
+ * builder model, else Haiku or Composer. The account's agent-created-sessions policy (presets
+ * only, a fixed configuration…) is not consulted, so an empty preset list cannot block it.
  */
 export function createGlobalSessionModelResolver(app) {
   return async function resolveGlobalSessionBuilderModel(db, userId, opts = {}) {
-    try {
-      return await resolveMcpBuilderModel(db, userId, opts);
-    } catch (err) {
-      if (err.message !== MCP_BUILDER_MODEL_SETTINGS_ERROR) throw err;
-    }
+    if (namedAModel(opts)) return resolveMcpBuilderModel(db, userId, opts);
+
+    const defaults = await resolveExplicitBuilderDefaults(db, userId, opts.repo_id ?? null);
+    if (defaults) return defaults;
+
     const pick = pickFallbackModel(await listCandidates(app, userId));
     if (!pick) throw new BadRequest(NO_MODEL_ERROR);
     return {

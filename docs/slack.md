@@ -32,10 +32,12 @@ something from. The first tag creates it (it is titled "Slack global session" an
   global session answers only if the message is meant for it (otherwise it stays silent). Channel
   chatter and DMs are ignored. Untagged messages need the `message.channels` and `message.groups`
   bot events (README, step 4).
-- **Which model.** The global session and the sessions it starts use your default builder model
-  (Settings → Agent). Without one, the Slack global session itself falls back to Haiku, else Composer, from
-  your agent configurations (the newest version found). If none of them offers either, the bot says
-  so and points to Settings → Agent; nothing is created.
+- **Which model.** It works without any model setup. The Slack global session and the sessions it
+  starts use your default builder model (Settings → Agent) when you set one, otherwise the newest
+  Haiku, else Composer, from your agent configurations. The "Agent-created sessions and subagents"
+  policy (presets only, a fixed configuration…) is not applied to it, so an empty preset list never
+  blocks it. If you have no default and none of your configurations offers Haiku or Composer, the bot
+  says so and points to Settings → Agent; nothing is created.
 - **Which repos.** The global session picks the repository from what you wrote and asks when it is
   unclear. Under **Settings → Integrations → Slack** an app can be limited to chosen repositories;
   the Slack global session then only sees and starts sessions in those.

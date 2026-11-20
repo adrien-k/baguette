@@ -6,7 +6,10 @@ import { getSdkPlugin } from '../../../agent-sdks/registry.js';
 import { ensureBuiltInSdkPluginsRegistered } from '../../../agent-sdks/ensure-builtins-registered.js';
 import { loadModelsForSdk } from '../../baguette-models-for-user.js';
 import { loadOwnedAgentConfig } from '../../agent-config-resolver.js';
-import { normalizeSubagentDefaultMode } from '../../../../shared/subagent-default-mode.js';
+import {
+  SUBAGENT_DEFAULT_INHERIT,
+  normalizeSubagentDefaultMode,
+} from '../../../../shared/subagent-default-mode.js';
 import { resolveMcpBuilderModel } from '../../agent-mcp-model-resolver.js';
 import { getPrimaryBuilderAgent, insertAgentObserver } from '../../agents-db.js';
 import {
@@ -52,12 +55,15 @@ export function createCreateSessionTool(ctx) {
     callerSession,
     callerAgent,
   } = ctx;
-  const mode = normalizeSubagentDefaultMode(user?.subagent_default_mode);
-  // Slack global sessions (and their callers) may fall back to Haiku or Composer when the owner
-  // has no default model.
+  const isSlackGlobalSession = Boolean(callerSession?.slack_app_id);
+  // A Slack global session needs no model policy: it uses the owner's default or a cheap fallback
+  // (Haiku, Composer), so the preset list of the account cannot block it.
+  const mode = isSlackGlobalSession
+    ? SUBAGENT_DEFAULT_INHERIT
+    : normalizeSubagentDefaultMode(user?.subagent_default_mode);
   const resolveBuilderModel =
     ctx.resolveBuilderModel ??
-    (callerSession?.slack_app_id ? createGlobalSessionModelResolver(app) : resolveMcpBuilderModel);
+    (isSlackGlobalSession ? createGlobalSessionModelResolver(app) : resolveMcpBuilderModel);
   return {
     name: 'CreateSession',
     description: createSessionDescription(mode),
