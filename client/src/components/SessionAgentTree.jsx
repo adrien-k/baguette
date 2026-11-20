@@ -34,13 +34,13 @@ import { useAgentConfigContext } from '../context/AgentConfigContext.jsx';
 import { useAgentConfigModels } from '../hooks/useAgentConfigModels.js';
 import { parseModelField } from '../utils/models.js';
 
-export const PRIMARY_BUILDER_ROW_TOOLTIP_DEFAULT =
+const PRIMARY_BUILDER_ROW_TOOLTIP_DEFAULT =
   'This session’s primary builder. Messages sent without picking an agent are delivered here by default.';
 
-export const PRIMARY_BUILDER_ROW_TOOLTIP_PINNED_OTHER =
+const PRIMARY_BUILDER_ROW_TOOLTIP_PINNED_OTHER =
   'This session’s primary builder. Another builder is pinned, so that chat opens and receives messages until you pick an agent.';
 
-export function primaryBuilderRowTooltip(pinnedAgentId, primaryAgentId) {
+function primaryBuilderRowTooltip(pinnedAgentId, primaryAgentId) {
   const pinned = pinnedAgentId != null && pinnedAgentId !== '' ? Number(pinnedAgentId) : null;
   if (pinned != null && primaryAgentId != null && pinned !== Number(primaryAgentId)) {
     return PRIMARY_BUILDER_ROW_TOOLTIP_PINNED_OTHER;

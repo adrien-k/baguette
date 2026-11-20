@@ -13,7 +13,7 @@ import { DEV_SEED_EMAIL, insertDevUser } from './seed-dev-environment.js';
 export const E2E_OTHER_SEED_USERNAME = 'e2e-other';
 export const E2E_OTHER_SEED_EMAIL = 'e2e-other@baguette.local';
 /** Matches `devLoginIdentity('e2e-other').github_id` in auth routes. */
-export const E2E_OTHER_GITHUB_ID = 1_609_803_931;
+const E2E_OTHER_GITHUB_ID = 1_609_803_931;
 
 async function seedE2eMockAgentDefaults(db, userId) {
   if (!isMockAgentSdkEnabled()) return null;

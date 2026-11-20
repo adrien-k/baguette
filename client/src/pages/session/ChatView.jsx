@@ -689,7 +689,7 @@ export default function ChatView({
     setFiles([]);
     persistentState.clear();
     openedAddBuilderFromComposerRef.current = false;
-  }, [addBuilderComposerClearNonce, persistentState]);
+  }, [addBuilderComposerClearNonce, persistentState, setInput]);
 
   const handleSend = async (e, { force = false } = {}) => {
     e?.preventDefault();
