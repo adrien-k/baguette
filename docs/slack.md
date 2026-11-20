@@ -43,7 +43,7 @@ something from. The first tag creates it (it is titled "Slack global session" an
   the Slack global session then only sees and starts sessions in those.
 - **Tone.** Friendly, casual and a little funny, calls people by name, and tags (`@name`) whoever it
   needs an answer from.
-- **Answers and progress.** The global session's reply to a message is posted in that message's thread.
+- **Answers and progress.** The Slack global session's reply to a message is posted in that message's thread, for up to 30 minutes after the message (so a turn that ends a little late still lands there).
   A message that arrives while it is mid-turn gets an immediate answer. While it works, Slack's
   native working status shows under the thread (needs `assistant:write` and **Agents & AI Apps**;
   with the `agent_session_stopped` event it also has a **Stop** button that interrupts the Slack global session —

@@ -465,6 +465,37 @@ describe('answers', () => {
     expect(markdownPosts()[0].markdown).toContain(`/sessions/${sessionId}`);
   });
 
+  it('keeps waiting when a turn that said nothing new ends first (an older turn finishing)', async () => {
+    const w = await world();
+    const sessionId = await w.globalSessionInThread();
+    await w.bot.handleEventCallback(w.slackApp, talk());
+
+    await w.finishTurn(sessionId, null); // the older turn's completion arrives first
+    expect(markdownPosts()).toHaveLength(0);
+    expect(w.bot.replyTarget(sessionId)).not.toBeNull();
+
+    await w.finishTurn(sessionId, 'Restarted it.');
+    expect(markdownPosts().map((post) => post.markdown)).toEqual(['Restarted it.']);
+    expect(w.bot.replyTarget(sessionId)).toBeNull();
+  });
+
+  it('stops answering a thread once its message is old, so a later wake-up does not land there', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const w = await world();
+      const sessionId = await w.globalSessionInThread();
+      await w.bot.handleEventCallback(w.slackApp, talk());
+      expect(w.bot.replyTarget(sessionId)).not.toBeNull();
+
+      vi.setSystemTime(Date.now() + 31 * 60 * 1000);
+      expect(w.bot.replyTarget(sessionId)).toBeNull();
+      await w.finishTurn(sessionId, 'Session 12 finished.');
+      expect(markdownPosts()).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('retries a failed post with the next turn', async () => {
     const w = await world();
     const sessionId = await w.globalSessionInThread();

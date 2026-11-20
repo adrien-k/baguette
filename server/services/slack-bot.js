@@ -35,6 +35,8 @@ import { slackUserLabel, slackUserName } from './slack-users.js';
 const BOT_NAME = 'baguette';
 const EVENT_DEDUP_TTL_MS = 1000 * 60 * 10;
 const RECENT_ASSISTANT_ROWS = 25;
+/** How long after a Slack message its thread still receives the global session's answer. */
+const REPLY_TARGET_TTL_MS = 1000 * 60 * 30;
 
 const DELIVERY_NOTES = { steer: STEERED_NOTE, queue: QUEUED_NOTE, normal: '' };
 
@@ -194,12 +196,23 @@ export function createSlackBot(app) {
     replyTargets.set(sessionId, {
       ...target,
       afterMessageId: await latestAssistantMessageId(sessionId),
+      armedAt: Date.now(),
     });
+  }
+
+  /** The thread being answered, unless it has been waiting so long that the answer is not for it. */
+  function liveReplyTarget(sessionId) {
+    const target = replyTargets.get(sessionId);
+    if (target && Date.now() - target.armedAt > REPLY_TARGET_TTL_MS) {
+      replyTargets.delete(sessionId);
+      return null;
+    }
+    return target ?? null;
   }
 
   /** The thread the global session is answering, for tools that post without naming one. */
   const replyTarget = (sessionId) => {
-    const target = replyTargets.get(sessionId);
+    const target = liveReplyTarget(sessionId);
     return target ? { channel: target.channel, threadTs: target.threadTs } : null;
   };
 
@@ -325,7 +338,7 @@ export function createSlackBot(app) {
         });
         return;
       }
-      replyTargets.set(session.id, { ...target, afterMessageId: 0 });
+      replyTargets.set(session.id, { ...target, afterMessageId: 0, armedAt: Date.now() });
       await status.show(session.id, slackApp, target).catch(() => {});
     } catch (err) {
       logger.warn({ err: err.message }, 'slack: starting the global session failed');
@@ -473,18 +486,21 @@ export function createSlackBot(app) {
 
   /**
    * Posts the global session's answer to the thread of the message it answered. A turn that answers no
-   * Slack message (a wake-up from a session it started) posts nothing here: the global session reports
-   * with SlackPostMessage.
+   * Slack message (a wake-up from a session it started) has no recent thread to post to: the global
+   * session reports with SlackPostMessage.
    */
   async function postTurnResult(sessionId) {
-    const target = replyTargets.get(sessionId);
+    const target = liveReplyTarget(sessionId);
     if (!target) return;
     const session = await db()('sessions').where({ id: sessionId }).first();
     const slackApp = (await loadApps()).find((candidate) => candidate.id === session?.slack_app_id);
     if (!slackApp?.bot_token) return;
 
+    // A turn that said nothing new may be an older one finishing just after the message arrived:
+    // keep the target for the turn that answers it.
     const text = await newestAssistantText(sessionId, target.afterMessageId);
-    if (!text || text.trim() === NO_REPLY) {
+    if (!text) return;
+    if (text.trim() === NO_REPLY) {
       replyTargets.delete(sessionId);
       return;
     }
