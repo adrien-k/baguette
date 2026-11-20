@@ -8,6 +8,7 @@ import {
   sameScopeId,
   scopeKeyOf,
 } from '../utils/boundScope.js';
+import { mergeAgentServicePatch } from '../utils/sessionAgents.js';
 import { useScopeRequest } from './useScopeRequest.js';
 
 function normalizeList(res) {
@@ -55,17 +56,39 @@ export function useSessionAgents(sessionId) {
     if (!sessionId) return undefined;
     const key = requestedKey;
 
-    const onChange = (row) => {
+    const onPatched = (row) => {
+      if (!sameScopeId(row.session_id, sessionId) || !isKeyCurrent(key)) return;
+      let replaced = false;
+      setAgents((prev) => {
+        const idx = prev.findIndex((a) => a.id === row.id);
+        if (idx < 0) return prev;
+        const merged = mergeAgentServicePatch(prev[idx], row);
+        if (merged === prev[idx]) return prev;
+        replaced = true;
+        const next = prev.slice();
+        next[idx] = merged;
+        return next;
+      });
+      if (!replaced) reload();
+    };
+    const onCreated = (row) => {
       if (!sameScopeId(row.session_id, sessionId) || !isKeyCurrent(key)) return;
       reload();
     };
-    agentsService.on('created', onChange);
-    agentsService.on('patched', onChange);
-    agentsService.on('removed', onChange);
+    const onRemoved = (row) => {
+      if (!sameScopeId(row.session_id, sessionId) || !isKeyCurrent(key)) return;
+      setAgents((prev) => {
+        const next = prev.filter((a) => a.id !== row.id);
+        return next.length === prev.length ? prev : next;
+      });
+    };
+    agentsService.on('created', onCreated);
+    agentsService.on('patched', onPatched);
+    agentsService.on('removed', onRemoved);
     return () => {
-      agentsService.off('created', onChange);
-      agentsService.off('patched', onChange);
-      agentsService.off('removed', onChange);
+      agentsService.off('created', onCreated);
+      agentsService.off('patched', onPatched);
+      agentsService.off('removed', onRemoved);
     };
   }, [sessionId, reload, requestedKey, isKeyCurrent]);
 

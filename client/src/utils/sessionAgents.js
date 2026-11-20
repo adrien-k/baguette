@@ -173,6 +173,66 @@ export function isAnyAgentAwaitingUser(session) {
   return session.status === 'approval' || session.review_status === 'approval';
 }
 
+/** Realtime fields on session DTO `agents` summaries and agents-service rows. */
+const AGENT_REALTIME_SYNC_KEYS = [
+  'status',
+  'active_turn_id',
+  'updated_at',
+  'name',
+  'error_message',
+  'agent_config_id',
+  'agent_sdk',
+  'model',
+  'parent_agent_id',
+];
+
+/**
+ * Overlay turn/status fields from session `agents` (SSE-merged on the detail query) onto
+ * the dedicated agents-service list when the embed row is strictly newer (`updated_at`).
+ * Stale session GET/patch snapshots must not clobber a fresher agents-service row.
+ * @param {SessionAgentSummary[]} agents
+ * @param {SessionAgentSummary[] | null | undefined} embedded
+ * @returns {SessionAgentSummary[]}
+ */
+export function mergeAgentsWithSessionEmbeds(agents, embedded) {
+  if (!Array.isArray(agents) || !agents.length) return agents ?? [];
+  if (!Array.isArray(embedded) || !embedded.length) return agents;
+  const byId = new Map(embedded.map((row) => [row.id, row]));
+  let anyChange = false;
+  const next = agents.map((agent) => {
+    const summary = byId.get(agent.id);
+    if (!summary) return agent;
+    const embedMs = agentLastActivityMs(summary);
+    const agentMs = agentLastActivityMs(agent);
+    if (embedMs === 0 || embedMs <= agentMs) return agent;
+    const overlay = {};
+    for (const key of AGENT_REALTIME_SYNC_KEYS) {
+      if (summary[key] !== undefined && summary[key] !== agent[key]) {
+        overlay[key] = summary[key];
+      }
+    }
+    if (!Object.keys(overlay).length) return agent;
+    anyChange = true;
+    return { ...agent, ...overlay };
+  });
+  return anyChange ? next : agents;
+}
+
+/** Merge defined fields from an agents-service event into an existing row. */
+export function mergeAgentServicePatch(existing, patch) {
+  if (!existing || !patch?.id) return existing;
+  const merged = { ...existing };
+  let changed = false;
+  for (const [key, value] of Object.entries(patch)) {
+    if (key === 'session_id' || value === undefined) continue;
+    if (merged[key] !== value) {
+      merged[key] = value;
+      changed = true;
+    }
+  }
+  return changed ? merged : existing;
+}
+
 /** Merge a realtime `agents` service patch into a session DTO (embedded `agents` list). */
 export function applyAgentPatchToSession(session, agent) {
   if (!session?.id || !agent?.session_id || session.id !== agent.session_id) {

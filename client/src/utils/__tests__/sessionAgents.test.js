@@ -16,6 +16,8 @@ import {
   isReviewerAgent,
   isSecondaryBuilder,
   isSubagentBuilder,
+  mergeAgentServicePatch,
+  mergeAgentsWithSessionEmbeds,
   showSessionChatFooterExtrasForAgent,
   otherAgentsRunningLabel,
   partitionSessionAgentsByRunning,
@@ -105,6 +107,54 @@ describe('agent turn status helpers', () => {
     expect(isAgentTurnActive('running')).toBe(true);
     expect(isAgentTurnActive('approval')).toBe(false);
     expect(isAgentAwaitingUser('approval')).toBe(true);
+  });
+});
+
+describe('mergeAgentsWithSessionEmbeds', () => {
+  it('overlays stopped status when the session embed is newer', () => {
+    const agents = [
+      {
+        id: 5,
+        ref: 1,
+        status: 'running',
+        model: 'gpt-5',
+        updated_at: '2026-11-20 08:00:00',
+      },
+    ];
+    const embedded = [{ id: 5, ref: 1, status: 'stopped', updated_at: '2026-11-20 08:00:05' }];
+    const merged = mergeAgentsWithSessionEmbeds(agents, embedded);
+    expect(merged[0].status).toBe('stopped');
+    expect(merged[0].model).toBe('gpt-5');
+  });
+
+  it('keeps agents-service status when the session embed is older', () => {
+    const agents = [
+      {
+        id: 5,
+        status: 'stopped',
+        updated_at: '2026-11-20 08:00:10',
+      },
+    ];
+    const embedded = [{ id: 5, status: 'running', updated_at: '2026-11-20 08:00:00' }];
+    expect(mergeAgentsWithSessionEmbeds(agents, embedded)[0].status).toBe('stopped');
+  });
+
+  it('returns the same array reference when nothing changes', () => {
+    const agents = [{ id: 5, status: 'stopped', updated_at: '2026-11-20 08:00:10' }];
+    const embedded = [{ id: 5, status: 'stopped', updated_at: '2026-11-20 08:00:05' }];
+    expect(mergeAgentsWithSessionEmbeds(agents, embedded)).toBe(agents);
+  });
+});
+
+describe('mergeAgentServicePatch', () => {
+  it('merges defined patch fields only', () => {
+    const existing = { id: 1, status: 'running', name: 'Builder' };
+    const patch = { id: 1, session_id: 9, status: 'stopped', error_message: undefined };
+    expect(mergeAgentServicePatch(existing, patch)).toEqual({
+      id: 1,
+      status: 'stopped',
+      name: 'Builder',
+    });
   });
 });
 

@@ -48,6 +48,7 @@ import { SESSION_VIEWS } from './session/sessionViews.js';
 import { nextVisibleSession } from './session/sessionListDisplay.js';
 import { resolveSidePanelTab, SIDE_PANEL_TAB_IDS } from './session/sessionSidePanelTabs.js';
 import { enrichChatMessages } from '../utils/enrichChatMessages.js';
+import { mergeAgentsWithSessionEmbeds } from '../utils/sessionAgents.js';
 import { useSessionColumnLayout } from '../hooks/useSessionColumnLayout.js';
 import { useCursorModelPrefs } from '../hooks/useAgentPreferences.js';
 import {
@@ -133,15 +134,26 @@ export default function Session() {
     return Number.isFinite(parsed) ? parsed : null;
   }, [isNewSessionRoute, routeSessionId]);
   const { agents, loading: agentsLoading, primaryBuilder, reviewer } = useSessionAgents(sessionId);
+  const agentsForChat = useMemo(
+    () => mergeAgentsWithSessionEmbeds(agents, sessionFromHook?.agents),
+    [agents, sessionFromHook?.agents]
+  );
+  const primaryBuilderForChat = useMemo(
+    () =>
+      agentsForChat.find((a) => a.is_primary) ??
+      agentsForChat.find((a) => a.agent_type === 'builder') ??
+      primaryBuilder,
+    [agentsForChat, primaryBuilder]
+  );
   const agentParam = searchParams.get('agent');
   const activeAgent = useMemo(() => {
-    if (!agents.length) return null;
+    if (!agentsForChat.length) return null;
     const parsedId = agentParam ? Number(agentParam) : null;
-    if (parsedId != null && agents.some((a) => a.id === parsedId)) {
-      return agents.find((a) => a.id === parsedId) ?? null;
+    if (parsedId != null && agentsForChat.some((a) => a.id === parsedId)) {
+      return agentsForChat.find((a) => a.id === parsedId) ?? null;
     }
-    return primaryBuilder ?? agents[0] ?? null;
-  }, [agents, agentParam, primaryBuilder]);
+    return primaryBuilderForChat ?? agentsForChat[0] ?? null;
+  }, [agentsForChat, agentParam, primaryBuilderForChat]);
   const {
     messages: hookMessages,
     loading: messagesLoading,
@@ -154,11 +166,11 @@ export default function Session() {
   const chatViewOpen = activeView === 'chat';
   const agentLabelById = useMemo(() => {
     const map = new Map();
-    for (const agent of agents) {
+    for (const agent of agentsForChat) {
       map.set(agent.id, { name: agent.name, agent_type: agent.agent_type });
     }
     return map;
-  }, [agents]);
+  }, [agentsForChat]);
   const { tasks: tasksFromHook } = useGetTasks({ sessionId, skip: !sessionId });
   const shouldLoadSessionIssues = activeView === 'review';
   const { issues: sessionIssues, loading: sessionIssuesLoading } = useGetSessionIssues(sessionId, {
@@ -1326,7 +1338,7 @@ export default function Session() {
                   hasMore={hasMore}
                   session={session}
                   activeAgent={activeAgent}
-                  agents={agents}
+                  agents={agentsForChat}
                   onSelectAgent={selectAgent}
                   tasks={tasks}
                   onSelectTask={selectTask}
