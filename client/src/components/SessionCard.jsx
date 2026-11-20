@@ -90,6 +90,7 @@ export default function SessionCard({ session, suppressRepoBadge = false }) {
           <CardRepoBadge
             show
             isGlobal={isGlobalSession(session)}
+            isSlack={Boolean(session.slack_app_id)}
             repoFullName={session.repo_full_name}
           />
         ) : null

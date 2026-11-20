@@ -24,6 +24,36 @@ function stripThinkingBlocks(messageJson) {
   };
 }
 
+const TOOL_ARGS_LIMIT = 400;
+const TOOL_RESULT_LIMIT = 600;
+
+const clipJson = (value, limit) => {
+  if (value == null) return null;
+  const text = typeof value === 'string' ? value : JSON.stringify(value);
+  return text.length <= limit ? text : `${text.slice(0, limit - 1)}…`;
+};
+
+/** A tool call row without its bulk: tool, status, timing, shortened arguments and result. */
+function compactToolCall(messageJson) {
+  let payload;
+  try {
+    payload = JSON.parse(messageJson);
+  } catch {
+    return messageJson;
+  }
+  const { name, status, kind, started_at, ended_at, args, result } = payload ?? {};
+  return JSON.stringify({
+    type: 'tool_call',
+    name,
+    status,
+    kind,
+    started_at,
+    ended_at,
+    args: clipJson(args, TOOL_ARGS_LIMIT),
+    result: clipJson(result, TOOL_RESULT_LIMIT),
+  });
+}
+
 /**
  * Build one page of session messages for the GetAgentMessages MCP tool.
  * Thinking blocks are stripped from assistant rows; thinking-only rows are skipped entirely.
@@ -43,7 +73,7 @@ export function packSessionMessagesForMcp(rows, { hasMoreRows = false } = {}) {
       type: row.type,
       subtype: row.subtype ?? null,
       created_at: row.created_at,
-      message_json: messageJson,
+      message_json: row.type === 'tool_call' ? compactToolCall(messageJson) : messageJson,
     });
   }
 

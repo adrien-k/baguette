@@ -217,6 +217,31 @@ describe('baguette session MCP tools', () => {
     expect(primary.messages.every((m) => !m.message_json.includes('from extra'))).toBe(true);
   });
 
+  it('GetAgentMessages shows tool calls, shortened, when asked for', async () => {
+    await db('session_messages').insert(
+      await testMessageRow(db, sessionId, {
+        type: 'tool_call',
+        message_json: JSON.stringify({
+          type: 'tool_call',
+          name: 'Bash',
+          status: 'completed',
+          args: { command: 'x'.repeat(3000) },
+          result: { stdout: 'ok' },
+        }),
+      })
+    );
+    const list = tools.find((t) => t.name === 'GetAgentMessages');
+
+    const withoutCalls = parseOk(await list.handler({ session_id: sessionId }));
+    expect(withoutCalls.messages.every((m) => m.type !== 'tool_call')).toBe(true);
+
+    const withCalls = parseOk(await list.handler({ session_id: sessionId, types: ['tool_call'] }));
+    expect(withCalls.messages).toHaveLength(1);
+    const call = JSON.parse(withCalls.messages[0].message_json);
+    expect(call).toMatchObject({ name: 'Bash', status: 'completed' });
+    expect(call.args.length).toBeLessThanOrEqual(400);
+  });
+
   it('GetAgentMessages rejects an agent from another session', async () => {
     const repoId = (await db('repos').where({ full_name: 'o/r' }).first()).id;
     const otherSessionId = await insertTestSession(db, {

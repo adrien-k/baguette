@@ -129,6 +129,7 @@ export default function SessionWorkspaceHeader({
                     nowrap
                     className="hidden md:inline-flex"
                     isGlobal={isGlobalSession(headerSession)}
+                    isSlack={Boolean(headerSession.slack_app_id)}
                     repoFullName={headerSession.repo_full_name}
                   />
                 ) : null}

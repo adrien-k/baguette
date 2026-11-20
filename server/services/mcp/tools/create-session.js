@@ -32,6 +32,19 @@ export function resolveCreateSessionBaseBranch(baseBranch, branch) {
   return { base_branch: resolved };
 }
 
+/**
+ * A session started by a session is told who started it, so it can report back or ask a question
+ * with CreateSessionMessage (the message arrives labelled with the sending session).
+ */
+function withParentNote(prompt, callerSession) {
+  if (callerSession?.id == null) return prompt;
+  return (
+    `${prompt}\n\n(Started by session #${callerSession.id}. To report something important or ask ` +
+    `a question you need answered, message it with CreateSessionMessage(session_id: ${callerSession.id}); ` +
+    'its answer arrives as a new message here.)'
+  );
+}
+
 function createSessionDescription(mode) {
   return (
     'IMPORTANT: Do not use this tool unless the user explicitly asks you to create a new session. ' +
@@ -218,7 +231,7 @@ export function createCreateSessionTool(ctx) {
       }
 
       const payload = {
-        initial_prompt,
+        initial_prompt: withParentNote(initial_prompt, callerSession),
         agent_config_id: resolved.agent_config_id,
         agent_sdk,
       };

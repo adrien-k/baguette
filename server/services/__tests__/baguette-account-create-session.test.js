@@ -482,6 +482,21 @@ describe('CreateSession for Slack global sessions', () => {
     expect(result.ok).toBe(true);
   });
 
+  it('tells a session started by a session who started it, and how to write back', async () => {
+    await configureDefaultModel();
+    await tool({}, { id: 7 }).handler(repoArgs);
+    const prompt = createSpy.mock.calls[0][0].initial_prompt;
+    expect(prompt.startsWith('hello')).toBe(true);
+    expect(prompt).toContain('Started by session #7');
+    expect(prompt).toContain('CreateSessionMessage(session_id: 7)');
+  });
+
+  it('leaves the prompt alone when no session started it', async () => {
+    await configureDefaultModel();
+    await tool().handler(repoArgs);
+    expect(createSpy.mock.calls[0][0].initial_prompt).toBe('hello');
+  });
+
   it('does not apply that fallback to other sessions', async () => {
     const result = parseMcpToolResult(await tool({}, { id: 8, is_global: 1 }).handler(repoArgs));
     expect(result.ok).toBe(false);
