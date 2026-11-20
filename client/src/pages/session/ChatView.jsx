@@ -47,7 +47,7 @@ import PrDraftToggleButton, {
 import QueuedScheduledDrawer from '../../components/chat/QueuedScheduledDrawer.tsx';
 import SessionTodosDrawer from '../../components/chat/SessionTodosDrawer.tsx';
 import { useComposerSessionTodos } from '../../hooks/useComposerSessionTodos.js';
-import { fileToContentBlock } from '../../utils/fileToContentBlock.js';
+import { buildUserMessageContent } from '../../utils/buildUserMessageContent.js';
 import { usePersistentState } from '../../hooks/usePersistentState.js';
 import { useCurrentUser } from '../../context/CurrentUserContext.jsx';
 import { isSessionOwner } from '@baguette/shared/session-sharing.js';
@@ -134,6 +134,7 @@ export default function ChatView({
   pushing = false,
   onDeletePermanently,
   onOpenAddBuilder,
+  addBuilderOpen = false,
   addBuilderSaving = false,
   addBuilderComposerClearNonce = 0,
 }) {
@@ -171,6 +172,7 @@ export default function ChatView({
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [showRegularlyModal, setShowRegularlyModal] = useState(false);
   const openedAddBuilderFromComposerRef = useRef(false);
+  const addBuilderClearNonceAtOpenRef = useRef(0);
   const [creatingLoop, setCreatingLoop] = useState(false);
   const [tiedLoops, setTiedLoops] = useState([]);
   const { loopEditUrl } = useFilterRoutes();
@@ -512,13 +514,7 @@ export default function ChatView({
     return () => observer.disconnect();
   }, [handleLoadMore, hasMore, scrollContainerRef]);
 
-  const buildContent = async (text, filesToSend) => {
-    if (filesToSend.length) {
-      const fileBlocks = await Promise.all(filesToSend.map(fileToContentBlock));
-      return text ? [{ type: 'text', text }, ...fileBlocks] : fileBlocks;
-    }
-    return text;
-  };
+  const buildContent = buildUserMessageContent;
 
   const sendMessage = async (
     messageJson,
@@ -654,8 +650,19 @@ export default function ChatView({
   const openStartSubagentModal = () => {
     if (!session?.id || !onOpenAddBuilder || addBuilderSaving) return;
     openedAddBuilderFromComposerRef.current = true;
-    onOpenAddBuilder(input.trim());
+    addBuilderClearNonceAtOpenRef.current = addBuilderComposerClearNonce;
+    onOpenAddBuilder({
+      prompt: input.trim(),
+      files: [...files],
+      fromComposer: true,
+    });
   };
+
+  useEffect(() => {
+    if (addBuilderOpen || !openedAddBuilderFromComposerRef.current) return;
+    if (addBuilderComposerClearNonce !== addBuilderClearNonceAtOpenRef.current) return;
+    openedAddBuilderFromComposerRef.current = false;
+  }, [addBuilderOpen, addBuilderComposerClearNonce]);
 
   useEffect(() => {
     if (!addBuilderComposerClearNonce) return;

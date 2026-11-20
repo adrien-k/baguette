@@ -1,8 +1,9 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { titleFromPrompt } from '@baguette/shared/agent-naming.js';
 import { agentsService, messagesService, sessionsService } from '../feathers.js';
 import { toastError, toastFeathersError } from '../utils/toastError.jsx';
 import { builderMessageCreateFields } from '../utils/messageCreateFields.js';
+import { buildUserMessageContent } from '../utils/buildUserMessageContent.js';
 import { useSessionChatRecipes } from './useSessionChatRecipes.js';
 
 /**
@@ -15,15 +16,28 @@ export function useAddBuilderFlow({ session, modelAgent, onSelectAgent }) {
   const [adding, setAdding] = useState(false);
   const [composerClearNonce, setComposerClearNonce] = useState(0);
   const recipes = useSessionChatRecipes(session, modelAgent);
+  const composerFilesRef = useRef([]);
+  const openedFromComposerRef = useRef(false);
 
-  const openModal = useCallback((prompt = '') => {
-    setInitialPrompt(typeof prompt === 'string' ? prompt : '');
+  const openModal = useCallback((arg = '') => {
+    if (arg && typeof arg === 'object') {
+      const prompt = typeof arg.prompt === 'string' ? arg.prompt : '';
+      setInitialPrompt(prompt);
+      composerFilesRef.current = Array.isArray(arg.files) ? [...arg.files] : [];
+      openedFromComposerRef.current = Boolean(arg.fromComposer);
+    } else {
+      setInitialPrompt(typeof arg === 'string' ? arg : '');
+      composerFilesRef.current = [];
+      openedFromComposerRef.current = false;
+    }
     setModalKey((k) => k + 1);
     setOpen(true);
   }, []);
 
   const closeModal = useCallback(() => {
     if (adding) return;
+    composerFilesRef.current = [];
+    openedFromComposerRef.current = false;
     setOpen(false);
   }, [adding]);
 
@@ -64,11 +78,14 @@ export function useAddBuilderFlow({ session, modelAgent, onSelectAgent }) {
       }
 
       if (text) {
-        const messageJson = JSON.stringify({
-          type: 'user',
-          message: { role: 'user', content: text },
-        });
+        const fromComposer = openedFromComposerRef.current;
+        const composerFiles = composerFilesRef.current;
         try {
+          const content = await buildUserMessageContent(text, composerFiles);
+          const messageJson = JSON.stringify({
+            type: 'user',
+            message: { role: 'user', content },
+          });
           await messagesService.create({
             session_id: session.id,
             type: 'user',
@@ -79,12 +96,16 @@ export function useAddBuilderFlow({ session, modelAgent, onSelectAgent }) {
               agent: newAgent,
             }),
           });
+          if (fromComposer) {
+            setComposerClearNonce((n) => n + 1);
+          }
         } catch (err) {
           toastFeathersError('Failed to send message', err);
         }
       }
 
-      setComposerClearNonce((n) => n + 1);
+      composerFilesRef.current = [];
+      openedFromComposerRef.current = false;
       setAdding(false);
     },
     [session, adding, onSelectAgent]

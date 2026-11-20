@@ -1119,16 +1119,25 @@ export default function Session() {
   } = addBuilderFlow;
 
   const handleOpenAddBuilder = useCallback(
-    (prompt = '') => {
+    (arg = '') => {
       if (isReadonly || !gitSession?.id) return;
-      openAddBuilderModal(prompt);
+      openAddBuilderModal(arg);
     },
     [isReadonly, gitSession?.id, openAddBuilderModal]
   );
 
+  const isSessionRowAddBuilderBlocked = (sessionRow) => {
+    if (!sessionRow) return true;
+    return (
+      !!sessionRow.archived_at ||
+      sessionRow.status === 'archiving' ||
+      sessionRow.status === 'archived'
+    );
+  };
+
   const handleAddBuilderFromSidebar = useCallback(
     (sessionRow) => {
-      if (isReadonly || !sessionRow?.id) return;
+      if (!sessionRow?.id || isSessionRowAddBuilderBlocked(sessionRow)) return;
       if (String(sessionRow.id) === String(routeSessionId) && gitSession?.id) {
         handleOpenAddBuilder('');
         return;
@@ -1136,7 +1145,7 @@ export default function Session() {
       const base = sessionUrl(sessionRow.id);
       navigate(`${base}?view=chat`, { state: { openAddBuilder: true } });
     },
-    [isReadonly, routeSessionId, gitSession?.id, handleOpenAddBuilder, navigate, sessionUrl]
+    [routeSessionId, gitSession?.id, handleOpenAddBuilder, navigate, sessionUrl]
   );
 
   const pendingOpenAddBuilderRef = useRef(false);
@@ -1341,7 +1350,7 @@ export default function Session() {
           onLoadMoreSessions={loadMoreSessions}
           listScope={listScope}
           onAddBuilder={handleAddBuilderFromSidebar}
-          showAddBuilder={!isReadonly && !isNewSessionRoute}
+          showAddBuilder={!isNewSessionRoute}
         />
 
         <div
@@ -1448,6 +1457,7 @@ export default function Session() {
                   pushing={pushing}
                   onDeletePermanently={handleSessionDeletedPermanently}
                   onOpenAddBuilder={handleOpenAddBuilder}
+                  addBuilderOpen={addBuilderOpen}
                   addBuilderSaving={addBuilderSaving}
                   addBuilderComposerClearNonce={addBuilderComposerClearNonce}
                 />
