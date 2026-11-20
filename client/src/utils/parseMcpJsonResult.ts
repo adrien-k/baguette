@@ -38,6 +38,14 @@ function mcpDataHasPayload(data: Record<string, unknown>): boolean {
   );
 }
 
+function mergeContentBlocksWithFields(
+  obj: Record<string, unknown>,
+  fromBlocks: McpResultData
+): McpResultData {
+  const { content: _content, ...fields } = obj;
+  return { ...fromBlocks, ...fields };
+}
+
 function parsedFromMcpTextBlocks(obj: Record<string, unknown>): McpResultData | null {
   const mcpText = extractMcpTextContent(obj);
   if (!mcpText) return null;
@@ -62,12 +70,13 @@ export function parseMcpJsonResult(result: unknown): McpResultData | null {
       }
       const fromDataBlocks = parsedFromMcpTextBlocks(data);
       if (fromDataBlocks) {
-        const { content: _content, ...fields } = data;
-        return { ...fromDataBlocks, ...fields } as McpResultData;
+        return mergeContentBlocksWithFields(data, fromDataBlocks);
       }
     }
 
-    if (fromMcpBlocks) return fromMcpBlocks;
+    if (fromMcpBlocks) {
+      return mergeContentBlocksWithFields(obj as Record<string, unknown>, fromMcpBlocks);
+    }
     if (fromContent) return fromContent;
     return obj;
   }

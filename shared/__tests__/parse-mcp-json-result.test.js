@@ -17,6 +17,21 @@ describe('parseMcpJsonResult', () => {
     expect(parsed?.request_id).toBe('req-1');
   });
 
+  it('merges approval outcome on root content envelope (ToolCallBlock passes result.data)', () => {
+    const inner = JSON.stringify({
+      ok: true,
+      approval_requested: true,
+      request_id: 'req-ui',
+    });
+    const parsed = parseMcpJsonResult({
+      content: [{ type: 'text', text: inner }],
+      approval_requested: false,
+      approval_outcome: 'canceled',
+    });
+    expect(parsed?.approval_outcome).toBe('canceled');
+    expect(parsed?.approval_requested).toBe(false);
+  });
+
   it('prefers canceled approval fields over stale inner ok() text', () => {
     const inner = JSON.stringify({
       ok: true,

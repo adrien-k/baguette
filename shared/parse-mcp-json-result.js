@@ -82,7 +82,10 @@ export function parseMcpJsonResult(result) {
       if (merged) return merged;
     }
 
-    if (fromMcpBlocks) return fromMcpBlocks;
+    if (fromMcpBlocks) {
+      const merged = dataFieldsOverInnerBlocks(obj, fromMcpBlocks);
+      if (merged) return merged;
+    }
     if (fromContent) return fromContent;
     return obj;
   }
