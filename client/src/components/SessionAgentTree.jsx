@@ -96,7 +96,7 @@ function AgentTreeEdit({ agent, canManage, renaming, onRequestRename }) {
         e.stopPropagation();
         onRequestRename(agent);
       }}
-      className="shrink-0 p-0.5 rounded text-faint hover:text-fg md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+      className="shrink-0 p-0.5 rounded text-faint hover:text-fg md:opacity-0 md:group-hover/row:opacity-100 focus-visible:opacity-100 transition-opacity"
     >
       <Pencil className="w-3 h-3" aria-hidden />
     </button>
@@ -115,7 +115,7 @@ function AgentTreeAddBuilder({ agent, canManage, renaming, onAddBuilder, showAdd
         e.stopPropagation();
         onAddBuilder();
       }}
-      className="shrink-0 p-0.5 rounded text-faint hover:text-fg"
+      className="shrink-0 p-0.5 rounded text-faint hover:text-fg md:opacity-0 md:group-hover/row:opacity-100 focus-visible:opacity-100 transition-opacity"
     >
       <Plus className="w-3 h-3" aria-hidden />
     </button>
@@ -138,10 +138,8 @@ function AgentTreePin({ agent, canManage, renaming, pinnedAgentId, pinSaving, on
         e.stopPropagation();
         onTogglePin(agent);
       }}
-      className={`shrink-0 p-0.5 rounded transition-opacity disabled:opacity-40 ${
-        isPinned
-          ? 'text-accent'
-          : `text-faint hover:text-fg md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100`
+      className={`shrink-0 p-0.5 rounded transition-opacity disabled:opacity-40 md:opacity-0 md:group-hover/row:opacity-100 focus-visible:opacity-100 ${
+        isPinned ? 'text-accent' : 'text-faint hover:text-fg'
       }`}
     >
       <Pin className={`w-3 h-3 ${isPinned ? 'fill-current' : ''}`} aria-hidden />
@@ -260,7 +258,7 @@ function AgentTreeRow({ agent, ...rest }) {
         data-agent-name={agent.name || title}
         data-selected={isCurrent ? 'true' : 'false'}
         aria-current={isCurrent ? 'true' : undefined}
-        className={`group flex items-center gap-1.5 rounded-md border py-1 pl-1 pr-1.5 transition-colors ${selectedAgentRowBorderClass(
+        className={`group/row flex items-center gap-1.5 rounded-md border py-1 pl-1 pr-1.5 transition-colors ${selectedAgentRowBorderClass(
           isCurrent,
           sessionHighlighted
         )}`}
