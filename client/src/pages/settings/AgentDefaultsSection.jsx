@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../hooks/useAuth.jsx';
 import { usersService } from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
@@ -55,45 +55,59 @@ export default function AgentDefaultsSection({ settings, onSave }) {
 
   const [savingSection, setSavingSection] = useState(null);
   const [savedSection, setSavedSection] = useState(null);
+  const initialHydratedRef = useRef(false);
 
-  const hydrateFromSettings = useCallback(() => {
-    if (!settings) return;
-    setAgentConfigId(settings.agent_default_config_id ?? null);
-    setAgentModel(settings.agent_default_model?.model ?? null);
+  const hydrateSessionModelsSection = (userRow) => {
+    if (!userRow) return;
+    setAgentConfigId(userRow.agent_default_config_id ?? null);
+    setAgentModel(userRow.agent_default_model?.model ?? null);
     setAgentModelParamsJson(
-      settings.agent_default_model?.model_params?.length
-        ? JSON.stringify(settings.agent_default_model.model_params)
+      userRow.agent_default_model?.model_params?.length
+        ? JSON.stringify(userRow.agent_default_model.model_params)
         : null
     );
-    setReviewerConfigId(settings.reviewer_default_config_id ?? null);
-    setReviewerModel(settings.reviewer_default_model?.model ?? null);
+    setReviewerConfigId(userRow.reviewer_default_config_id ?? null);
+    setReviewerModel(userRow.reviewer_default_model?.model ?? null);
     setReviewerModelParamsJson(
-      settings.reviewer_default_model?.model_params?.length
-        ? JSON.stringify(settings.reviewer_default_model.model_params)
+      userRow.reviewer_default_model?.model_params?.length
+        ? JSON.stringify(userRow.reviewer_default_model.model_params)
         : null
     );
-    setSubagentMode(normalizeSubagentDefaultMode(settings.subagent_default_mode));
-    setSubagentConfigId(settings.subagent_default_config_id ?? null);
-    setSubagentModel(settings.subagent_default_model?.model ?? null);
-    setSubagentModelParamsJson(
-      settings.subagent_default_model?.model_params?.length
-        ? JSON.stringify(settings.subagent_default_model.model_params)
-        : null
-    );
-    setUtilityConfigId(settings.utility_default_config_id ?? null);
-    setUtilityModel(settings.utility_default_model?.model ?? null);
+    setUtilityConfigId(userRow.utility_default_config_id ?? null);
+    setUtilityModel(userRow.utility_default_model?.model ?? null);
     setUtilityModelParamsJson(
-      settings.utility_default_model?.model_params?.length
-        ? JSON.stringify(settings.utility_default_model.model_params)
+      userRow.utility_default_model?.model_params?.length
+        ? JSON.stringify(userRow.utility_default_model.model_params)
         : null
     );
-    setDefaultUsageLimitAction(settings.default_usage_limit_action ?? DEFAULT_USAGE_LIMIT_ACTION);
-    setDefaultUsageLimitText(usageLimitInputText(settings.default_usage_limit));
-  }, [settings]);
+  };
+
+  const hydrateMcpSection = (userRow) => {
+    if (!userRow) return;
+    setSubagentMode(normalizeSubagentDefaultMode(userRow.subagent_default_mode));
+    setSubagentConfigId(userRow.subagent_default_config_id ?? null);
+    setSubagentModel(userRow.subagent_default_model?.model ?? null);
+    setSubagentModelParamsJson(
+      userRow.subagent_default_model?.model_params?.length
+        ? JSON.stringify(userRow.subagent_default_model.model_params)
+        : null
+    );
+  };
+
+  const hydrateOptionsSection = (userRow) => {
+    if (!userRow) return;
+    setDefaultUsageLimitAction(userRow.default_usage_limit_action ?? DEFAULT_USAGE_LIMIT_ACTION);
+    setDefaultUsageLimitText(usageLimitInputText(userRow.default_usage_limit));
+  };
 
   useEffect(() => {
-    hydrateFromSettings();
-  }, [hydrateFromSettings]);
+    if (!settings || initialHydratedRef.current) return;
+    initialHydratedRef.current = true;
+    hydrateSessionModelsSection(settings);
+    hydrateMcpSection(settings);
+    hydrateOptionsSection(settings);
+     
+  }, [settings]);
 
   const buildModelPayload = (model, paramsJson) => {
     if (!model) return null;
@@ -121,6 +135,9 @@ export default function AgentDefaultsSection({ settings, onSave }) {
     try {
       const updated = await usersService.patch(user.id, payload);
       onSave(updated);
+      if (section === 'session') hydrateSessionModelsSection(updated);
+      else if (section === 'mcp') hydrateMcpSection(updated);
+      else hydrateOptionsSection(updated);
       flashSaved(section);
     } catch (err) {
       toastError(errorLabel, err);
