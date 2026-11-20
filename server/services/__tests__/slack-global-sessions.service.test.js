@@ -1,5 +1,5 @@
 /**
- * The slack-assistants service: assistant sessions, the threads they serve, who they listen to.
+ * The slack-global-sessions service: global session sessions, the threads they serve, who they listen to.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestDb } from '../../test-utils/db.js';
@@ -10,7 +10,7 @@ vi.mock('../mcp/tools/create-session.js', () => ({ createCreateSessionTool: sess
 import { encrypt } from '../../lib/encrypt.js';
 import {
   decryptedApp,
-  insertAssistant,
+  insertGlobalSession,
   insertSlackApp,
   insertThread,
   insertUser,
@@ -19,7 +19,7 @@ import {
 } from './slack-test-helpers.js';
 
 const db = createTestDb();
-const assistants = () => slackTestApp(db).service('slack-assistants');
+const globalSessions = () => slackTestApp(db).service('slack-global-sessions');
 
 async function setup() {
   const userId = await insertUser(db);
@@ -27,7 +27,7 @@ async function setup() {
   return { userId, appId, user: { id: userId }, slackApp: decryptedApp({ id: appId }) };
 }
 
-/** A CreateSession stand-in that creates the assistant row, or fails with `error`. */
+/** A CreateSession stand-in that creates the global session row, or fails with `error`. */
 function stubCreateSession({ error = null } = {}) {
   const calls = [];
   sessionTool.create.mockImplementation((context) => ({
@@ -35,7 +35,7 @@ function stubCreateSession({ error = null } = {}) {
       calls.push({ context, args });
       await new Promise((resolve) => setTimeout(resolve, 5));
       if (error) return { content: [{ type: 'text', text: JSON.stringify({ ok: false, error }) }] };
-      const sessionId = await insertAssistant(db, context.userId, context.slackAppId);
+      const sessionId = await insertGlobalSession(db, context.userId, context.slackAppId);
       return { content: [{ type: 'text', text: JSON.stringify({ ok: true, sessionId }) }] };
     },
   }));
@@ -45,31 +45,31 @@ function stubCreateSession({ error = null } = {}) {
 beforeEach(() => sessionTool.create.mockReset());
 
 describe('findForUser', () => {
-  it('finds the live assistant of a user in an app, and nothing else', async () => {
+  it('finds the live global session of a user in an app, and nothing else', async () => {
     const { userId, appId } = await setup();
-    expect(await assistants().findForUser(appId, userId)).toBeNull();
+    expect(await globalSessions().findForUser(appId, userId)).toBeNull();
 
-    const sessionId = await insertAssistant(db, userId, appId);
-    expect((await assistants().findForUser(appId, userId)).id).toBe(sessionId);
-    expect(await assistants().findForUser(appId + 1, userId)).toBeNull();
-    expect(await assistants().findForUser(appId, userId + 1)).toBeNull();
+    const sessionId = await insertGlobalSession(db, userId, appId);
+    expect((await globalSessions().findForUser(appId, userId)).id).toBe(sessionId);
+    expect(await globalSessions().findForUser(appId + 1, userId)).toBeNull();
+    expect(await globalSessions().findForUser(appId, userId + 1)).toBeNull();
   });
 
-  it('ignores an archived assistant', async () => {
+  it('ignores an archived global session', async () => {
     const { userId, appId } = await setup();
-    const sessionId = await insertAssistant(db, userId, appId);
+    const sessionId = await insertGlobalSession(db, userId, appId);
     await db('sessions').where({ id: sessionId }).update({ archived_at: new Date().toISOString() });
-    expect(await assistants().findForUser(appId, userId)).toBeNull();
+    expect(await globalSessions().findForUser(appId, userId)).toBeNull();
   });
 });
 
 describe('ensure', () => {
-  it('creates the assistant through CreateSession as a global session typed with the app', async () => {
+  it('creates the global session through CreateSession as a global session typed with the app', async () => {
     const { user, slackApp, appId } = await setup();
     const calls = stubCreateSession();
     const meta = { source: 'slack' };
 
-    const { session, created } = await assistants().ensure({
+    const { session, created } = await globalSessions().ensure({
       slackApp,
       user,
       prompt: 'first message',
@@ -84,24 +84,24 @@ describe('ensure', () => {
     expect(calls[0].context).toMatchObject({
       slackAppId: appId,
       initialMessageMeta: meta,
-      initialLabel: 'Slack assistant',
+      initialLabel: 'Slack global session',
     });
   });
 
-  it('returns the existing assistant without creating another', async () => {
+  it('returns the existing global session without creating another', async () => {
     const { user, slackApp, userId, appId } = await setup();
-    const existing = await insertAssistant(db, userId, appId);
+    const existing = await insertGlobalSession(db, userId, appId);
     const calls = stubCreateSession();
-    const { session, created } = await assistants().ensure({ slackApp, user, prompt: 'x' });
+    const { session, created } = await globalSessions().ensure({ slackApp, user, prompt: 'x' });
     expect(created).toBe(false);
     expect(session.id).toBe(existing);
     expect(calls).toHaveLength(0);
   });
 
-  it('creates only one assistant when two first messages race', async () => {
+  it('creates only one global session when two first messages race', async () => {
     const { user, slackApp } = await setup();
     const calls = stubCreateSession();
-    const service = assistants();
+    const service = globalSessions();
     const [a, b] = await Promise.all([
       service.ensure({ slackApp, user, prompt: 'one' }),
       service.ensure({ slackApp, user, prompt: 'two' }),
@@ -113,117 +113,117 @@ describe('ensure', () => {
   it('fails with the tool’s message (for example no default model in Settings)', async () => {
     const { user, slackApp } = await setup();
     stubCreateSession({ error: 'No default builder model. Set one in Settings → Agent.' });
-    await expect(assistants().ensure({ slackApp, user, prompt: 'x' })).rejects.toThrow(
+    await expect(globalSessions().ensure({ slackApp, user, prompt: 'x' })).rejects.toThrow(
       'Settings → Agent'
     );
     // …and a later message can try again.
     stubCreateSession();
-    expect((await assistants().ensure({ slackApp, user, prompt: 'x' })).created).toBe(true);
+    expect((await globalSessions().ensure({ slackApp, user, prompt: 'x' })).created).toBe(true);
   });
 });
 
 describe('threads', () => {
-  it('finds the live assistants serving a thread, per app', async () => {
+  it('finds the live global sessions serving a thread, per app', async () => {
     const { userId, appId } = await setup();
-    const sessionId = await insertAssistant(db, userId, appId);
+    const sessionId = await insertGlobalSession(db, userId, appId);
     await insertThread(db, sessionId);
 
-    expect((await assistants().forThread(appId, 'C1', '9.9')).map((s) => s.id)).toEqual([
+    expect((await globalSessions().forThread(appId, 'C1', '9.9')).map((s) => s.id)).toEqual([
       sessionId,
     ]);
-    expect(await assistants().forThread(appId, 'C1', '1.1')).toEqual([]);
-    expect(await assistants().forThread(appId, 'C2', '9.9')).toEqual([]);
-    expect(await assistants().forThread(appId + 1, 'C1', '9.9')).toEqual([]);
+    expect(await globalSessions().forThread(appId, 'C1', '1.1')).toEqual([]);
+    expect(await globalSessions().forThread(appId, 'C2', '9.9')).toEqual([]);
+    expect(await globalSessions().forThread(appId + 1, 'C1', '9.9')).toEqual([]);
   });
 
-  it('stops serving a thread once the assistant is archived', async () => {
+  it('stops serving a thread once the global session is archived', async () => {
     const { userId, appId } = await setup();
-    const sessionId = await insertAssistant(db, userId, appId);
+    const sessionId = await insertGlobalSession(db, userId, appId);
     await insertThread(db, sessionId);
     await db('sessions').where({ id: sessionId }).update({ archived_at: new Date().toISOString() });
-    expect(await assistants().forThread(appId, 'C1', '9.9')).toEqual([]);
+    expect(await globalSessions().forThread(appId, 'C1', '9.9')).toEqual([]);
   });
 
-  it('lets two owners’ assistants serve the same thread', async () => {
+  it('lets two owners’ global sessions serve the same thread', async () => {
     const { userId, appId } = await setup();
     const otherUser = await insertUser(db);
-    const mine = await insertAssistant(db, userId, appId);
-    const theirs = await insertAssistant(db, otherUser, appId);
+    const mine = await insertGlobalSession(db, userId, appId);
+    const theirs = await insertGlobalSession(db, otherUser, appId);
     await insertThread(db, mine);
     await insertThread(db, theirs);
-    expect(await assistants().forThread(appId, 'C1', '9.9')).toHaveLength(2);
+    expect(await globalSessions().forThread(appId, 'C1', '9.9')).toHaveLength(2);
   });
 
   it('joining a thread twice is harmless', async () => {
     const { userId, appId } = await setup();
-    const sessionId = await insertAssistant(db, userId, appId);
-    await assistants().joinThread(sessionId, 'C1', '9.9');
-    await assistants().joinThread(sessionId, 'C1', '9.9');
+    const sessionId = await insertGlobalSession(db, userId, appId);
+    await globalSessions().joinThread(sessionId, 'C1', '9.9');
+    await globalSessions().joinThread(sessionId, 'C1', '9.9');
     expect(await db('slack_session_threads')).toHaveLength(1);
   });
 
-  it('knows which channels an assistant serves', async () => {
+  it('knows which channels a global session serves', async () => {
     const { userId, appId } = await setup();
-    const sessionId = await insertAssistant(db, userId, appId);
+    const sessionId = await insertGlobalSession(db, userId, appId);
     await insertThread(db, sessionId);
-    expect(await assistants().servesChannel(sessionId, 'C1')).toBe(true);
-    expect(await assistants().servesChannel(sessionId, 'C2')).toBe(false);
+    expect(await globalSessions().servesChannel(sessionId, 'C1')).toBe(true);
+    expect(await globalSessions().servesChannel(sessionId, 'C2')).toBe(false);
   });
 });
 
 describe('allowed people', () => {
   it('starts with nobody and replaces the list as a whole', async () => {
     const { userId, appId } = await setup();
-    const sessionId = await insertAssistant(db, userId, appId);
-    expect(await assistants().allowedSlackIds(sessionId)).toEqual([]);
+    const sessionId = await insertGlobalSession(db, userId, appId);
+    expect(await globalSessions().allowedSlackIds(sessionId)).toEqual([]);
 
-    await assistants().setAllowedSlackIds(sessionId, ['U2', 'U3', 'U2']);
-    expect((await assistants().allowedSlackIds(sessionId)).sort()).toEqual(['U2', 'U3']);
-    expect(await assistants().isAllowed(sessionId, 'U2')).toBe(true);
+    await globalSessions().setAllowedSlackIds(sessionId, ['U2', 'U3', 'U2']);
+    expect((await globalSessions().allowedSlackIds(sessionId)).sort()).toEqual(['U2', 'U3']);
+    expect(await globalSessions().isAllowed(sessionId, 'U2')).toBe(true);
 
-    await assistants().setAllowedSlackIds(sessionId, ['U3']);
-    expect(await assistants().allowedSlackIds(sessionId)).toEqual(['U3']);
-    expect(await assistants().isAllowed(sessionId, 'U2')).toBe(false);
+    await globalSessions().setAllowedSlackIds(sessionId, ['U3']);
+    expect(await globalSessions().allowedSlackIds(sessionId)).toEqual(['U3']);
+    expect(await globalSessions().isAllowed(sessionId, 'U2')).toBe(false);
 
-    await assistants().setAllowedSlackIds(sessionId, []);
-    expect(await assistants().allowedSlackIds(sessionId)).toEqual([]);
+    await globalSessions().setAllowedSlackIds(sessionId, []);
+    expect(await globalSessions().allowedSlackIds(sessionId)).toEqual([]);
   });
 
-  it('keeps each assistant’s list apart', async () => {
+  it('keeps each global session’s list apart', async () => {
     const { userId, appId } = await setup();
     const other = await insertUser(db);
-    const mine = await insertAssistant(db, userId, appId);
-    const theirs = await insertAssistant(db, other, appId);
-    await assistants().setAllowedSlackIds(mine, ['U2']);
-    expect(await assistants().isAllowed(theirs, 'U2')).toBe(false);
+    const mine = await insertGlobalSession(db, userId, appId);
+    const theirs = await insertGlobalSession(db, other, appId);
+    await globalSessions().setAllowedSlackIds(mine, ['U2']);
+    expect(await globalSessions().isAllowed(theirs, 'U2')).toBe(false);
   });
 });
 
 describe('owner and repository scope', () => {
   it('finds the Slack id a Baguette user linked', async () => {
     const { userId, appId } = await setup();
-    expect(await assistants().slackIdOf(appId, userId)).toBeNull();
+    expect(await globalSessions().slackIdOf(appId, userId)).toBeNull();
     await linkSlackUser(db, appId, 'UOWNER', userId);
-    expect(await assistants().slackIdOf(appId, userId)).toBe('UOWNER');
+    expect(await globalSessions().slackIdOf(appId, userId)).toBe('UOWNER');
   });
 
   it('limits repositories only when the app lists some', async () => {
     const { appId } = await setup();
-    expect(await assistants().repoScope(appId)).toBeNull();
+    expect(await globalSessions().repoScope(appId)).toBeNull();
 
     await db('slack_apps').where({ id: appId }).update({ allowed_repo_ids: '[3,5]' });
-    expect(await assistants().repoScope(appId)).toEqual([3, 5]);
+    expect(await globalSessions().repoScope(appId)).toEqual([3, 5]);
 
     await db('slack_apps').where({ id: appId }).update({ allowed_repo_ids: '[]' });
-    expect(await assistants().repoScope(appId)).toBeNull();
+    expect(await globalSessions().repoScope(appId)).toBeNull();
     await db('slack_apps').where({ id: appId }).update({ allowed_repo_ids: 'garbage' });
-    expect(await assistants().repoScope(appId)).toBeNull();
+    expect(await globalSessions().repoScope(appId)).toBeNull();
   });
 
   it('is not influenced by other apps', async () => {
     const { appId } = await setup();
     const other = await insertSlackApp(db, { bot_token_encrypted: encrypt('x') });
     await db('slack_apps').where({ id: other }).update({ allowed_repo_ids: '[1]' });
-    expect(await assistants().repoScope(appId)).toBeNull();
+    expect(await globalSessions().repoScope(appId)).toBeNull();
   });
 });

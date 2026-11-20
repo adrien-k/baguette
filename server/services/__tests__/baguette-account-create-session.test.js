@@ -333,7 +333,12 @@ describe('CreateSession MCP model defaults', () => {
   });
 });
 
-describe('CreateSession for Slack assistants', () => {
+const globalSessionModel = vi.hoisted(() => ({ resolve: vi.fn() }));
+vi.mock('../slack-global-session-model.js', () => ({
+  createGlobalSessionModelResolver: () => globalSessionModel.resolve,
+}));
+
+describe('CreateSession for Slack global sessions', () => {
   let app;
   let user;
   let configId;
@@ -355,6 +360,7 @@ describe('CreateSession for Slack assistants', () => {
 
     createSpy = vi.fn().mockResolvedValue({ id: 42 });
     repoScope = vi.fn().mockResolvedValue(null);
+    globalSessionModel.resolve.mockReset();
     app = {
       get: () => db,
       service: (name) => {
@@ -367,7 +373,7 @@ describe('CreateSession for Slack assistants', () => {
           };
         }
         if (name === 'sessions') return { create: createSpy };
-        if (name === 'slack-assistants') return { repoScope };
+        if (name === 'slack-global-sessions') return { repoScope };
         if (name === 'agent-configs') {
           return { getSdkMeta: (sdk) => (sdk === 'claude' ? { key: 'claude' } : null) };
         }
@@ -395,7 +401,11 @@ describe('CreateSession for Slack assistants', () => {
     await configureDefaultModel();
     const initialMessageMeta = { source: 'slack', slack: { user_id: 'U1' } };
     const result = parseMcpToolResult(
-      await tool({ slackAppId: 3, initialLabel: 'Slack assistant', initialMessageMeta }).handler({
+      await tool({
+        slackAppId: 3,
+        initialLabel: 'Slack global session',
+        initialMessageMeta,
+      }).handler({
         is_global: true,
         initial_prompt: 'hello',
       })
@@ -403,7 +413,7 @@ describe('CreateSession for Slack assistants', () => {
     expect(result.ok).toBe(true);
     expect(createSpy).toHaveBeenCalledWith(
       expect.objectContaining({ is_global: true, slack_app_id: 3 }),
-      expect.objectContaining({ initialLabel: 'Slack assistant', initialMessageMeta })
+      expect.objectContaining({ initialLabel: 'Slack global session', initialMessageMeta })
     );
   });
 
@@ -433,6 +443,30 @@ describe('CreateSession for Slack assistants', () => {
     );
   });
 
+  it('starts the sessions of a Slack global session with its fallback model when there is no default', async () => {
+    globalSessionModel.resolve.mockResolvedValue({
+      agent_config_id: configId,
+      model: 'haiku',
+      model_params: null,
+    });
+    const result = parseMcpToolResult(
+      await tool({}, { id: 7, slack_app_id: 3, is_global: 1 }).handler(repoArgs)
+    );
+    expect(result.ok).toBe(true);
+    expect(globalSessionModel.resolve).toHaveBeenCalled();
+    expect(createSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ agent_config_id: configId, model: 'haiku' }),
+      expect.any(Object)
+    );
+  });
+
+  it('does not apply that fallback to other sessions', async () => {
+    const result = parseMcpToolResult(await tool({}, { id: 8, is_global: 1 }).handler(repoArgs));
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/Settings/);
+    expect(globalSessionModel.resolve).not.toHaveBeenCalled();
+  });
+
   it('fails with the settings instructions when no builder model is configured', async () => {
     const result = parseMcpToolResult(await tool().handler(repoArgs));
     expect(result.ok).toBe(false);
@@ -440,24 +474,28 @@ describe('CreateSession for Slack assistants', () => {
     expect(createSpy).not.toHaveBeenCalled();
   });
 
-  describe('repository scope of a Slack assistant', () => {
-    const assistant = { id: 7, slack_app_id: 3, is_global: 1 };
+  describe('repository scope of a Slack global session', () => {
+    const globalSession = { id: 7, slack_app_id: 3, is_global: 1 };
 
     it('refuses a repository outside the app’s scope', async () => {
       repoScope.mockResolvedValue([2]);
-      const result = parseMcpToolResult(await tool({}, assistant).handler(repoArgs));
+      const result = parseMcpToolResult(await tool({}, globalSession).handler(repoArgs));
       expect(result).toMatchObject({ ok: false });
-      expect(result.error).toMatch(/outside what this Slack assistant may work in/);
+      expect(result.error).toMatch(/outside what this Slack global session may work in/);
       expect(repoScope).toHaveBeenCalledWith(3);
       expect(createSpy).not.toHaveBeenCalled();
     });
 
     it('allows a repository inside the scope, or any when none is set', async () => {
-      await configureDefaultModel();
+      globalSessionModel.resolve.mockResolvedValue({
+        agent_config_id: configId,
+        model: 'haiku',
+        model_params: null,
+      });
       repoScope.mockResolvedValue([1]);
-      expect(parseMcpToolResult(await tool({}, assistant).handler(repoArgs)).ok).toBe(true);
+      expect(parseMcpToolResult(await tool({}, globalSession).handler(repoArgs)).ok).toBe(true);
       repoScope.mockResolvedValue(null);
-      expect(parseMcpToolResult(await tool({}, assistant).handler(repoArgs)).ok).toBe(true);
+      expect(parseMcpToolResult(await tool({}, globalSession).handler(repoArgs)).ok).toBe(true);
     });
 
     it('does not apply to other sessions', async () => {

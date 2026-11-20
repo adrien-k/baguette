@@ -14,6 +14,7 @@ import {
   agentCreatedModelSchemaFields,
 } from '../lib/agent-created-model-fields.js';
 import { ok, fail } from '../lib/result.js';
+import { createGlobalSessionModelResolver } from '../../slack-global-session-model.js';
 import { isRepoInSlackScope } from '../../slack-repo-scope.js';
 
 /** Merge optional `branch` with `base_branch` for CreateSession (stacked PR follow-ups). */
@@ -52,8 +53,11 @@ export function createCreateSessionTool(ctx) {
     callerAgent,
   } = ctx;
   const mode = normalizeSubagentDefaultMode(user?.subagent_default_mode);
-  // Callers (the Slack assistant) may add a fallback for owners without a default model.
-  const resolveBuilderModel = ctx.resolveBuilderModel ?? resolveMcpBuilderModel;
+  // Slack global sessions (and their callers) may fall back to Haiku or Composer when the owner
+  // has no default model.
+  const resolveBuilderModel =
+    ctx.resolveBuilderModel ??
+    (callerSession?.slack_app_id ? createGlobalSessionModelResolver(app) : resolveMcpBuilderModel);
   return {
     name: 'CreateSession',
     description: createSessionDescription(mode),
@@ -151,7 +155,9 @@ export function createCreateSessionTool(ctx) {
           return fail(`Repository ${repo_id} not found or not linked to your account.`);
         }
         if (!(await isRepoInSlackScope(app, callerSession, repo_id))) {
-          return fail(`Repository ${repo_id} is outside what this Slack assistant may work in.`);
+          return fail(
+            `Repository ${repo_id} is outside what this Slack global session may work in.`
+          );
         }
         repoWithKeys = (await loadRepoWithKeys(repo_id)) ?? {
           id: access.id,

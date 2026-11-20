@@ -1,11 +1,11 @@
 /**
- * Inbound Slack bot: hands what people say in Slack to their Baguette assistant and posts the
- * assistant's answers back to the thread.
+ * Inbound Slack bot: hands what people say in Slack to their Slack global session and posts its
+ * answers back to the thread.
  *
- * The assistant is a global session (one per Baguette user and Slack app) that stays free to
- * answer because it hands real work to other sessions. The bot only listens to an assistant's
- * owner — a Baguette user who linked their Slack account — and to the people the owner allowed.
- * Everyone else is ignored.
+ * A Slack global session is a global session (one per Baguette user and Slack app) that stays free
+ * to answer because it hands real work to other sessions. The bot only listens to its owner — a
+ * Baguette user who linked their Slack account — and to the people the owner allowed. Everyone
+ * else is ignored.
  */
 import { isApprovedUser } from '../../shared/user-status.js';
 import { slackMessageMeta } from '../../shared/slack-user-message.js';
@@ -40,11 +40,11 @@ const DELIVERY_NOTES = { steer: STEERED_NOTE, queue: QUEUED_NOTE, normal: '' };
 
 export function createSlackBot(app) {
   const db = () => app.get('db');
-  const assistants = () => app.service('slack-assistants');
+  const globalSessions = () => app.service('slack-global-sessions');
   const { slackContext, filesOfEvent } = createSlackContext();
   const status = createSlackStatus();
   const seenEvents = new Map();
-  /** sessionId → the thread of the message the assistant is answering right now. */
+  /** sessionId → the thread of the message the global session is answering right now. */
   const replyTargets = new Map();
 
   /** Slack apps with decrypted secrets (an internal service call returns plaintext). */
@@ -92,14 +92,14 @@ export function createSlackBot(app) {
   // ── Who a message is for ────────────────────────────────────────────────────────────────
 
   /**
-   * The assistants a message goes to. The sender's own assistant when they are a linked Baguette
-   * user and either tagged the bot or the assistant already serves the thread; plus the
-   * assistants serving the thread whose owner allowed the sender. Nobody else gets a route.
+   * The global sessions a message goes to. The sender's own global session when they are a linked Baguette
+   * user and either tagged the bot or the global session already serves the thread; plus the
+   * global sessions serving the thread whose owner allowed the sender. Nobody else gets a route.
    */
   async function routesFor({ slackApp, event, threadTs, addressed }) {
     const link = await findLink(slackApp, event.user);
     const sender = await approvedUser(link?.user_id);
-    const serving = await assistants().forThread(slackApp.id, event.channel, threadTs);
+    const serving = await globalSessions().forThread(slackApp.id, event.channel, threadTs);
     const routes = [];
 
     if (sender) {
@@ -108,7 +108,7 @@ export function createSlackBot(app) {
     }
     for (const session of serving) {
       if (session.user_id === sender?.id) continue;
-      if (!(await assistants().isAllowed(session.id, event.user))) continue;
+      if (!(await globalSessions().isAllowed(session.id, event.user))) continue;
       const owner = await approvedUser(session.user_id);
       if (owner) routes.push({ owner, session, role: 'allowed' });
     }
@@ -121,14 +121,14 @@ export function createSlackBot(app) {
   const readable = (slackApp, text) =>
     resolveSlackText(slackApp.bot_token, text, { botUserId: slackApp.bot_user_id });
 
-  /** The owner as the assistant should address them: "Jan (<@U1>)". */
+  /** The owner as the global session should address them: "Jan (<@U1>)". */
   async function ownerLabel(slackApp, owner) {
-    const slackId = await assistants().slackIdOf(slackApp.id, owner.id);
+    const slackId = await globalSessions().slackIdOf(slackApp.id, owner.id);
     return slackId ? slackUserLabel(slackApp.bot_token, slackId) : 'the owner';
   }
 
   /**
-   * What the assistant receives for a Slack message (notes, the person's words and the Slack
+   * What the global session receives for a Slack message (notes, the person's words and the Slack
    * context) and how the chat labels it.
    */
   async function composeMessage({
@@ -167,9 +167,9 @@ export function createSlackBot(app) {
   }
 
   /**
-   * How a message reaches the assistant now: `steer` into the running turn, `queue` while its
+   * How a message reaches the global session now: `steer` into the running turn, `queue` while its
    * workspace is set up or an approval is pending (a new turn would be rejected), or `normal` —
-   * the assistant is idle, so the message starts a turn.
+   * the global session is idle, so the message starts a turn.
    */
   async function deliveryMode(sessionId) {
     const [session, builder] = await Promise.all([
@@ -197,14 +197,14 @@ export function createSlackBot(app) {
     });
   }
 
-  /** The thread the assistant is answering, for tools that post without naming one. */
+  /** The thread the global session is answering, for tools that post without naming one. */
   const replyTarget = (sessionId) => {
     const target = replyTargets.get(sessionId);
     return target ? { channel: target.channel, threadTs: target.threadTs } : null;
   };
 
-  /** Hands a message to an existing assistant. */
-  async function sendToAssistant({
+  /** Hands a message to an existing global session. */
+  async function sendToGlobalSession({
     slackApp,
     event,
     threadTs,
@@ -215,7 +215,7 @@ export function createSlackBot(app) {
     role,
   }) {
     const target = { channel: event.channel, threadTs };
-    const followUp = (await assistants().forThread(slackApp.id, event.channel, threadTs)).some(
+    const followUp = (await globalSessions().forThread(slackApp.id, event.channel, threadTs)).some(
       (serving) => serving.id === session.id
     );
     const statusShown = status.show(session.id, slackApp, target).catch(() => {});
@@ -228,7 +228,7 @@ export function createSlackBot(app) {
 
     const builder = await getPrimaryBuilderAgent(db(), session.id);
     if (!builder) {
-      await failed("Your assistant isn't available.");
+      await failed("Your Slack global session isn't available.");
       return;
     }
     try {
@@ -242,7 +242,7 @@ export function createSlackBot(app) {
         role,
         followUp,
       });
-      await assistants().joinThread(session.id, event.channel, threadTs);
+      await globalSessions().joinThread(session.id, event.channel, threadTs);
       // Re-read the mode last: the turn may have started or ended while the context was built.
       const mode = await deliveryMode(session.id);
       const message_json = buildUserTurnMessageJson(`${DELIVERY_NOTES[mode]}${body}`, meta);
@@ -273,12 +273,12 @@ export function createSlackBot(app) {
         { err: err.message, sessionId: session.id },
         'slack: delivering a message failed'
       );
-      await failed(`Couldn't pass that to your assistant: ${err.message}`);
+      await failed(`Couldn't pass that on to your Slack global session: ${err.message}`);
     }
   }
 
-  /** A user's first message: creates their assistant, with the message as its first prompt. */
-  async function startAssistant({ slackApp, event, threadTs, text, untagged, owner }) {
+  /** A user's first message: creates their global session, with the message as its first prompt. */
+  async function startGlobalSession({ slackApp, event, threadTs, text, untagged, owner }) {
     const reply = (message) => say(slackApp, event.channel, threadTs, message);
     if (!text.trim() && !(await filesOfEvent(slackApp, event, threadTs)).length) {
       await reply(
@@ -286,7 +286,7 @@ export function createSlackBot(app) {
       );
       return;
     }
-    const placeholderTs = await reply('Setting up your Baguette assistant… 🥖');
+    const placeholderTs = await reply('Setting up your Slack global session… 🥖');
     const target = { channel: event.channel, threadTs };
     try {
       const { body, meta } = await composeMessage({
@@ -299,13 +299,13 @@ export function createSlackBot(app) {
         role: 'owner',
         followUp: false,
       });
-      const { session, created } = await assistants().ensure({
+      const { session, created } = await globalSessions().ensure({
         slackApp,
         user: owner,
         prompt: body,
         messageMeta: meta,
       });
-      await assistants().joinThread(session.id, event.channel, threadTs);
+      await globalSessions().joinThread(session.id, event.channel, threadTs);
       if (placeholderTs) {
         await deleteMessage(slackApp.bot_token, {
           channel: event.channel,
@@ -313,7 +313,7 @@ export function createSlackBot(app) {
         }).catch(() => {});
       }
       if (!created) {
-        await sendToAssistant({
+        await sendToGlobalSession({
           slackApp,
           event,
           threadTs,
@@ -328,13 +328,13 @@ export function createSlackBot(app) {
       replyTargets.set(session.id, { ...target, afterMessageId: 0 });
       await status.show(session.id, slackApp, target).catch(() => {});
     } catch (err) {
-      logger.warn({ err: err.message }, 'slack: starting the assistant failed');
+      logger.warn({ err: err.message }, 'slack: starting the global session failed');
       await updateOrSay(
         slackApp,
         event.channel,
         threadTs,
         placeholderTs,
-        `Couldn't start your assistant: ${err.message}`
+        `Couldn't start your Slack global session: ${err.message}`
       );
     }
   }
@@ -347,28 +347,28 @@ export function createSlackBot(app) {
     const { routes, sender, serving } = await routesFor({ slackApp, event, threadTs, addressed });
     if (!routes.length) {
       // Strangers are ignored; someone who is not a Baguette user yet gets one private pointer,
-      // unless they tagged the bot in a conversation that already belongs to someone's assistant.
+      // unless they tagged the bot in a conversation that already belongs to someone's global session.
       if (addressed && !sender && !serving.length) await nudgeToLogIn(slackApp, event);
       return;
     }
     for (const route of routes) {
       const message = { slackApp, event, threadTs, text, untagged: !addressed, ...route };
       const existing =
-        route.session ?? (await assistants().findForUser(slackApp.id, route.owner.id));
-      if (existing) await sendToAssistant({ ...message, session: existing });
-      else await startAssistant(message);
+        route.session ?? (await globalSessions().findForUser(slackApp.id, route.owner.id));
+      if (existing) await sendToGlobalSession({ ...message, session: existing });
+      else await startGlobalSession(message);
     }
   }
 
   /**
    * The Stop button Slack shows under a working agent (it appears once the app subscribes to
-   * `agent_session_stopped`): the owner interrupts their assistant. Slack leaves the status as it
+   * `agent_session_stopped`): the owner interrupts their global session. Slack leaves the status as it
    * was, so it is put back to `active` here.
    */
   async function handleAgentSessionStopped({ slackApp, event }) {
     const threadTs = event.thread_ts;
     if (!threadTs) return;
-    const serving = await assistants().forThread(slackApp.id, event.channel, threadTs);
+    const serving = await globalSessions().forThread(slackApp.id, event.channel, threadTs);
     if (!serving.length) return;
     const link = await findLink(slackApp, event.user);
     const owned = serving.filter((session) => session.user_id === link?.user_id);
@@ -377,7 +377,7 @@ export function createSlackBot(app) {
         channel: event.channel,
         user: event.user,
         threadTs,
-        text: 'Only the assistant’s owner can stop it.',
+        text: 'Only its owner can stop it.',
       });
       return;
     }
@@ -440,7 +440,7 @@ export function createSlackBot(app) {
   // ── Results ─────────────────────────────────────────────────────────────────────────────
 
   /**
-   * What to post for an assistant reply. Slack is visible to the whole company, so a reply that
+   * What to post for a global session reply. Slack is visible to the whole company, so a reply that
    * looks like it holds a secret is replaced by a pointer to the session, where only Baguette
    * users can read it.
    */
@@ -453,7 +453,7 @@ export function createSlackBot(app) {
     });
   }
 
-  /** The assistant's newest text since `afterMessageId`, or '' when the turn said nothing. */
+  /** The global session's newest text since `afterMessageId`, or '' when the turn said nothing. */
   async function newestAssistantText(sessionId, afterMessageId) {
     const rows = await db()('session_messages')
       .where({ session_id: sessionId, type: 'assistant' })
@@ -472,8 +472,8 @@ export function createSlackBot(app) {
   }
 
   /**
-   * Posts the assistant's answer to the thread of the message it answered. A turn that answers no
-   * Slack message (a wake-up from a session it started) posts nothing here: the assistant reports
+   * Posts the global session's answer to the thread of the message it answered. A turn that answers no
+   * Slack message (a wake-up from a session it started) posts nothing here: the global session reports
    * with SlackPostMessage.
    */
   async function postTurnResult(sessionId) {
@@ -505,7 +505,7 @@ export function createSlackBot(app) {
         await status.clear(data.session_id);
         await postTurnResult(data.session_id);
       } catch (err) {
-        logger.warn({ err: err.message }, 'slack: posting the assistant’s answer failed');
+        logger.warn({ err: err.message }, 'slack: posting the global session’s answer failed');
       }
     });
   }

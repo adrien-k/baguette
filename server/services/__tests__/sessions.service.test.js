@@ -30,7 +30,7 @@ import {
   resolveSessionFromData,
 } from '../feathers/sessions.service.js';
 import { patchAgentInternal, registerAgentsService } from '../feathers/agents.service.js';
-import { slackAssistantFilesDir, slackFilesDir, slackSessionFilesDir } from '../slack-files.js';
+import { slackGlobalSessionFilesDir, slackFilesDir, slackSessionFilesDir } from '../slack-files.js';
 import { insertSlackApp } from './slack-test-helpers.js';
 import * as sessionGitStatus from '../session-git-status.js';
 import * as sessionPushWorktree from '../session-push-worktree.js';
@@ -993,7 +993,7 @@ describe('Sessions service - custom methods', () => {
         expect(await exists(slackSessionFilesDir(sessId))).toBe(false);
       });
 
-      it("deletes an assistant's saved attachments too", async () => {
+      it("deletes a global session's saved attachments too", async () => {
         const slackAppId = await insertSlackApp(db);
         await db('sessions').where({ id: sessId }).update({ slack_app_id: slackAppId });
         const dir = slackFilesDir(slackAppId, userId, 'C1', '111.222');
@@ -1001,7 +1001,7 @@ describe('Sessions service - custom methods', () => {
 
         await app.service('sessions').archive(sessId, params({ id: userId }));
 
-        expect(await exists(slackAssistantFilesDir(slackAppId, userId))).toBe(false);
+        expect(await exists(slackGlobalSessionFilesDir(slackAppId, userId))).toBe(false);
       });
 
       it('still archives when the files cannot be deleted', async () => {
@@ -1030,7 +1030,7 @@ describe('Sessions service - custom methods', () => {
       expect(row.session_path).toBeNull();
     });
 
-    it('trims messages to user and assistant only when archiving', async () => {
+    it('trims messages to user and global session only when archiving', async () => {
       await db('session_messages').insert([
         {
           session_id: sessId,

@@ -1,5 +1,5 @@
 /**
- * The Slack assistant migration (102): typed assistant sessions, served threads and allow-list.
+ * The Slack global session migration (102): typed global session sessions, served threads and allow-list.
  */
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -41,7 +41,7 @@ async function seed() {
   return { userId, appId };
 }
 
-describe('102: Slack assistant', () => {
+describe('102: Slack global session', () => {
   it('replaces the per-thread bindings and approval state', async () => {
     expect(await tables()).not.toContain('slack_threads');
     expect(await columns('sessions')).not.toContain('slack_owner');
@@ -50,13 +50,13 @@ describe('102: Slack assistant', () => {
     expect(await columns('slack_apps')).toContain('allowed_repo_ids');
   });
 
-  it('allows one live assistant per user and app', async () => {
+  it('allows one live global session per user and app', async () => {
     const { userId, appId } = await seed();
     await insertSession(userId, { slack_app_id: appId });
     await expect(insertSession(userId, { slack_app_id: appId })).rejects.toThrow(/UNIQUE/);
   });
 
-  it('allows a new assistant once the old one is archived', async () => {
+  it('allows a new global session once the old one is archived', async () => {
     const { userId, appId } = await seed();
     const [first] = await insertSession(userId, { slack_app_id: appId });
     await db('sessions').where({ id: first }).update({ archived_at: new Date().toISOString() });

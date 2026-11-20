@@ -14,7 +14,7 @@ import {
 } from '../shared/mock-agent-sdk.js';
 
 /**
- * The Slack assistant against the real server, with Slack played by e2e/slack-mock.mjs: events
+ * The Slack global session against the real server, with Slack played by e2e/slack-mock.mjs: events
  * come in through the Events API (signed HTTP) or Socket Mode, answers go out through the mock's
  * Web API, and the tests read what the "workspace" received.
  */
@@ -177,7 +177,7 @@ async function janWorld(page, options) {
   return { jan, slackApp };
 }
 
-const assistantsOf = (slackApp) =>
+const globalSessionsOf = (slackApp) =>
   withDb((db) =>
     db
       .prepare('SELECT id, user_id, label, is_global FROM sessions WHERE slack_app_id = ?')
@@ -196,19 +196,19 @@ const userMessagesOf = (sessionId) =>
 const textOf = (message) =>
   typeof message.content === 'string' ? message.content : JSON.stringify(message.content);
 
-const soleAssistant = async (slackApp) => {
-  const assistants = await assistantsOf(slackApp);
-  expect(assistants).toHaveLength(1);
-  return assistants[0];
+const soleGlobalSession = async (slackApp) => {
+  const globalSessions = await globalSessionsOf(slackApp);
+  expect(globalSessions).toHaveLength(1);
+  return globalSessions[0];
 };
 
 test.beforeEach(async ({ page }) => {
   await clearSlackCalls(page.request);
 });
 
-test.describe('Slack assistant', () => {
+test.describe('Slack global session', () => {
   test.describe('the owner', () => {
-    test('the first tag creates the assistant, shows it working and answers in the thread', async ({
+    test('the first tag creates the global session, shows it working and answers in the thread', async ({
       page,
     }) => {
       const { slackApp } = await janWorld(page);
@@ -221,7 +221,7 @@ test.describe('Slack assistant', () => {
       const answer = answersIn(calls, 'C1', thread)[0];
       expect(answer.args.markdown ?? answer.args.blocks[0].text).toContain(ANSWER);
 
-      // "Setting up your assistant…" goes up first and comes down when the assistant takes over.
+      // "Setting up your global session…" goes up first and comes down when the global session takes over.
       const placeholder = calls.find(
         (c) => c.method === 'chat.postMessage' && c.args.text?.includes('Setting up')
       );
@@ -246,12 +246,12 @@ test.describe('Slack assistant', () => {
       expect(agentStates).toContain('processing');
       expect(agentStates.at(-1)).toBe('active');
 
-      // A global session typed as the Slack assistant, owned by Jan.
-      const assistant = await soleAssistant(slackApp);
-      expect(assistant).toMatchObject({ is_global: 1, label: 'Slack assistant' });
+      // A global session typed as the Slack global session, owned by Jan.
+      const globalSession = await soleGlobalSession(slackApp);
+      expect(globalSession).toMatchObject({ is_global: 1, label: 'Slack global session' });
     });
 
-    test('keeps one assistant across threads and channels, answering where it was asked', async ({
+    test('keeps one global session across threads and channels, answering where it was asked', async ({
       page,
     }) => {
       const { slackApp } = await janWorld(page);
@@ -271,11 +271,11 @@ test.describe('Slack assistant', () => {
       for (const [channel, thread] of places) {
         expect(await answerCount(page.request, channel, thread)).toBe(1);
       }
-      const assistant = await soleAssistant(slackApp);
-      expect(await userMessagesOf(assistant.id)).toHaveLength(places.length);
+      const globalSession = await soleGlobalSession(slackApp);
+      expect(await userMessagesOf(globalSession.id)).toHaveLength(places.length);
 
-      // Each message told the assistant where it came from.
-      const texts = (await userMessagesOf(assistant.id)).map(textOf);
+      // Each message told the global session where it came from.
+      const texts = (await userMessagesOf(globalSession.id)).map(textOf);
       places.forEach(([channel, thread], i) => {
         expect(texts[i]).toContain(`channel ${channel}, thread_ts ${thread}`);
       });
@@ -299,8 +299,8 @@ test.describe('Slack assistant', () => {
       );
       await expectAnswers(page.request, 'C1', thread, 3);
 
-      const assistant = await soleAssistant(slackApp);
-      const messages = (await userMessagesOf(assistant.id)).map(textOf);
+      const globalSession = await soleGlobalSession(slackApp);
+      const messages = (await userMessagesOf(globalSession.id)).map(textOf);
       expect(messages[1]).toContain('Untagged message');
       expect(messages[2]).not.toContain('Untagged message');
     });
@@ -326,16 +326,16 @@ test.describe('Slack assistant', () => {
       const thread = nextTs();
       await sendEvent(page.request, slackApp, mention('UJAN', 'C1', thread, ask('hello')));
       await expectAnswers(page.request, 'C1', thread);
-      const assistant = await soleAssistant(slackApp);
+      const globalSession = await soleGlobalSession(slackApp);
 
-      await page.goto(`/global/sessions/${assistant.id}`);
+      await page.goto(`/global/sessions/${globalSession.id}`);
       await expect(page.getByText('Slack (jan)').first()).toBeVisible({ timeout: 60_000 });
       await page.getByRole('button', { name: 'Details', exact: true }).click();
       await expect(page.getByText('E2E Workspace')).toBeVisible();
     });
   });
 
-  test.describe('what the assistant is told', () => {
+  test.describe('what the global session is told', () => {
     test('the thread so far, linked threads and the channel before it', async ({ page }) => {
       const { slackApp } = await janWorld(page);
       const thread = nextTs();
@@ -378,8 +378,8 @@ test.describe('Slack assistant', () => {
       );
       await expectAnswers(page.request, channel, thread);
 
-      const assistant = await soleAssistant(slackApp);
-      const [first] = (await userMessagesOf(assistant.id)).map(textOf);
+      const globalSession = await soleGlobalSession(slackApp);
+      const [first] = (await userMessagesOf(globalSession.id)).map(textOf);
       expect(first).toContain('Message from Jan Owner');
       expect(first).toContain(`Channel: #chan-${channel}`);
       expect(first).toContain('The thread so far');
@@ -393,7 +393,7 @@ test.describe('Slack assistant', () => {
       expect(first).toContain('Eva Friend');
     });
 
-    test('a follow-up only carries what was said since the assistant last spoke', async ({
+    test('a follow-up only carries what was said since the global session last spoke', async ({
       page,
     }) => {
       const { slackApp } = await janWorld(page);
@@ -414,8 +414,8 @@ test.describe('Slack assistant', () => {
       await sendEvent(page.request, slackApp, threadMessage('UJAN', channel, thread, ask('more')));
       await expectAnswers(page.request, channel, thread, 2);
 
-      const assistant = await soleAssistant(slackApp);
-      const second = textOf((await userMessagesOf(assistant.id))[1]);
+      const globalSession = await soleGlobalSession(slackApp);
+      const second = textOf((await userMessagesOf(globalSession.id))[1]);
       expect(second).toContain('Other messages in the thread since your last reply');
       expect(second).toContain('fresh remark from Eva');
       expect(second).not.toContain('old question');
@@ -426,8 +426,8 @@ test.describe('Slack assistant', () => {
       const thread = nextTs();
       await sendEvent(page.request, slackApp, mention('UJAN', 'C1', thread, ask('ask <@UEVA>')));
       await expectAnswers(page.request, 'C1', thread);
-      const assistant = await soleAssistant(slackApp);
-      expect(textOf((await userMessagesOf(assistant.id))[0])).toContain('ask Eva Friend');
+      const globalSession = await soleGlobalSession(slackApp);
+      expect(textOf((await userMessagesOf(globalSession.id))[0])).toContain('ask Eva Friend');
     });
   });
 
@@ -437,7 +437,7 @@ test.describe('Slack assistant', () => {
       const thread = nextTs();
       await sendEvent(page.request, slackApp, mention('UJAN', 'C1', thread, ask()));
       await expectAnswers(page.request, 'C1', thread);
-      const assistant = await soleAssistant(slackApp);
+      const globalSession = await soleGlobalSession(slackApp);
       const before = (await slackCalls(page.request)).length;
 
       await sendEvent(
@@ -457,8 +457,8 @@ test.describe('Slack assistant', () => {
       );
 
       await expectSilence(page.request, before);
-      expect(await userMessagesOf(assistant.id)).toHaveLength(1);
-      expect(await assistantsOf(slackApp)).toHaveLength(1);
+      expect(await userMessagesOf(globalSession.id)).toHaveLength(1);
+      expect(await globalSessionsOf(slackApp)).toHaveLength(1);
     });
 
     test('a person without a Baguette account gets a private login link and nothing else', async ({
@@ -482,7 +482,7 @@ test.describe('Slack assistant', () => {
       expect(
         (await slackCalls(page.request)).filter((c) => c.method === 'chat.postMessage')
       ).toEqual([]);
-      expect(await assistantsOf(slackApp)).toHaveLength(0);
+      expect(await globalSessionsOf(slackApp)).toHaveLength(0);
     });
 
     test('the owner decides who else is heard — and can take it back', async ({ page }) => {
@@ -491,12 +491,14 @@ test.describe('Slack assistant', () => {
       const otherThread = nextTs();
       await sendEvent(page.request, slackApp, mention('UJAN', 'C1', thread, ask()));
       await expectAnswers(page.request, 'C1', thread);
-      const assistant = await soleAssistant(slackApp);
+      const globalSession = await soleGlobalSession(slackApp);
 
       const allow = async (usernames) => {
-        await page.goto(`/global/sessions/${assistant.id}`);
+        await page.goto(`/global/sessions/${globalSession.id}`);
         await page.getByRole('button', { name: 'Details', exact: true }).click();
-        await page.getByRole('button', { name: 'Edit who the assistant listens to' }).click();
+        await page
+          .getByRole('button', { name: 'Edit who the Slack global session listens to' })
+          .click();
         const input = page.getByPlaceholder('usernames, comma separated');
         await input.fill(usernames);
         await page.getByRole('button', { name: 'Save', exact: true }).click();
@@ -511,15 +513,15 @@ test.describe('Slack assistant', () => {
       await allow('eva');
       await expect(page.getByText('@eva')).toBeVisible();
 
-      // Allowed: heard in the thread the assistant serves, labelled as an allowed person.
+      // Allowed: heard in the thread the global session serves, labelled as an allowed person.
       await sendEvent(page.request, slackApp, threadMessage('UEVA', 'C1', thread, ask('as Eva')));
       await expectAnswers(page.request, 'C1', thread, 2);
-      const received = (await userMessagesOf(assistant.id)).map(textOf);
+      const received = (await userMessagesOf(globalSession.id)).map(textOf);
       expect(received.at(-1)).toContain('allowed to talk to you');
       expect(received.at(-1)).toContain('Eva Friend');
 
-      // …but being allowed does not let them start a conversation in a thread the assistant does
-      // does not serve: nothing is said publicly, and no assistant is created for them.
+      // …but being allowed does not let them start a conversation in a thread the global session does
+      // does not serve: nothing is said publicly, and no global session is created for them.
       mark = (await slackCalls(page.request)).length;
       await sendEvent(
         page.request,
@@ -530,7 +532,7 @@ test.describe('Slack assistant', () => {
       const afterTag = (await slackCalls(page.request)).slice(mark);
       expect(afterTag.filter((c) => c.method === 'chat.postMessage')).toEqual([]);
       expect(await answerCount(page.request, 'C1', otherThread)).toBe(0);
-      expect(await assistantsOf(slackApp)).toHaveLength(1);
+      expect(await globalSessionsOf(slackApp)).toHaveLength(1);
 
       // Not allowed any more.
       await allow('');
@@ -539,7 +541,7 @@ test.describe('Slack assistant', () => {
       await expectSilence(page.request, mark);
     });
 
-    test('every owner has their own assistant, even in the same thread', async ({ page }) => {
+    test('every owner has their own global session, even in the same thread', async ({ page }) => {
       const { jan, slackApp } = await janWorld(page);
       const bob = await signInAs(page, 'bob');
       await linkSlackUser(slackApp, 'UBOB', bob.id);
@@ -548,11 +550,11 @@ test.describe('Slack assistant', () => {
       await sendEvent(page.request, slackApp, mention('UJAN', 'C1', thread, ask('from Jan')));
       await expectAnswers(page.request, 'C1', thread, 1);
       await sendEvent(page.request, slackApp, threadMessage('UBOB', 'C1', thread, ask('hi')), {});
-      // Bob did not tag the bot and does not have an assistant in this thread: ignored.
+      // Bob did not tag the bot and does not have a global session in this thread: ignored.
       await new Promise((resolve) => setTimeout(resolve, 1500));
-      expect(await assistantsOf(slackApp)).toHaveLength(1);
+      expect(await globalSessionsOf(slackApp)).toHaveLength(1);
 
-      // Tagged, Bob gets his own assistant that answers in the same thread.
+      // Tagged, Bob gets his own global session that answers in the same thread.
       await sendEvent(
         page.request,
         slackApp,
@@ -560,14 +562,14 @@ test.describe('Slack assistant', () => {
       );
       await expectAnswers(page.request, 'C1', thread, 2);
 
-      const assistants = await assistantsOf(slackApp);
-      expect(assistants.map((a) => a.user_id).sort()).toEqual([jan.id, bob.id].sort());
-      const [jans] = assistants.filter((a) => a.user_id !== bob.id);
-      const [bobs] = assistants.filter((a) => a.user_id === bob.id);
+      const globalSessions = await globalSessionsOf(slackApp);
+      expect(globalSessions.map((a) => a.user_id).sort()).toEqual([jan.id, bob.id].sort());
+      const [jans] = globalSessions.filter((a) => a.user_id !== bob.id);
+      const [bobs] = globalSessions.filter((a) => a.user_id === bob.id);
       expect((await userMessagesOf(jans.id)).map(textOf).join('\n')).not.toContain('from Bob');
       expect((await userMessagesOf(bobs.id)).map(textOf).join('\n')).not.toContain('from Jan');
 
-      // The thread now has two assistants; Jan's untagged follow-up goes only to his.
+      // The thread now has two global sessions; Jan's untagged follow-up goes only to his.
       await devLogin(page, 'dev');
       await sendEvent(
         page.request,
@@ -603,7 +605,7 @@ test.describe('Slack assistant', () => {
             .map((c) => c.args.text ?? '')
         )
         .toEqual(expect.arrayContaining([expect.stringContaining('Settings → Agent')]));
-      expect(await assistantsOf(slackApp)).toHaveLength(0);
+      expect(await globalSessionsOf(slackApp)).toHaveLength(0);
       expect(await answerCount(page.request, 'C1', thread)).toBe(0);
     });
   });
@@ -659,7 +661,7 @@ test.describe('Slack assistant', () => {
       const thread = nextTs();
       await sendEvent(page.request, slackApp, mention('UJAN', 'C1', thread, ask()));
       await expectAnswers(page.request, 'C1', thread);
-      const assistant = await soleAssistant(slackApp);
+      const globalSession = await soleGlobalSession(slackApp);
       const before = (await slackCalls(page.request)).length;
 
       const ignored = [
@@ -689,7 +691,7 @@ test.describe('Slack assistant', () => {
       await expectAnswers(page.request, 'C1', thread, 2);
       await new Promise((resolve) => setTimeout(resolve, 1500));
       expect(await answerCount(page.request, 'C1', thread)).toBe(2);
-      expect(await userMessagesOf(assistant.id)).toHaveLength(2);
+      expect(await userMessagesOf(globalSession.id)).toHaveLength(2);
     });
   });
 
@@ -713,7 +715,7 @@ test.describe('Slack assistant', () => {
       expect((await post(signed(raw, { timestamp: stale }))).status()).toBe(401);
       const unknownApp = JSON.stringify({ ...JSON.parse(raw), api_app_id: 'ANOPE' });
       expect((await post(signed(unknownApp), unknownApp)).status()).toBe(401);
-      expect(await assistantsOf(slackApp)).toHaveLength(0);
+      expect(await globalSessionsOf(slackApp)).toHaveLength(0);
 
       // Slack's URL verification handshake.
       const challenge = JSON.stringify({
@@ -728,7 +730,7 @@ test.describe('Slack assistant', () => {
       const retry = await post({ ...signed(raw), 'X-Slack-Retry-Num': '1' });
       expect(retry.status()).toBe(200);
       await new Promise((resolve) => setTimeout(resolve, 1500));
-      expect(await assistantsOf(slackApp)).toHaveLength(0);
+      expect(await globalSessionsOf(slackApp)).toHaveLength(0);
 
       // The genuine request goes through.
       expect((await post(signed(raw))).status()).toBe(200);
@@ -764,7 +766,7 @@ test.describe('Slack assistant', () => {
       await expectAnswers(page.request, 'C4', thread);
       const { acks } = await page.request.get(`${SLACK_URL}/__socket`).then((r) => r.json());
       expect(acks).toContain(envelope.envelope_id);
-      expect(await assistantsOf(slackApp)).toHaveLength(1);
+      expect(await globalSessionsOf(slackApp)).toHaveLength(1);
     });
   });
 });

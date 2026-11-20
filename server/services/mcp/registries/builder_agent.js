@@ -107,7 +107,7 @@ export function buildBuilderAgentTools(session, app, { slackApps = [], agent = n
     createContinueReviewTool(ctx),
   ];
   if (slackApps.length) tools.push(createSlackPostMessageTool(ctx));
-  // Only Slack assistant sessions read Slack and answer from it; other sessions skip the overhead.
+  // Only Slack global session sessions read Slack and answer from it; other sessions skip the overhead.
   if (session.slack_app_id) {
     tools.push(
       createSlackEditMessageTool(ctx),

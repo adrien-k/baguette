@@ -1,5 +1,5 @@
 /**
- * The model a Slack assistant starts with when its owner has no default: Haiku, else Composer.
+ * The model a Slack global session starts with when its owner has no default: Haiku, else Composer.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestDb } from '../../test-utils/db.js';
@@ -21,7 +21,10 @@ vi.mock('../feathers/agent-configs.service.js', () => ({
 
 import { BadRequest } from 'feathers/errors';
 import { MCP_BUILDER_MODEL_SETTINGS_ERROR } from '../agent-mcp-model-resolver.js';
-import { createAssistantModelResolver, pickFallbackModel } from '../slack-assistant-model.js';
+import {
+  createGlobalSessionModelResolver,
+  pickFallbackModel,
+} from '../slack-global-session-model.js';
 import { insertUser } from './slack-test-helpers.js';
 
 const db = createTestDb();
@@ -62,7 +65,7 @@ describe('pickFallbackModel', () => {
   });
 });
 
-describe('createAssistantModelResolver', () => {
+describe('createGlobalSessionModelResolver', () => {
   const app = { get: () => db };
   const configRow = (userId, fields = {}) =>
     db('agent_configs')
@@ -78,7 +81,7 @@ describe('createAssistantModelResolver', () => {
     const userId = await insertUser(db);
     const chosen = { agent_config_id: 9, agent_sdk: 'claude', model: 'opus', model_params: null };
     resolver.resolve.mockResolvedValue(chosen);
-    expect(await createAssistantModelResolver(app)(db, userId, {})).toBe(chosen);
+    expect(await createGlobalSessionModelResolver(app)(db, userId, {})).toBe(chosen);
   });
 
   it('falls back to Haiku when no default model is set', async () => {
@@ -87,7 +90,7 @@ describe('createAssistantModelResolver', () => {
     configs.models[configId] = [model('claude-sonnet-4'), model('claude-haiku-4-5')];
     resolver.resolve.mockRejectedValue(new BadRequest(MCP_BUILDER_MODEL_SETTINGS_ERROR));
 
-    expect(await createAssistantModelResolver(app)(db, userId, {})).toEqual({
+    expect(await createGlobalSessionModelResolver(app)(db, userId, {})).toEqual({
       agent_config_id: configId,
       agent_sdk: 'claude',
       model: 'claude-haiku-4-5',
@@ -103,7 +106,7 @@ describe('createAssistantModelResolver', () => {
     configs.models[cursor] = [model('composer-2')];
     resolver.resolve.mockRejectedValue(new BadRequest(MCP_BUILDER_MODEL_SETTINGS_ERROR));
 
-    expect(await createAssistantModelResolver(app)(db, userId, {})).toMatchObject({
+    expect(await createGlobalSessionModelResolver(app)(db, userId, {})).toMatchObject({
       agent_config_id: cursor,
       agent_sdk: 'cursor',
       model: 'composer-2',
@@ -119,7 +122,7 @@ describe('createAssistantModelResolver', () => {
     configs.models[deleted] = [model('claude-haiku-4-5')];
     resolver.resolve.mockRejectedValue(new BadRequest(MCP_BUILDER_MODEL_SETTINGS_ERROR));
 
-    await expect(createAssistantModelResolver(app)(db, userId, {})).rejects.toThrow(
+    await expect(createGlobalSessionModelResolver(app)(db, userId, {})).rejects.toThrow(
       /Haiku or Composer/
     );
   });
@@ -130,7 +133,7 @@ describe('createAssistantModelResolver', () => {
     configs.models[configId] = [model('claude-sonnet-4')];
     resolver.resolve.mockRejectedValue(new BadRequest(MCP_BUILDER_MODEL_SETTINGS_ERROR));
 
-    await expect(createAssistantModelResolver(app)(db, userId, {})).rejects.toThrow(
+    await expect(createGlobalSessionModelResolver(app)(db, userId, {})).rejects.toThrow(
       'Settings → Agent'
     );
   });
@@ -138,7 +141,7 @@ describe('createAssistantModelResolver', () => {
   it('does not hide other errors', async () => {
     const userId = await insertUser(db);
     resolver.resolve.mockRejectedValue(new BadRequest('Unknown preset'));
-    await expect(createAssistantModelResolver(app)(db, userId, {})).rejects.toThrow(
+    await expect(createGlobalSessionModelResolver(app)(db, userId, {})).rejects.toThrow(
       'Unknown preset'
     );
   });

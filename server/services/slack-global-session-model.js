@@ -1,5 +1,5 @@
 /**
- * Model for a Slack assistant when its owner has no default builder model: Haiku, else Composer,
+ * Model for a Slack global session when its owner has no default builder model: Haiku, else Composer,
  * from the owner's own agent configurations (the newest version of the first family found).
  * An owner who set a default model keeps it.
  */
@@ -69,8 +69,8 @@ export function pickFallbackModel(candidates) {
  * Same contract as `resolveMcpBuilderModel`, with the Haiku / Composer fallback when the owner has
  * no default builder model.
  */
-export function createAssistantModelResolver(app) {
-  return async function resolveAssistantBuilderModel(db, userId, opts = {}) {
+export function createGlobalSessionModelResolver(app) {
+  return async function resolveGlobalSessionBuilderModel(db, userId, opts = {}) {
     try {
       return await resolveMcpBuilderModel(db, userId, opts);
     } catch (err) {

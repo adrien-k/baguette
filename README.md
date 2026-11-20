@@ -27,7 +27,7 @@ Baguette is a self-hosted orchestrator for AI coding agents that runs in the clo
 - **Diff view** -- Browse the session's current git diff with per-file sections and inline/split toggle.
 - **File attachments** -- Attach images and files to any chat message.
 - **Cost tracking** -- Track session costs on session cards, with a daily chart and usage breakdown per repo (per agent backend).
-- **Slack** -- Tag the Baguette app in a Slack channel and your personal assistant answers at once, starts sessions for the work and reports results and PR links back in the thread. Uses Socket Mode, so it works locally and behind a firewall ([read more](docs/slack.md)).
+- **Slack** -- Tag the Baguette app in a Slack channel and your personal Slack global session answers at once, starts sessions for the work and reports results and PR links back in the thread. Uses Socket Mode, so it works locally and behind a firewall ([read more](docs/slack.md)).
 - **Secrets** -- Inject global secrets into all sessions and tasks via Baguette config placeholders.
 - **Session config (`.baguette.yaml`)** -- Define per-session env vars, init commands, tasks with port allocation and dependencies, and cleanup in your repo. See **[docs/project-configuration.md](docs/project-configuration.md)**.
 - **User approval** -- The first visitor is the instance admin. Later GitHub users wait for approval on **Admin → Users**. Without a GitHub App, the admin invites additional users with a one-time link; they add a passkey when they open it.
@@ -132,7 +132,7 @@ For details on the data directory layout, git worktree strategy, and web server 
 
 ## Slack
 
-Tag the Baguette app in a Slack channel and your Slack assistant — one long-lived global session per user — answers right away. It never blocks on the work: it starts a session for the task, stays free for your next message, and reports progress, the PR link and the branch back in the thread when that session finishes. It reacts when tagged or addressed by name ("baguette …"), and in a thread it serves it follows the conversation without a tag. You have to be logged in to Baguette and have linked your Slack account; the assistant only listens to you and the people you allow (in the session's Details tab) and ignores everyone else.
+Tag the Baguette app in a Slack channel and your Slack global session (one long-lived global session per user) answers right away. It never blocks on the work: it starts a session for the task, stays free for your next message, and reports progress, the PR link and the branch back in the thread when that session finishes. It reacts when tagged or addressed by name ("baguette …"), and in a thread it serves it follows the conversation without a tag. You have to be logged in to Baguette and have linked your Slack account; the global session only listens to you and the people you allow (in the session's Details tab) and ignores everyone else.
 
 Baguette connects to Slack over [Socket Mode](https://api.slack.com/apis/socket-mode): it opens an outbound connection, so **no public URL, tunnel or open port is needed**. It works locally and behind a firewall.
 
@@ -150,11 +150,11 @@ Baguette connects to Slack over [Socket Mode](https://api.slack.com/apis/socket-
    SLACK_BOT_TOKEN=xoxb-…
    SLACK_APP_TOKEN=xapp-…
    ```
-7. In Slack, invite the bot to a channel (`/invite @<your app name>`) and tag it: `@<your app name> fix the flaky login test`. The first time, it replies privately with a link: log in to Baguette, confirm that the Slack account is yours, then tag it again. Without a default builder model (Settings → Agent) the assistant falls back to Haiku or Composer.
+7. In Slack, invite the bot to a channel (`/invite @<your app name>`) and tag it: `@<your app name> fix the flaky login test`. The first time, it replies privately with a link: log in to Baguette, confirm that the Slack account is yours, then tag it again. Without a default builder model (Settings → Agent) the Slack global session falls back to Haiku or Composer.
 
-Say which repository you mean in plain words; the assistant asks when it is unclear. You can limit an app to chosen repositories under **Settings → Integrations**.
+Say which repository you mean in plain words; it asks when it is unclear. You can limit an app to chosen repositories under **Settings → Integrations**.
 
-The **Stop** button under the working status interrupts the assistant. Messages from Slack show up in the session chat as "Slack (name)". Attach json, txt, csv, svg, images… to a message and the agent gets them. Slack is visible to the whole company, so the bot never posts secrets or anything sensitive there — it points you to the session chat or pull request instead.
+The **Stop** button under the working status interrupts the Slack global session. Messages from Slack show up in the session chat as "Slack (name)". Attach json, txt, csv, svg, images… to a message and the agent gets them. Slack is visible to the whole company, so the bot never posts secrets or anything sensitive there — it points you to the session chat or pull request instead.
 
 See **[docs/slack.md](docs/slack.md)** for scope details and the alternative public-URL setup.
 

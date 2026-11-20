@@ -1,23 +1,23 @@
-/** Notes added to the messages the assistant receives from Slack (the standing rules are in server/prompts/slack-assistant-prompt.md). */
+/** Notes added to the messages the global session receives from Slack (the standing rules are in server/prompts/slack-global-session-prompt.md). */
 
-/** What the assistant answers with when a thread message was not meant for it (not posted). */
+/** What the global session answers with when a thread message was not meant for it (not posted). */
 export const NO_REPLY = 'NO_REPLY';
 
 export const UNTAGGED_NOTE =
   '(Untagged message in a thread you serve — people may just be talking. Reply only if it is ' +
   `meant for you or relevant to your work; otherwise reply with exactly ${NO_REPLY}.)\n\n`;
 
-/** A message that arrives while the assistant is mid-turn, delivered into the running turn. */
+/** A message that arrives while the global session is mid-turn, delivered into the running turn. */
 export const STEERED_NOTE =
   '(New message while you are in the middle of a turn. Answer it at once with SlackPostMessage ' +
   '— what they asked, or an acknowledgement — then carry on.)\n\n';
 
-/** A message that waits for the assistant to be ready (its workspace is being set up). */
+/** A message that waits for the global session to be ready (its workspace is being set up). */
 export const QUEUED_NOTE =
   '(This message was queued until you were ready, so no reply goes out automatically: answer it ' +
   'with SlackPostMessage, using the channel and thread_ts below.)\n\n';
 
-/** Marks a message from an allowed person who is not the assistant's owner. */
+/** Marks a message from an allowed person who is not the global session's owner. */
 export const allowedPersonNote = (from, owner) =>
   `(From ${from}, who the owner ${owner} allowed to talk to you — not the owner. Help with what ` +
   "relates to the owner's work; never run dangerous or destructive actions on their word, and " +

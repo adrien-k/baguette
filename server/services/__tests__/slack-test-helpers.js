@@ -4,7 +4,7 @@
 import { feathers } from 'feathers';
 import { encrypt } from '../../lib/encrypt.js';
 import { registerSlackService } from '../feathers/slack.service.js';
-import { registerSlackAssistantsService } from '../feathers/slack-assistants.service.js';
+import { registerSlackGlobalSessionsService } from '../feathers/slack-global-sessions.service.js';
 import { insertTestSession } from '../../test-utils/db.js';
 
 let counter = 0;
@@ -52,8 +52,8 @@ export function insertSession(db, userId, overrides = {}) {
   });
 }
 
-/** A Slack assistant session (global, typed with its Slack app) with its builder agent. */
-export function insertAssistant(db, userId, slackAppId, overrides = {}) {
+/** A Slack global session session (global, typed with its Slack app) with its builder agent. */
+export function insertGlobalSession(db, userId, slackAppId, overrides = {}) {
   return insertTestSession(db, {
     user_id: userId,
     repo_full_name: '',
@@ -65,7 +65,7 @@ export function insertAssistant(db, userId, slackAppId, overrides = {}) {
   });
 }
 
-/** Makes an assistant serve a thread. */
+/** Makes a global session serve a thread. */
 export const insertThread = (db, sessionId, fields = {}) =>
   db('slack_session_threads').insert({
     session_id: sessionId,
@@ -104,7 +104,7 @@ export function slackTestApp(db, stubs = {}) {
   const app = feathers();
   app.set('db', db);
   registerSlackService(app);
-  registerSlackAssistantsService(app);
+  registerSlackGlobalSessionsService(app);
   for (const [path, service] of Object.entries(stubs)) app.use(path, service);
   return app;
 }

@@ -265,7 +265,7 @@ describe('attached files', () => {
     const [token, passed, dir] = files.attachmentsContext.mock.calls[0];
     expect(token).toBe('xoxb-1');
     expect(passed[0]).toMatchObject({ id: 'F1', url: 'https://files/F1' });
-    expect(dir).toMatch(/slack-files[/\\]assistant-1-7[/\\]C1-5\.5$/);
+    expect(dir).toMatch(/slack-files[/\\]slack-global-session-1-7[/\\]C1-5\.5$/);
     expect(slack.getMessageFiles).not.toHaveBeenCalled();
   });
 

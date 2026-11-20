@@ -1,21 +1,21 @@
 import { KnexService } from '@feathersjs/knex';
 import { createAccountContext } from '../mcp/lib/account-context.js';
 import { createCreateSessionTool } from '../mcp/tools/create-session.js';
-import { createAssistantModelResolver } from '../slack-assistant-model.js';
+import { createGlobalSessionModelResolver } from '../slack-global-session-model.js';
 import { parseRepoScope } from '../slack-repo-scope.js';
 
-const ASSISTANT_LABEL = 'Slack assistant';
+const ASSISTANT_LABEL = 'Slack global session';
 
 /**
- * Slack assistants: the global session each Baguette user talks to from Slack (rows of `sessions`
- * with `slack_app_id` set), the threads an assistant serves and the people it listens to besides
+ * Slack global sessions: the global session each Baguette user talks to from Slack (rows of `sessions`
+ * with `slack_app_id` set), the threads a global session serves and the people it listens to besides
  * its owner. Internal only — the Slack bot is the one caller, so no method is exposed.
  */
-class SlackAssistantsService extends KnexService {
+class SlackGlobalSessionsService extends KnexService {
   constructor(options, app) {
     super(options);
     this.app = app;
-    /** `appId:userId` → the assistant being created, so two first messages don't create two. */
+    /** `appId:userId` → the global session being created, so two first messages don't create two. */
     this.starting = new Map();
   }
 
@@ -23,7 +23,7 @@ class SlackAssistantsService extends KnexService {
     return this.options.Model('sessions');
   }
 
-  /** The live (not archived) assistant of a user in a Slack app, or null. */
+  /** The live (not archived) global session of a user in a Slack app, or null. */
   async findForUser(slackAppId, userId) {
     const session = await this.sessions
       .where({ slack_app_id: slackAppId, user_id: userId })
@@ -33,7 +33,7 @@ class SlackAssistantsService extends KnexService {
   }
 
   /**
-   * The user's assistant, created on first use. `prompt` is the first message when it has to be
+   * The user's global session, created on first use. `prompt` is the first message when it has to be
    * created; `created` tells the caller that message is already delivered.
    * Fails with a message fit to show in Slack (e.g. no default builder model in Settings).
    */
@@ -55,7 +55,7 @@ class SlackAssistantsService extends KnexService {
     const tool = createCreateSessionTool({
       ...createAccountContext(user, this.app),
       slackAppId: slackApp.id,
-      resolveBuilderModel: createAssistantModelResolver(this.app),
+      resolveBuilderModel: createGlobalSessionModelResolver(this.app),
       initialMessageMeta: messageMeta,
       initialLabel: ASSISTANT_LABEL,
     });
@@ -66,7 +66,7 @@ class SlackAssistantsService extends KnexService {
     return { session, created: true };
   }
 
-  /** Live assistants serving a thread. */
+  /** Live global sessions serving a thread. */
   async forThread(slackAppId, channelId, threadTs) {
     return this.sessions
       .join('slack_session_threads as t', 't.session_id', 'sessions.id')
@@ -79,7 +79,7 @@ class SlackAssistantsService extends KnexService {
       .select('sessions.*');
   }
 
-  /** Whether an assistant serves any thread in a channel. */
+  /** Whether a global session serves any thread in a channel. */
   async servesChannel(sessionId, channelId) {
     const row = await this.options
       .Model('slack_session_threads')
@@ -88,7 +88,7 @@ class SlackAssistantsService extends KnexService {
     return Boolean(row);
   }
 
-  /** Makes an assistant serve a thread (no-op when it already does). */
+  /** Makes a global session serve a thread (no-op when it already does). */
   async joinThread(sessionId, channelId, threadTs) {
     await this.options
       .Model('slack_session_threads')
@@ -97,7 +97,7 @@ class SlackAssistantsService extends KnexService {
       .ignore();
   }
 
-  /** Slack user ids the owner allowed to talk to the assistant. */
+  /** Slack user ids the owner allowed to talk to the global session. */
   async allowedSlackIds(sessionId) {
     const rows = await this.options
       .Model('slack_session_allowed_users')
@@ -137,7 +137,7 @@ class SlackAssistantsService extends KnexService {
     return link?.slack_user_id ?? null;
   }
 
-  /** Repository ids an app's assistants may use; null means every repository. */
+  /** Repository ids an app's global sessions may use; null means every repository. */
   async repoScope(slackAppId) {
     const row = await this.options
       .Model('slack_apps')
@@ -147,10 +147,10 @@ class SlackAssistantsService extends KnexService {
   }
 }
 
-export function registerSlackAssistantsService(app, path = 'slack-assistants') {
+export function registerSlackGlobalSessionsService(app, path = 'slack-global-sessions') {
   app.use(
     path,
-    new SlackAssistantsService({ Model: app.get('db'), name: 'sessions', id: 'id' }, app),
+    new SlackGlobalSessionsService({ Model: app.get('db'), name: 'sessions', id: 'id' }, app),
     {
       methods: [],
     }

@@ -1,14 +1,14 @@
 /**
- * Slack assistant: one long-lived global session per Baguette user and Slack app, instead of one
+ * Slack global session: one long-lived global session per Baguette user and Slack app, instead of one
  * session per Slack thread.
  *
- * - sessions.slack_app_id types a session as a Slack assistant (null for every other session). At
- *   most one live assistant exists per user and app.
- * - slack_session_threads lists the threads an assistant serves, so untagged follow-ups reach it.
- * - slack_session_allowed_users is the owner's allow-list: Slack users the assistant listens to
+ * - sessions.slack_app_id types a session as a Slack global session (null for every other session). At
+ *   most one live global session exists per user and app.
+ * - slack_session_threads lists the threads a global session serves, so untagged follow-ups reach it.
+ * - slack_session_allowed_users is the owner's allow-list: Slack users the global session listens to
  *   besides its owner. Everyone else is ignored.
  * - slack_apps.allowed_repo_ids (JSON array of repo ids; null = all) limits the repositories an
- *   assistant may start sessions in.
+ *   global session may start sessions in.
  *
  * Replaces the per-thread bindings and approval state added in 077. Native DDL only — never
  * rebuild `sessions` (see AGENTS.md).

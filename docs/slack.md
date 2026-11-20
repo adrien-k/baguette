@@ -1,6 +1,6 @@
 # Slack integration
 
-Baguette has a Slack assistant you can talk to from any thread — it starts and follows sessions for you — and agents can post to Slack on your behalf.
+Baguette has a Slack global session you can talk to from any thread (it starts and follows sessions for you), and agents can post to Slack on your behalf.
 The integration is configured under **Admin → Slack**; agents post through a
 `SlackPostMessage` tool on the built-in `baguette` MCP server.
 
@@ -9,49 +9,49 @@ a session's tool list once at least one app has a bot token.
 
 ## Talking to Baguette from Slack
 
-Every Baguette user who links their Slack account gets **one Slack assistant**: a long-lived
+Every Baguette user who links their Slack account gets a **Slack global session**: one long-lived
 [global session](sessions-and-agents.md) they talk to from any thread. Tag the bot
-(`@baguette fix the flaky login test`) and the assistant answers right away. It never does the work
-itself — it starts a session for the task (`CreateSession`), tells you so, and stays free for your
-next message. When that session finishes or needs an answer, the assistant is woken up and reports
-back in the thread you asked from: what happened, the pull request link, who it needs something
-from. The first tag creates the assistant (a "Slack assistant" session, visible in the **Global**
-list); after that every thread, in any channel, goes to the same one.
+(`@baguette fix the flaky login test`) and it answers right away. It never does the work itself —
+it starts a session for the task (`CreateSession`), tells you so, and stays free for your next
+message. When that session finishes or needs an answer, the Slack global session is woken up and
+reports back in the thread you asked from: what happened, the pull request link, who it needs
+something from. The first tag creates it (it is titled "Slack global session" and listed under
+**Global**); after that every thread, in any channel, goes to the same one.
 
-- **Who it listens to.** Only the assistant's owner — a logged-in Baguette user who linked their
+- **Who it listens to.** Only the Slack global session's owner — a logged-in Baguette user who linked their
   Slack account — and the people the owner allowed (session → **Details → Slack → Also listens
   to**, edited by the owner only). Everyone else is ignored: no reply, nothing reaches the
   agent. The one exception is a person without a linked Baguette account who tags the bot: they get
   a private, visible-only-to-them "log in to Baguette" link — unless the thread already belongs to
-  someone's assistant, in which case they are ignored too. The assistant runs as _its owner's_
+  someone's Slack global session, in which case they are ignored too. It runs as _its owner's_
   Baguette account (repos, GitHub token, agent defaults), so allow people you trust. Messages from
-  allowed people are marked as such: the assistant helps with the owner's work but never runs
+  allowed people are marked as such: it helps with the owner's work but never runs
   dangerous or destructive actions on their word.
-- **When it listens.** To a tag, or a message that says "baguette". In a thread the assistant
+- **When it listens.** To a tag, or a message that says "baguette". In a thread the Slack global session
   already serves, the owner and allowed people can also just keep talking without a tag; the
-  assistant answers only if the message is meant for it (otherwise it stays silent). Channel
+  global session answers only if the message is meant for it (otherwise it stays silent). Channel
   chatter and DMs are ignored. Untagged messages need the `message.channels` and `message.groups`
   bot events (README, step 4).
-- **Which model.** The assistant and the sessions it starts use your default builder model
-  (Settings → Agent). Without one, the assistant itself falls back to Haiku, else Composer, from
+- **Which model.** The global session and the sessions it starts use your default builder model
+  (Settings → Agent). Without one, the Slack global session itself falls back to Haiku, else Composer, from
   your agent configurations (the newest version found). If none of them offers either, the bot says
   so and points to Settings → Agent; nothing is created.
-- **Which repos.** The assistant picks the repository from what you wrote and asks when it is
+- **Which repos.** The global session picks the repository from what you wrote and asks when it is
   unclear. Under **Settings → Integrations → Slack** an app can be limited to chosen repositories;
-  the assistant then only sees and starts sessions in those.
+  the Slack global session then only sees and starts sessions in those.
 - **Tone.** Friendly, casual and a little funny, calls people by name, and tags (`@name`) whoever it
   needs an answer from.
-- **Answers and progress.** The assistant's reply to a message is posted in that message's thread.
+- **Answers and progress.** The global session's reply to a message is posted in that message's thread.
   A message that arrives while it is mid-turn gets an immediate answer. While it works, Slack's
   native working status shows under the thread (needs `assistant:write` and **Agents & AI Apps**;
-  with the `agent_session_stopped` event it also has a **Stop** button that interrupts the assistant —
+  with the `agent_session_stopped` event it also has a **Stop** button that interrupts the Slack global session —
   owner only).
-- **In the session chat.** Messages that come from Slack appear in the assistant's chat labelled
+- **In the session chat.** Messages that come from Slack appear in the Slack global session's chat labelled
   "Slack (name)" (with "allowed person" / "not tagged" notes); the Slack context the agent also
   received is collapsed under the message.
 - **Full context with every message.** Whatever you send arrives with a "Slack context" block: who
   wrote it (name and mention), the channel (name, topic, purpose), the thread (`channel` and
-  `thread_ts`, so the assistant can answer there later), the thread so far — or only what was said
+  `thread_ts`, so the Slack global session can answer there later), the thread so far — or only what was said
   since the bot's last reply — plus the last two channel messages before the thread (flagged as maybe
   unrelated). Without the `users:read` scope it falls back to bare ids.
 - **Who people are.** The agent sees people's real names, handles and ids, and mentions in message
@@ -60,17 +60,17 @@ list); after that every thread, in any channel, goes to the same one.
 - **Reading Slack.** `SlackReadThread` reads a whole thread (or one you link), `SlackReadChannel`
   the channel history a page at a time (20 by default, up to 100), `SlackDownloadFile` any file
   in Slack. Channels the bot can see are only readable when they could be read by the owner: ones the
-  assistant already serves, public ones, or private ones the owner (by their linked Slack account)
+  global session already serves, public ones, or private ones the owner (by their linked Slack account)
   is a member of. These tools, `SlackEditMessage`, `SessionCost` and `SystemStats` exist only in
-  Slack assistant sessions.
+  Slack global session sessions.
 - **Attachments.** Files attached to a message reach the agent: text-like files (json, txt, csv,
   svg, md, logs, code…) inline (up to 20 KB each), everything else — images, PDFs, archives — saved
   to disk, outside any repo. Up to five files per message, 25 MB each. Needs `files:read`.
-- **Nothing sensitive in Slack.** Slack is visible to everyone in the company, so the assistant is
+- **Nothing sensitive in Slack.** Slack is visible to everyone in the company, so the Slack global session is
   told — as its most important rule — never to post secrets or anything sensitive: keys, tokens,
   passwords, `.env` or config contents, credentials, personal data, files or logs that might contain
   them. Even when asked to send such a file, it refuses and points to the session or pull request.
-  Baguette also checks every message the assistant posts: one that looks like it contains a secret
+  Baguette also checks every message the Slack global session posts: one that looks like it contains a secret
   is blocked and replaced by that pointer.
 - **Formatting.** Replies use Slack's native Markdown block (headings, lists, code blocks, tables,
   links), with a plain-text fallback.

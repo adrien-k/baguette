@@ -1,5 +1,5 @@
 /**
- * The "Baguette is cooking…" indicator under a Slack thread while the assistant works on a
+ * The "Baguette is cooking…" indicator under a Slack thread while the global session works on a
  * message from it: Slack's native status line (`assistant.threads.setStatus`) and the agent state
  * `processing`, which adds a Stop button once the app subscribes to `agent_session_stopped`.
  * Slack may refuse either (missing scope or feature); the indicator is a nicety, so that is
@@ -27,7 +27,7 @@ export function createSlackStatus() {
     }
   }
 
-  /** Shows the indicator in a thread while the assistant works on a message from it. */
+  /** Shows the indicator in a thread while the global session works on a message from it. */
   async function show(sessionId, slackApp, target) {
     const threads = shown.get(sessionId) ?? new Map();
     threads.set(`${target.channel}:${target.threadTs}`, { slackApp, target });

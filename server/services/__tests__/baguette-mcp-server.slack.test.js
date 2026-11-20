@@ -155,7 +155,7 @@ describe('tool registration', () => {
     for (const name of ASSISTANT_TOOLS) expect(names).not.toContain(name);
   });
 
-  it('gives a Slack assistant session the tools to read and answer in Slack', async () => {
+  it('gives a Slack global session session the tools to read and answer in Slack', async () => {
     const names = (await buildTools({ sessionFields: { slack_app_id: 1 } })).map((t) => t.name);
     for (const name of ASSISTANT_TOOLS) expect(names).toContain(name);
   });

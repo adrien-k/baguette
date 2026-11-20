@@ -44,7 +44,7 @@ describe('find', () => {
 });
 
 describe('repository scope', () => {
-  it('stores the repos an app’s assistants may use and returns them as a list', async () => {
+  it('stores the repos an app’s global sessions may use and returns them as a list', async () => {
     const created = await service().create({ name: 'acme', bot_token: 'xoxb-one' }, params);
     expect(created.allowed_repo_ids).toBeNull();
 

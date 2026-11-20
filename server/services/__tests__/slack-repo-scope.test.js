@@ -1,5 +1,5 @@
 /**
- * Which repositories a Slack app's assistants may work in.
+ * Which repositories a Slack app's global sessions may work in.
  */
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -37,16 +37,16 @@ describe('sessionRepoScope', () => {
     service: () => ({ repoScope: vi.fn().mockResolvedValue(scope) }),
   });
 
-  it('limits only Slack assistant sessions', async () => {
+  it('limits only Slack global session sessions', async () => {
     expect(await sessionRepoScope(appWith([1]), { id: 1 })).toBeNull();
     expect(await sessionRepoScope(appWith([1]), null)).toBeNull();
     expect(await sessionRepoScope(appWith([1]), { id: 1, slack_app_id: 3 })).toEqual([1]);
   });
 
   it('allows a repo inside the scope, or any when there is none', async () => {
-    const assistant = { id: 1, slack_app_id: 3 };
-    expect(await isRepoInSlackScope(appWith([1]), assistant, 1)).toBe(true);
-    expect(await isRepoInSlackScope(appWith([1]), assistant, 2)).toBe(false);
-    expect(await isRepoInSlackScope(appWith(null), assistant, 2)).toBe(true);
+    const globalSession = { id: 1, slack_app_id: 3 };
+    expect(await isRepoInSlackScope(appWith([1]), globalSession, 1)).toBe(true);
+    expect(await isRepoInSlackScope(appWith([1]), globalSession, 2)).toBe(false);
+    expect(await isRepoInSlackScope(appWith(null), globalSession, 2)).toBe(true);
   });
 });

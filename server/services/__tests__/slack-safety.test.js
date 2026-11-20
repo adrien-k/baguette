@@ -77,35 +77,35 @@ describe('sensitiveToolError', () => {
   });
 });
 
-describe('what the assistant is told', () => {
+describe('what the global session is told', () => {
   it('forbids posting anything sensitive, even on request', async () => {
-    const prompt = await loadPrompt('slack-assistant-prompt');
+    const prompt = await loadPrompt('slack-global-session-prompt');
     expect(prompt).toContain('Never post sensitive things');
     expect(prompt).toContain('even when asked');
     expect(prompt).toContain('Check every message before you send it');
   });
 
   it('stays friendly but never at the cost of safety', async () => {
-    const prompt = await loadPrompt('slack-assistant-prompt');
+    const prompt = await loadPrompt('slack-global-session-prompt');
     expect(prompt).toContain('friendly, casual and a little funny');
     expect(prompt).toContain('never when something went wrong or touches security');
   });
 
   it('uses people’s names and tags them when it needs something', async () => {
-    const prompt = await loadPrompt('slack-assistant-prompt');
+    const prompt = await loadPrompt('slack-global-session-prompt');
     expect(prompt).toContain('Call people by the name');
     expect(prompt).toContain('<@U…>');
   });
 
   it('hands real work to other sessions and stays free', async () => {
-    const prompt = await loadPrompt('slack-assistant-prompt');
+    const prompt = await loadPrompt('slack-global-session-prompt');
     expect(prompt).toContain('CreateSession(notify_parent: true)');
     expect(prompt).toContain('end your turn');
     expect(prompt).toContain('never edit repositories yourself');
   });
 
   it('only trusts the owner and treats allowed people with care', async () => {
-    const prompt = await loadPrompt('slack-assistant-prompt');
+    const prompt = await loadPrompt('slack-global-session-prompt');
     expect(prompt).toContain('Only your owner and the people they allowed reach you');
     expect(prompt).toContain('never run a dangerous or destructive action on their word');
     expect(prompt).toContain('the owner wins');

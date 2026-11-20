@@ -46,7 +46,7 @@ import {
 } from '../github.js';
 import {
   removeSlackFileDirs,
-  slackAssistantFilesDir,
+  slackGlobalSessionFilesDir,
   slackSessionFilesDir,
 } from '../slack-files.js';
 import { trimSessionMessagesForArchive } from '../session-archive.js';
@@ -771,12 +771,12 @@ export class SessionsService extends KnexService {
     await this._finalizeRemoval(session.id);
   }
 
-  /** Deletes the Slack files saved for a session (an assistant's attachments included). */
+  /** Deletes the Slack files saved for a session (a global session's attachments included). */
   async _removeSlackFiles(session) {
     try {
       const dirs = [slackSessionFilesDir(session.id)];
       if (session.slack_app_id) {
-        dirs.push(slackAssistantFilesDir(session.slack_app_id, session.user_id));
+        dirs.push(slackGlobalSessionFilesDir(session.slack_app_id, session.user_id));
       }
       await removeSlackFileDirs(dirs);
     } catch (err) {
@@ -1203,15 +1203,15 @@ export class SessionsService extends KnexService {
     return { totals, breakdown, by_agent };
   }
 
-  /** Slack side of an assistant session: its owner and the people it listens to besides them. */
+  /** Slack side of a global session session: its owner and the people it listens to besides them. */
   async sessionSlack(_data, params) {
     const session = params.resolvedSession;
     if (!session.slack_app_id) return { linked: false };
-    const assistants = this.app.service('slack-assistants');
+    const globalSessions = this.app.service('slack-global-sessions');
     const slackApp = await this.app.service('admin/slack').get(session.slack_app_id, {});
     const [ownerId, allowedIds] = await Promise.all([
-      assistants.slackIdOf(session.slack_app_id, session.user_id),
-      assistants.allowedSlackIds(session.id),
+      globalSessions.slackIdOf(session.slack_app_id, session.user_id),
+      globalSessions.allowedSlackIds(session.id),
     ]);
     const handle = (id) => slackUserHandle(slackApp.bot_token, id);
     return {
@@ -1222,20 +1222,20 @@ export class SessionsService extends KnexService {
     };
   }
 
-  /** Replaces the people the assistant listens to (the owner is always one of them). */
+  /** Replaces the people the global session listens to (the owner is always one of them). */
   async setSlackAllowedUsers(data, params) {
     const session = params.resolvedSession;
-    if (!session.slack_app_id) throw new BadRequest('This session is not a Slack assistant');
+    if (!session.slack_app_id) throw new BadRequest('This session is not a Slack global session');
     if (params.user?.id !== session.user_id) {
-      throw new Forbidden('Only the session owner can change who the assistant listens to');
+      throw new Forbidden('Only the session owner can change who the global session listens to');
     }
     const usernames = Array.isArray(data?.usernames) ? data.usernames : [];
-    const assistants = this.app.service('slack-assistants');
+    const globalSessions = this.app.service('slack-global-sessions');
     const slackApp = await this.app.service('admin/slack').get(session.slack_app_id, {});
     const { ids, unknown } = await resolveSlackUsernames(slackApp.bot_token, usernames);
     if (unknown.length) throw new BadRequest(`Unknown Slack users: ${unknown.join(', ')}`);
-    const ownerId = await assistants.slackIdOf(session.slack_app_id, session.user_id);
-    await assistants.setAllowedSlackIds(
+    const ownerId = await globalSessions.slackIdOf(session.slack_app_id, session.user_id);
+    await globalSessions.setAllowedSlackIds(
       session.id,
       ids.filter((id) => id !== ownerId)
     );

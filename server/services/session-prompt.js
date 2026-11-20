@@ -136,7 +136,7 @@ export async function buildSystemPromptAppend(
   if (isGlobalSession(sessionRow)) {
     const prompt = await loadPrompt('global-prompt', {});
     if (!sessionRow.slack_app_id) return finishPrompt(prompt);
-    return finishPrompt(`${prompt}\n\n${await loadPrompt('slack-assistant-prompt', {})}`);
+    return finishPrompt(`${prompt}\n\n${await loadPrompt('slack-global-session-prompt', {})}`);
   }
 
   const repoRow = await resolveRepoRow(sessionRow, { repo, db });

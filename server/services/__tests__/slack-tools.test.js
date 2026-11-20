@@ -36,7 +36,7 @@ import { createSystemStatsTool, formatBytes, formatDuration } from '../mcp/tools
 import { createSlackReadThreadTool, parseSlackThreadUrl } from '../mcp/tools/slack-read-thread.js';
 import {
   decryptedApp,
-  insertAssistant,
+  insertGlobalSession,
   insertSession,
   insertSlackApp,
   insertThread,
@@ -48,18 +48,18 @@ import {
 const db = createTestDb();
 
 /**
- * Tool context for a session. `bound`: a Slack assistant answering a message in thread C1 / 9.9;
+ * Tool context for a session. `bound`: a Slack global session answering a message in thread C1 / 9.9;
  * otherwise an ordinary session that no Slack message is waiting on.
  */
 async function toolContext({ bound = true, apps } = {}) {
   const userId = await insertUser(db);
   const appId = await insertSlackApp(db);
   const sessionId = bound
-    ? await insertAssistant(db, userId, appId)
+    ? await insertGlobalSession(db, userId, appId)
     : await insertSession(db, userId);
   if (bound) await insertThread(db, sessionId);
   const slackApps = apps ?? [decryptedApp({ id: appId })];
-  const assistants = slackTestApp(db).service('slack-assistants');
+  const globalSessions = slackTestApp(db).service('slack-global-sessions');
   const bot = { replyTarget: () => (bound ? { channel: 'C1', threadTs: '9.9' } : null) };
   return {
     appId,
@@ -69,7 +69,7 @@ async function toolContext({ bound = true, apps } = {}) {
       app: {
         get: (key) => (key === 'slackBot' ? bot : db),
         service: (name) =>
-          name === 'slack-assistants' ? assistants : { find: async () => slackApps },
+          name === 'slack-global-sessions' ? globalSessions : { find: async () => slackApps },
       },
       slackApps,
       session: { id: sessionId },

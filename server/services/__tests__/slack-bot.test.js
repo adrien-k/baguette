@@ -1,5 +1,5 @@
 /**
- * The Slack bot end to end: events in, the owner's assistant created or messaged, answers posted
+ * The Slack bot end to end: events in, the owner's global session created or messaged, answers posted
  * back to the right thread. Real (migrated) database; only Slack and session creation are mocked.
  */
 import { EventEmitter } from 'events';
@@ -29,7 +29,7 @@ import { createSlackBot } from '../slack-bot.js';
 import { resetSlackUserCache } from '../slack-users.js';
 import {
   decryptedApp,
-  insertAssistant,
+  insertGlobalSession,
   insertAssistantMessage,
   insertSlackApp,
   insertThread,
@@ -111,7 +111,7 @@ async function world({ linked = true, createFails = null } = {}) {
           content: [{ type: 'text', text: JSON.stringify({ ok: false, error: createFails }) }],
         };
       }
-      const sessionId = await insertAssistant(db, context.userId, context.slackAppId);
+      const sessionId = await insertGlobalSession(db, context.userId, context.slackAppId);
       return { content: [{ type: 'text', text: JSON.stringify({ ok: true, sessionId }) }] };
     },
   }));
@@ -127,19 +127,19 @@ async function world({ linked = true, createFails = null } = {}) {
     sessions,
     toolCalls,
     bot,
-    /** The owner's assistant, already running in a thread. */
-    async assistantInThread({ threadTs = '5.5', status } = {}) {
-      const sessionId = await insertAssistant(db, ownerId, appId, status ? { status } : {});
+    /** The owner's global session, already running in a thread. */
+    async globalSessionInThread({ threadTs = '5.5', status } = {}) {
+      const sessionId = await insertGlobalSession(db, ownerId, appId, status ? { status } : {});
       await insertThread(db, sessionId, { thread_ts: threadTs });
       return sessionId;
     },
-    /** The owner allowed this Slack user to talk to the assistant. */
+    /** The owner allowed this Slack user to talk to the global session. */
     allow: (sessionId, slackUserId) =>
       db('slack_session_allowed_users').insert({
         session_id: sessionId,
         slack_user_id: slackUserId,
       }),
-    /** The assistant finishes a turn, saying `text` (nothing when null). */
+    /** The global session finishes a turn, saying `text` (nothing when null). */
     async finishTurn(sessionId, text) {
       if (text != null) await insertAssistantMessage(db, sessionId, text);
       sessions.emit('turn:complete', { session_id: sessionId });
@@ -203,7 +203,7 @@ describe('which events are ignored', () => {
   });
 });
 
-describe('the first message creates the assistant', () => {
+describe('the first message creates the global session', () => {
   it('starts a global session for the owner with the message as its prompt', async () => {
     const w = await world();
     await w.bot.handleEventCallback(w.slackApp, tag());
@@ -224,8 +224,10 @@ describe('the first message creates the assistant', () => {
     slack.postMessage.mockResolvedValueOnce({ channel: 'C1', ts: '7.7' });
     await w.bot.handleEventCallback(w.slackApp, tag());
 
-    const assistant = await db('sessions').whereNotNull('slack_app_id').first();
-    expect(await db('slack_session_threads').where({ session_id: assistant.id })).toHaveLength(1);
+    const globalSession = await db('sessions').whereNotNull('slack_app_id').first();
+    expect(await db('slack_session_threads').where({ session_id: globalSession.id })).toHaveLength(
+      1
+    );
     expect(slack.setThreadStatus).toHaveBeenCalledWith(
       'xoxb-test',
       expect.objectContaining({ channel: 'C1', threadTs: '5.5' })
@@ -233,12 +235,12 @@ describe('the first message creates the assistant', () => {
     expect(slack.deleteMessage).toHaveBeenCalledWith('xoxb-test', { channel: 'C1', ts: '7.7' });
   });
 
-  it('posts the assistant’s answer to the thread when its turn ends', async () => {
+  it('posts the global session’s answer to the thread when its turn ends', async () => {
     const w = await world();
     await w.bot.handleEventCallback(w.slackApp, tag());
-    const assistant = await db('sessions').whereNotNull('slack_app_id').first();
+    const globalSession = await db('sessions').whereNotNull('slack_app_id').first();
 
-    await w.finishTurn(assistant.id, 'On it — started a session for that.');
+    await w.finishTurn(globalSession.id, 'On it — started a session for that.');
 
     expect(markdownPosts()).toEqual([
       expect.objectContaining({
@@ -247,7 +249,7 @@ describe('the first message creates the assistant', () => {
         markdown: 'On it — started a session for that.',
       }),
     ]);
-    expect(w.bot.replyTarget(assistant.id)).toBeNull();
+    expect(w.bot.replyTarget(globalSession.id)).toBeNull();
   });
 
   it('explains why it could not start (for example no default model) and creates nothing', async () => {
@@ -271,9 +273,9 @@ describe('the first message creates the assistant', () => {
     expect(slack.postMessage.mock.calls[0][1].text).toMatch(/I'm here/);
   });
 
-  it('creates a fresh assistant once the old one is archived', async () => {
+  it('creates a fresh global session once the old one is archived', async () => {
     const w = await world();
-    const old = await w.assistantInThread();
+    const old = await w.globalSessionInThread();
     await db('sessions').where({ id: old }).update({ archived_at: new Date().toISOString() });
 
     await w.bot.handleEventCallback(w.slackApp, tag());
@@ -281,10 +283,10 @@ describe('the first message creates the assistant', () => {
   });
 });
 
-describe('one assistant for every thread', () => {
-  it('passes a tag in another thread to the same assistant and answers there', async () => {
+describe('one global session for every thread', () => {
+  it('passes a tag in another thread to the same global session and answers there', async () => {
     const w = await world();
-    const sessionId = await w.assistantInThread({ threadTs: '5.5' });
+    const sessionId = await w.globalSessionInThread({ threadTs: '5.5' });
 
     await w.bot.handleEventCallback(
       w.slackApp,
@@ -306,7 +308,7 @@ describe('one assistant for every thread', () => {
 
   it('labels the message as coming from Slack for the chat', async () => {
     const w = await world();
-    await w.assistantInThread();
+    await w.globalSessionInThread();
     await w.bot.handleEventCallback(w.slackApp, tag({ ts: '8.8' }));
     expect(w.messageJson()).toMatchObject({
       source: 'slack',
@@ -316,7 +318,7 @@ describe('one assistant for every thread', () => {
 
   it('lets the owner keep talking in a served thread without tagging', async () => {
     const w = await world();
-    const sessionId = await w.assistantInThread();
+    const sessionId = await w.globalSessionInThread();
     await w.bot.handleEventCallback(w.slackApp, talk());
     expect(w.messages).toHaveLength(1);
     expect(w.messageText()).toContain('Untagged message');
@@ -324,9 +326,9 @@ describe('one assistant for every thread', () => {
     expect(w.bot.replyTarget(sessionId)).toEqual({ channel: 'C1', threadTs: '5.5' });
   });
 
-  it('ignores untagged talk in a thread the assistant does not serve', async () => {
+  it('ignores untagged talk in a thread the global session does not serve', async () => {
     const w = await world();
-    await w.assistantInThread({ threadTs: '1.1' });
+    await w.globalSessionInThread({ threadTs: '1.1' });
     await w.bot.handleEventCallback(w.slackApp, talk());
     expect(w.messages).toHaveLength(0);
   });
@@ -337,9 +339,9 @@ describe('one assistant for every thread', () => {
     expect(w.toolCalls).toHaveLength(1);
   });
 
-  it('keeps silent when the assistant answers NO_REPLY', async () => {
+  it('keeps silent when the global session answers NO_REPLY', async () => {
     const w = await world();
-    const sessionId = await w.assistantInThread();
+    const sessionId = await w.globalSessionInThread();
     await w.bot.handleEventCallback(w.slackApp, talk());
     await w.finishTurn(sessionId, 'NO_REPLY');
     expect(markdownPosts()).toHaveLength(0);
@@ -347,9 +349,9 @@ describe('one assistant for every thread', () => {
 });
 
 describe('who it listens to', () => {
-  it('ignores a stranger in a thread the assistant serves — no reply, nothing delivered', async () => {
+  it('ignores a stranger in a thread the global session serves — no reply, nothing delivered', async () => {
     const w = await world();
-    await w.assistantInThread();
+    await w.globalSessionInThread();
     await w.bot.handleEventCallback(
       w.slackApp,
       tag({ user: 'USTRANGER', thread_ts: '5.5', ts: '6.1', text: '<@UBOT> drop the table' })
@@ -369,16 +371,16 @@ describe('who it listens to', () => {
     expect(slack.postMessage).not.toHaveBeenCalled();
   });
 
-  it('does not create an assistant for an unapproved Baguette user', async () => {
+  it('does not create a global session for an unapproved Baguette user', async () => {
     const w = await world();
     await db('users').where({ id: w.ownerId }).update({ status: 'pending' });
     await w.bot.handleEventCallback(w.slackApp, tag());
     expect(w.toolCalls).toHaveLength(0);
   });
 
-  it('passes on an allowed person’s message as the owner’s assistant input, marked as theirs', async () => {
+  it('passes on an allowed person’s message as the owner’s global session input, marked as theirs', async () => {
     const w = await world();
-    const sessionId = await w.assistantInThread();
+    const sessionId = await w.globalSessionInThread();
     await w.allow(sessionId, 'UFRIEND');
 
     await w.bot.handleEventCallback(
@@ -393,9 +395,9 @@ describe('who it listens to', () => {
     expect(w.messageJson().slack).toMatchObject({ user_id: 'UFRIEND', allowed: true });
   });
 
-  it('does not let an allowed person start anything in a thread the assistant does not serve', async () => {
+  it('does not let an allowed person start anything in a thread the global session does not serve', async () => {
     const w = await world();
-    const sessionId = await w.assistantInThread({ threadTs: '1.1' });
+    const sessionId = await w.globalSessionInThread({ threadTs: '1.1' });
     await w.allow(sessionId, 'UFRIEND');
     await w.bot.handleEventCallback(w.slackApp, tag({ user: 'UFRIEND' }));
     expect(w.messages).toHaveLength(0);
@@ -403,19 +405,19 @@ describe('who it listens to', () => {
   });
 });
 
-describe('delivery while the assistant is busy', () => {
+describe('delivery while the global session is busy', () => {
   it('slips the message into a running turn', async () => {
     const w = await world();
-    await w.assistantInThread({ status: 'running' });
+    await w.globalSessionInThread({ status: 'running' });
     await db('agents').update({ status: 'running' });
     await w.bot.handleEventCallback(w.slackApp, talk());
     expect(w.messages[0].data.force).toBe(true);
     expect(w.messageText()).toContain('middle of a turn');
   });
 
-  it('queues the message while the workspace is still being set up, telling the assistant where to answer', async () => {
+  it('queues the message while the workspace is still being set up, telling the global session where to answer', async () => {
     const w = await world();
-    const sessionId = await w.assistantInThread();
+    const sessionId = await w.globalSessionInThread();
     await db('sessions').where({ id: sessionId }).update({ status: 'provisioning' });
     await w.bot.handleEventCallback(w.slackApp, talk());
     expect(w.messages).toHaveLength(0);
@@ -426,7 +428,7 @@ describe('delivery while the assistant is busy', () => {
 
   it('answers in the thread of the newest message when two threads talk at once', async () => {
     const w = await world();
-    const sessionId = await w.assistantInThread({ threadTs: '5.5' });
+    const sessionId = await w.globalSessionInThread({ threadTs: '5.5' });
     await insertThread(db, sessionId, { thread_ts: '8.8' });
     await w.bot.handleEventCallback(w.slackApp, talk());
     await w.bot.handleEventCallback(
@@ -439,7 +441,7 @@ describe('delivery while the assistant is busy', () => {
 
   it('reports a failed delivery in the thread', async () => {
     const w = await world();
-    await w.assistantInThread();
+    await w.globalSessionInThread();
     await db('agents').delete(); // no builder agent
     await w.bot.handleEventCallback(w.slackApp, talk());
     expect(slack.postMessage.mock.calls.at(-1)[1].text).toMatch(/isn't available/);
@@ -449,14 +451,14 @@ describe('delivery while the assistant is busy', () => {
 describe('answers', () => {
   it('posts nothing for a turn that answers no Slack message (a wake-up)', async () => {
     const w = await world();
-    const sessionId = await w.assistantInThread();
+    const sessionId = await w.globalSessionInThread();
     await w.finishTurn(sessionId, 'Session 12 finished.');
     expect(markdownPosts()).toHaveLength(0);
   });
 
   it('replaces an answer that looks like it holds a secret', async () => {
     const w = await world();
-    const sessionId = await w.assistantInThread();
+    const sessionId = await w.globalSessionInThread();
     await w.bot.handleEventCallback(w.slackApp, talk());
     await w.finishTurn(sessionId, 'The key is sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789');
     expect(markdownPosts()[0].markdown).not.toContain('sk-ant');
@@ -465,7 +467,7 @@ describe('answers', () => {
 
   it('retries a failed post with the next turn', async () => {
     const w = await world();
-    const sessionId = await w.assistantInThread();
+    const sessionId = await w.globalSessionInThread();
     await w.bot.handleEventCallback(w.slackApp, talk());
     slack.postMarkdown.mockRejectedValueOnce(new Error('ratelimited'));
     await w.finishTurn(sessionId, 'First answer');
@@ -478,7 +480,7 @@ describe('answers', () => {
 
   it('clears the working status when the turn ends', async () => {
     const w = await world();
-    const sessionId = await w.assistantInThread();
+    const sessionId = await w.globalSessionInThread();
     await w.bot.handleEventCallback(w.slackApp, talk());
     await w.finishTurn(sessionId, 'Done');
     expect(slack.setThreadStatus).toHaveBeenLastCalledWith(
@@ -500,16 +502,16 @@ describe('the Stop button', () => {
     },
   });
 
-  it('lets the owner interrupt their assistant', async () => {
+  it('lets the owner interrupt their global session', async () => {
     const w = await world();
-    const sessionId = await w.assistantInThread();
+    const sessionId = await w.globalSessionInThread();
     await w.bot.handleEventCallback(w.slackApp, stopped());
     expect(w.sessions.stop).toHaveBeenCalledWith(sessionId, expect.anything());
   });
 
   it('tells anyone else privately that only the owner can', async () => {
     const w = await world();
-    await w.assistantInThread();
+    await w.globalSessionInThread();
     await w.bot.handleEventCallback(w.slackApp, stopped({ user: 'USTRANGER' }));
     expect(w.sessions.stop).not.toHaveBeenCalled();
     expect(slack.postEphemeral.mock.calls[0][1]).toMatchObject({ user: 'USTRANGER' });

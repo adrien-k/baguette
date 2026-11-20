@@ -118,7 +118,7 @@ function SlackCard({ session, readonly }) {
       setSlack(await sessionsService.setSlackAllowedUsers({ id: session.id, usernames }));
       setEditing(false);
     } catch (err) {
-      toastError('Failed to update who the assistant listens to', err);
+      toastError('Failed to update who the Slack global session listens to', err);
     } finally {
       setSaving(false);
     }
@@ -135,7 +135,7 @@ function SlackCard({ session, readonly }) {
           <span className="w-[6rem] shrink-0 text-faint">Owner</span>
           <span className="text-secondary">
             {slack.owner ?? 'Unknown'}
-            <SlackHelp help="The Baguette user this assistant works as. Only they can change who else it listens to." />
+            <SlackHelp help="The Baguette user this Slack global session works as. Only they can change who else it listens to." />
           </span>
         </div>
         <div className="flex items-start gap-1.5">
@@ -177,15 +177,15 @@ function SlackCard({ session, readonly }) {
             <>
               <span className="min-w-0 flex-1 break-words text-secondary">
                 {slack.allowed.length ? slack.allowed.join(', ') : '—'}
-                <SlackHelp help="Other people the owner allowed to talk to the assistant in threads it serves. Everyone else is ignored." />
+                <SlackHelp help="Other people the owner allowed to talk to it in the threads it serves. Everyone else is ignored." />
               </span>
               {!readonly && (
                 <button
                   type="button"
                   onClick={startEdit}
                   className="shrink-0 rounded p-1 text-faint hover:text-fg-muted hover:bg-control transition-colors"
-                  title="Edit who the assistant listens to"
-                  aria-label="Edit who the assistant listens to"
+                  title="Edit who the Slack global session listens to"
+                  aria-label="Edit who the Slack global session listens to"
                 >
                   <Pencil className="w-3 h-3" />
                 </button>

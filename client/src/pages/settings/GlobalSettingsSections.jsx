@@ -1155,7 +1155,7 @@ function SlackAppCard({ app, onChanged }) {
 
       <Field
         label="Repositories"
-        hint="The repositories this app's assistant may start sessions in. Leave all unchecked to allow every repository."
+        hint="The repositories this app's Slack global sessions may start sessions in. Leave all unchecked to allow every repository."
       >
         <div className="max-h-40 overflow-y-auto space-y-1">
           {repos.map((repo) => (
@@ -1339,9 +1339,9 @@ export function SlackTab() {
   return (
     <div>
       <SettingsTabHeader title="Slack">
-        Connect Slack apps so people can talk to their Baguette assistant from Slack (each person
-        links their own Baguette account the first time) and agents can post updates. Instance-wide
-        — available to every session once at least one app is saved.
+        Connect Slack apps so people can talk to their Baguette globalSession from Slack (each
+        person links their own Baguette account the first time) and agents can post updates.
+        Instance-wide — available to every session once at least one app is saved.
       </SettingsTabHeader>
       <SettingsSection
         title="Apps"

@@ -178,7 +178,7 @@ export function createSlackContext() {
 
   /**
    * @param {{ userId: number, followUp?: boolean, untagged?: boolean }} options `userId`: the
-   *   assistant's owner (where attachments are saved); `followUp`: only add what was said since
+   *   global session's owner (where attachments are saved); `followUp`: only add what was said since
    *   the agent's last reply; `untagged`: the message was not addressed to the bot.
    */
   async function slackContext(
