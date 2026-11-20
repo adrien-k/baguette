@@ -325,6 +325,8 @@ describe('builder MCP tool registry', () => {
     const push = tools.find((t) => t.name === 'GitPush');
     expect(push.description).toMatch(/not for regular turn work/i);
     expect(push.description).toMatch(/approval/i);
+    expect(push.description).toMatch(/isolated subagent/i);
+    expect(push.description).toMatch(/no need to merge/i);
   });
 
   it('keeps GitHub PR tools for github remotes with a token', async () => {
