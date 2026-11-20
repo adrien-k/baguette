@@ -1,9 +1,9 @@
 <% require "dotenv"; Dotenv.load(".kamal/.env") if File.exist?(".kamal/.env") %>
 <% remote_registry = ENV["DOCKER_REGISTRY_USERNAME"].to_s.strip != "" %>
 <% docker_image = ENV.fetch("DOCKER_IMAGE", "adrien-k/baguette") %>
+<% domain = ENV.fetch("DOMAIN") %>
 <% oauth2_proxy = ENV["OAUTH2_PROXY_PROVIDER"].to_s.strip != "" %>
 <% if oauth2_proxy
-     domain = ENV.fetch("DOMAIN")
      oauth2_optional_clear = %w[
        OAUTH2_PROXY_OIDC_ISSUER_URL
        OAUTH2_PROXY_COOKIE_DOMAINS
@@ -25,7 +25,7 @@ volumes:
 # (the apex A record from your DNS setup must resolve there for SSH).
 <%
   deploy_server = ENV['DEPLOY_SERVER'].to_s.strip
-  deploy_server = ENV.fetch('DOMAIN') if deploy_server.empty?
+  deploy_server = domain if deploy_server.empty?
 %>
 servers:
   web:
@@ -63,8 +63,8 @@ proxy:
   # The apex is routed to Baguette so the app can 301 it to the www canonical host
   # (kamal-proxy canonical_host would also redirect session preview subdomains).
   hosts:
-    - "*.<%= ENV.fetch('DOMAIN') %>"
-    - <%= ENV.fetch('DOMAIN') %>
+    - "*.<%= domain %>"
+    - <%= domain %>
 <% end %>
 
 
@@ -107,7 +107,7 @@ builder:
 # Remember to run `kamal env push` after making changes!
 env:
   clear:
-    PUBLIC_HOST: https://www.<%= ENV.fetch('DOMAIN') %>
+    PUBLIC_HOST: https://www.<%= domain %>
   secret:
     # Legacy, kept for backward compatibility — existing deployments that set
     # these keep working. New installs do not need them: the first-user wizard
