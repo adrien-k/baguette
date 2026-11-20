@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from './queries/queryClientInstance.js';
 import { AuthProvider, useAuth } from './hooks/useAuth.jsx';
 import {
   Settings as SettingsIcon,
@@ -11,10 +13,13 @@ import {
   Monitor,
 } from 'lucide-react';
 import NavbarTasksAndStats from './components/NavbarTasksAndStats.jsx';
+import { isSessionWorkspacePathname } from '@baguette/shared/session-scope.js';
+import { useMediaQuery } from './hooks/useMediaQuery.js';
 import Login from './pages/Login.jsx';
 import Invite from './pages/Invite.jsx';
 const System = lazy(() => import('./pages/System.jsx'));
 const Session = lazy(() => import('./pages/Session.jsx'));
+const SessionDescription = lazy(() => import('./pages/SessionDescription.jsx'));
 const Settings = lazy(() => import('./pages/Settings.jsx'));
 const Admin = lazy(() => import('./pages/Admin.jsx'));
 const Usage = lazy(() => import('./pages/Usage.jsx'));
@@ -202,12 +207,19 @@ function ProtectedRoute({ children }) {
 
 function AppRoutes() {
   const { user, loading } = useAuth();
+  const { pathname } = useLocation();
+  const isMdUp = useMediaQuery('(min-width: 768px)');
 
   if (loading) return <LoadingScreen />;
 
+  // On phones the session/loop workspace drops the global navbar so the chat
+  // gets the full height — the workspace header's back link takes over. The
+  // list home and every other page keep the navbar.
+  const showNav = isMdUp || !isSessionWorkspacePathname(pathname);
+
   return (
     <div className={`h-screen min-h-screen ${PAGE_BG} flex flex-col`}>
-      <Nav />
+      {showNav ? <Nav /> : null}
       <main className="flex-1 min-h-0 flex flex-col overflow-hidden">
         <Suspense fallback={<LoadingScreen />}>
           <Routes>
@@ -328,6 +340,22 @@ function AppRoutes() {
               element={
                 <ProtectedRoute>
                   <Session />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/sessions/:id/description"
+              element={
+                <ProtectedRoute>
+                  <SessionDescription />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/session/:id/description"
+              element={
+                <ProtectedRoute>
+                  <SessionDescription />
                 </ProtectedRoute>
               }
             />
@@ -489,15 +517,30 @@ function ThemedToaster() {
   );
 }
 
+function QueryDevtools() {
+  const [Devtools, setDevtools] = useState(null);
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    import('@tanstack/react-query-devtools').then((mod) => {
+      setDevtools(() => mod.ReactQueryDevtools);
+    });
+  }, []);
+  if (!Devtools) return null;
+  return <Devtools initialIsOpen={false} buttonPosition="bottom-right" />;
+}
+
 export default function App() {
   return (
-    <AuthProvider>
-      <CurrentUserProvider>
-        <ColorSchemeProvider>
-          <AppContent />
-          <ThemedToaster />
-        </ColorSchemeProvider>
-      </CurrentUserProvider>
-    </AuthProvider>
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <CurrentUserProvider>
+          <ColorSchemeProvider>
+            <AppContent />
+            <ThemedToaster />
+          </ColorSchemeProvider>
+        </CurrentUserProvider>
+      </AuthProvider>
+      <QueryDevtools />
+    </QueryClientProvider>
   );
 }

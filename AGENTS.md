@@ -48,6 +48,16 @@ Agent runtimes (claude, cursor, pi, mock) live in their own `server/agent-sdks/<
 
 Custom method responses and other Baguette API payloads use **snake_case** for object keys (e.g. `short_sha`, `author_email`), consistent with database columns and existing Feathers services. Helpers may use local variable names freely, but **return snake_case** from services to the client. Frontend code should read snake_case from API responses.
 
+## Frontend data fetching: TanStack Query over the Feathers client
+
+Server state lives in **TanStack Query** (`@tanstack/react-query`), layered on top of the Feathers 6 fetch+SSE client (`client/src/feathers.js`). New data hooks must use it — do not hand-roll `useState`/`useEffect` fetch state.
+
+- **Query keys**: always from the factory in `client/src/queries/keys.js` (e.g. `sessionKeys.detail(id)`), never ad-hoc arrays. Add a domain there when introducing new cache entries.
+- **Realtime**: the central `sseCacheBridge` (`client/src/queries/sseCacheBridge.js`) subscribes to Feathers service events and writes payloads into the query cache. For a new service, either add merge handlers there (full-row upserts) or let the bridge invalidate the domain root if events don't carry enough data. Do not attach per-hook `svc.on(...)` listeners for cacheable server state.
+- **Reconnect/refocus**: `refetchOnWindowFocus` and `refetchOnReconnect` stay off (they race the SSE bridge and drop rows). When the SSE stream reconnects, `scheduleReconnectResync` in `client/src/queries/reconnectResync.js` reloads active queries from the server and applies events that arrived during that reload afterward. Pausing the stream only marks queries stale. Do not re-subscribe per hook.
+- **Mutations**: write via Feathers service calls (see the error-handling section for toasting); afterwards invalidate the affected query keys instead of manually refetching. Optimistic updates via `useMutation` are welcome for new call sites.
+- **Tests**: use `createTestQueryClient` + `makeQueryClientWrapper` from `client/src/queries/testUtils.jsx`; assert post-fetch state with `waitFor` (React Query batches observer notifications with `setTimeout(0)`, which plain `act` flushes miss).
+
 ## SQLite migrations (Knex + `better-sqlite3`)
 
 Baguette uses SQLite only. Knex’s SQLite dialect does **not** implement most `ALTER TABLE` variants natively: it often **rebuilds** a table by creating a temp table, copying rows, then running **`DROP TABLE "<name>"`**, then renaming the temp table back. If another table has a foreign key **to** that table, `DROP TABLE` fails with `FOREIGN KEY constraint failed` (for example dropping or altering `users` while `sessions`, `usage`, or `user_repos` reference `users`).

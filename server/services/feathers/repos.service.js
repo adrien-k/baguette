@@ -21,6 +21,7 @@ import {
   initLocalRepo,
   ensureLocalClone,
   toStrippedName,
+  findPublicRemoteRepos,
 } from '../github.js';
 import { loadBaguetteConfig } from '../baguette-config.js';
 import { requireUser, requireAdmin } from './hooks.js';
@@ -396,6 +397,15 @@ class ReposService extends KnexService {
     return { repos: filtered.slice(0, 20), hasMore: filtered.length > 20 };
   }
 
+  /** Search public GitHub repositories (not limited to App-granted repos). */
+  async findPublicRemote(data, params) {
+    const { query = '', org = '' } = typeof data === 'string' ? { query: data } : data || {};
+    const user = await this._loadUserForGithub(params);
+    const token = getGithubToken(user);
+    const repos = await findPublicRemoteRepos(token, { query, org });
+    return { repos, hasMore: repos.length >= 20 };
+  }
+
   async refresh(data, params) {
     const user = await this._loadUserForGithub(params);
     const scope = cacheScopeForUser(user);
@@ -547,6 +557,7 @@ export function registerReposService(app, path = 'repos') {
       'create',
       'remove',
       'findRemote',
+      'findPublicRemote',
       'findOrgs',
       'branches',
       'refresh',

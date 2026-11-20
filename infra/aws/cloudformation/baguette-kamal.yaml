@@ -6,7 +6,8 @@ Parameters:
   DomainName:
     Type: String
     Description: >-
-      App domain (DOMAIN in CI) — Kamal serves www.<DomainName> and *.<DomainName>
+      App domain (DOMAIN in CI) — Kamal serves www.<DomainName>, *.<DomainName>,
+      and redirects <DomainName> (apex) to www
     AllowedPattern: '^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$'
     ConstraintDescription: Must be a valid DNS hostname (e.g. baguette.example.com)
 
@@ -46,6 +47,17 @@ Parameters:
       CIDR allowed for SSH (port 22) — used by Kamal/GitHub Actions deploys only.
       Admin access uses SSM Session Manager (no SSH key required).
 
+  SsmKmsKeyArn:
+    Type: String
+    Default: ''
+    AllowedPattern: '^(|arn:aws[a-z-]*:kms:[a-z0-9-]+:[0-9]+:(key|alias)/[A-Za-z0-9/:_\-]+)$'
+    ConstraintDescription: Must be empty or a KMS key/alias ARN (e.g. arn:aws:kms:us-east-1:123456789012:key/…)
+    Description: >-
+      Optional KMS key encrypting the SSM agent data key (Session Manager
+      preferences or SSM default host management configuration). Grants the
+      instance role kms:Decrypt/GenerateDataKey on it; leave empty when the
+      account does not use KMS-encrypted SSM sessions.
+
   VpcId:
     Type: AWS::EC2::VPC::Id
     Description: VPC for the instance and security group (default VPC is fine)
@@ -78,6 +90,10 @@ Metadata:
           - VolumeType
           - AmiId
           - SshIngressCidr
+          - SsmKmsKeyArn
+
+Conditions:
+  HasSsmKmsKey: !Not [!Equals [!Ref SsmKmsKeyArn, '']]
 
 Resources:
   BaguetteHostRole:
@@ -116,6 +132,26 @@ Resources:
                   - route53:ChangeResourceRecordSets
                   - route53:ListResourceRecordSets
                 Resource: !Sub 'arn:aws:route53:::hostedzone/${HostedZoneId}'
+        # SSM Agent decrypts its data key with the account's SSM-managed key
+        # (alias/aws/ssm) when Session Manager preferences or the default host
+        # management configuration turn on agent data key encryption. Without
+        # this the agent fails its handshake ("Fetching data key failed:
+        # AccessDeniedException kms:Decrypt"). The alias grant is inert until
+        # the alias/key exist.
+        - PolicyName: SsmDataKeyKms
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                  - kms:GenerateDataKey
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm'
+                  - !If
+                    - HasSsmKmsKey
+                    - !Ref SsmKmsKeyArn
+                    - !Ref 'AWS::NoValue'
 
   BaguetteHostInstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -172,11 +208,17 @@ Resources:
             - !Ref BaguetteSecurityGroup
           SubnetId: !Ref SubnetId
       BlockDeviceMappings:
+        # /dev/sda1 is the root device name of the Ubuntu 24.04 canonical AMI
+        # (exposed as nvme0n1 on Nitro). DeleteOnTermination: false keeps the
+        # volume when the instance is replaced or the stack is deleted. The
+        # replacement boots a FRESH root volume — the old one is kept but NOT
+        # re-attached; recover data per the recreate flow in
+        # docs/deployment/aws-ec2-kamal.md.
         - DeviceName: /dev/sda1
           Ebs:
             VolumeSize: !Ref VolumeSize
             VolumeType: !Ref VolumeType
-            DeleteOnTermination: true
+            DeleteOnTermination: false
             Encrypted: true
       Tags:
         - Key: Name
@@ -200,16 +242,8 @@ Resources:
       AllocationId: !GetAtt BaguetteElasticIp.AllocationId
       InstanceId: !Ref BaguetteInstance
 
-  WwwDnsRecord:
-    Type: AWS::Route53::RecordSet
-    Properties:
-      HostedZoneId: !Ref HostedZoneId
-      Name: !Sub 'www.${DomainName}'
-      Type: A
-      TTL: 300
-      ResourceRecords:
-        - !Ref BaguetteElasticIp
-
+  # No dedicated www record: the wildcard covers www.<DomainName> and the
+  # session preview subdomains alike.
   WildcardDnsRecord:
     Type: AWS::Route53::RecordSet
     Properties:
@@ -220,9 +254,21 @@ Resources:
       ResourceRecords:
         - !Ref BaguetteElasticIp
 
+  ApexDnsRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref DomainName
+      Type: A
+      TTL: 300
+      ResourceRecords:
+        - !Ref BaguetteElasticIp
+
 Outputs:
   DeployServer:
-    Description: GitHub Actions variable DEPLOY_SERVER (www hostname; resolves to the Elastic IP)
+    Description: >-
+      Optional GitHub Actions variable DEPLOY_SERVER (suggested www hostname;
+      DOMAIN over SSH resolves via the apex A record)
     Value: !Sub 'www.${DomainName}'
 
   Domain:

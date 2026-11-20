@@ -4,11 +4,18 @@ import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-import 'dotenv/config';
 import logger from './logger.js';
+import { packageRoot } from './lib/package-root.js';
+import {
+  assertProductionDomainConfigured,
+  loadRootDotenv,
+  resolvePublicHost,
+} from './lib/public-host.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const rootDir = path.resolve(__dirname, '..');
+const rootDir = packageRoot();
+
+loadRootDotenv();
 const TEST_DATA_DIR = path.join(
   os.tmpdir(),
   `baguette-test-${Math.random().toString(36).slice(2)}`
@@ -79,12 +86,10 @@ function initEncryptionKey() {
 
 export const ENCRYPTION_KEY = initEncryptionKey();
 
-const DEFAULT_PUBLIC_HOST = process.env.VITE_SERVER_ENABLED
-  ? 'http://localhost:5173'
-  : 'http://localhost:3000';
-const DEFAULT_PUBLIC_API_HOST = 'http://localhost:3000';
+assertProductionDomainConfigured();
 
-export const PUBLIC_HOST = process.env.PUBLIC_HOST || DEFAULT_PUBLIC_HOST;
+export const PUBLIC_HOST = resolvePublicHost();
+
 /**
  * How many reverse-proxy hops sit between Baguette and the internet (kamal-proxy or Fly's
  * router each count as one). X-Forwarded-For is read right-to-left: every proxy appends the
@@ -96,17 +101,14 @@ export const TRUST_PROXY_HOPS = Math.max(
   0,
   Number.parseInt(process.env.TRUST_PROXY_HOPS ?? '1', 10) || 0
 );
-/** API base URL reachable by browsers and external clients (MCP, uploaded images, etc.). */
-export const PUBLIC_API_HOST =
-  process.env.PUBLIC_API_HOST ||
-  (process.env.PUBLIC_HOST
-    ? PUBLIC_HOST
-    : process.env.VITE_SERVER_ENABLED
-      ? DEFAULT_PUBLIC_API_HOST
-      : PUBLIC_HOST);
-export const PUBLIC_API_URL = /^https?:\/\//.test(PUBLIC_API_HOST)
-  ? PUBLIC_API_HOST
-  : `https://${PUBLIC_API_HOST}`;
+/**
+ * Undocumented opt-in: when truthy, push resolves `{{image:…}}` description placeholders
+ * by attaching the uploads to the session pull request (GitHub user-attachments).
+ * Default resolves them to public image URLs instead.
+ */
+export const GITHUB_ENABLE_IMAGE_ATTACH = ['true', '1'].includes(
+  process.env.GITHUB_ENABLE_IMAGE_ATTACH
+);
 /** Streamable HTTP MCP — always on the same public origin as the Baguette UI (`/api/mcp`). */
 export const MCP_HTTP_ENDPOINT = `${PUBLIC_HOST.replace(/\/$/, '')}/api/mcp`;
 

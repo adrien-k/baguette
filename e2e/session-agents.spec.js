@@ -3,7 +3,6 @@ import { MOCK_AGENT_SUMMARY_TEXT } from '../shared/mock-agent-sdk.js';
 import {
   addManualBuilderAgent,
   createLocalRepo,
-  deleteAgentFromPanel,
   devLogin,
   expectMcpReadonlyComposer,
   MOCK_E2E_QUICK_TURN_PROMPT,
@@ -12,12 +11,16 @@ import {
   MOCK_E2E_SUBAGENT_PROMPT,
   MOCK_E2E_SUBAGENT_SUMMARY,
   expectComposerAgentSwitcherSections,
-  openSessionAgentsPanel,
+  parseSessionIdFromUrl,
+  saveE2eLocatorScreenshot,
   saveE2eScreenshot,
-  selectAgentInPanel,
+  selectAgentInTree,
+  selectAgentViaComposer,
+  sessionAgentTreeRow,
   expectMockQuickTurnComplete,
   sendSessionChatMessage,
   sessionChatComposer,
+  settleForScreenshot,
   startMockBuilderSession,
 } from './helpers.js';
 
@@ -33,8 +36,8 @@ test.describe('session agents (mock)', () => {
     await expectMockQuickTurnComplete(page);
 
     await addManualBuilderAgent(page, MANUAL_BUILDER_NAME);
-    await selectAgentInPanel(page, 'Main');
-    await page.getByRole('button', { name: 'Chat', exact: true }).click();
+    // The primary builder has no subagent children yet, so it has no tree row — use the composer switcher.
+    await selectAgentViaComposer(page, 'Builder');
     await sendSessionChatMessage(page, FULL_MOCK_TURN_PROMPT);
 
     const dialog = await expectComposerAgentSwitcherSections(page);
@@ -48,40 +51,74 @@ test.describe('session agents (mock)', () => {
     await expect(page.getByText(MOCK_AGENT_SUMMARY_TEXT)).toBeVisible({ timeout: 120_000 });
   });
 
-  test('manual builder, MCP subagent, readonly chat, and deletion', async ({ page }) => {
+  test('sidebar highlights the open session while a subagent chat is selected', async ({
+    page,
+  }) => {
     await devLogin(page);
 
     const repoId = await createLocalRepo(page);
     await startMockBuilderSession(page, repoId, MOCK_E2E_QUICK_TURN_PROMPT);
     await expectMockQuickTurnComplete(page);
 
-    await addManualBuilderAgent(page, MANUAL_BUILDER_NAME);
-    await selectAgentInPanel(page, MANUAL_BUILDER_NAME);
-    await sendSessionChatMessage(page, MOCK_E2E_QUICK_TURN_PROMPT);
-    await expect(page.getByText(MOCK_E2E_QUICK_TURN_SUMMARY)).toBeVisible({ timeout: 120_000 });
-
-    await selectAgentInPanel(page, 'Main');
     await sendSessionChatMessage(page, MOCK_E2E_SUBAGENT_PROMPT);
     await expect(page.getByText(MOCK_E2E_SUBAGENT_SUMMARY)).toBeVisible({ timeout: 120_000 });
 
-    await openSessionAgentsPanel(page);
-    await expect(page.getByText('Subagents')).toBeVisible();
-    await expect(page.locator('li').filter({ hasText: MOCK_E2E_SUBAGENT_NAME })).toBeVisible();
-    await saveE2eScreenshot(page, 'agents-panel-subagents.png');
+    await selectAgentInTree(page, MOCK_E2E_SUBAGENT_NAME);
 
-    await selectAgentInPanel(page, MOCK_E2E_SUBAGENT_NAME);
+    const sessionId = parseSessionIdFromUrl(page.url());
+    const sessionEntry = page.locator(
+      `[data-testid="mini-session-entry"][data-session-id="${sessionId}"][data-selected="true"]`
+    );
+    await expect(sessionEntry).toBeVisible({ timeout: 30_000 });
+    await expect(sessionEntry.getByTestId('mini-session-highlight')).toHaveClass(
+      /bg-control-hover/
+    );
+
+    const subagentRow = sessionAgentTreeRow(page, MOCK_E2E_SUBAGENT_NAME);
+    await expect(subagentRow).toHaveAttribute('data-selected', 'true');
+    await expect(subagentRow).toHaveClass(/border-faint/);
+    const builderRow = sessionAgentTreeRow(page, 'Builder');
+    await expect(builderRow).toHaveAttribute('data-selected', 'false');
+
+    await settleForScreenshot(page);
+    await saveE2eLocatorScreenshot(
+      page.getByTestId('session-list-rail'),
+      'session-highlight-with-agent-chat.png'
+    );
+  });
+
+  test('manual builder, MCP subagent, and readonly chat', async ({ page }) => {
+    await devLogin(page);
+
+    const repoId = await createLocalRepo(page);
+    await startMockBuilderSession(page, repoId, MOCK_E2E_QUICK_TURN_PROMPT);
+    await expectMockQuickTurnComplete(page);
+
+    const manualName = await addManualBuilderAgent(page, MANUAL_BUILDER_NAME);
+    await selectAgentInTree(page, manualName);
+    await sendSessionChatMessage(page, MOCK_E2E_QUICK_TURN_PROMPT);
+    await expect(page.getByText(MOCK_E2E_QUICK_TURN_SUMMARY)).toBeVisible({ timeout: 120_000 });
+
+    // The primary builder has no subagent children yet — switch via the composer.
+    await selectAgentViaComposer(page, 'Builder');
+    await sendSessionChatMessage(page, MOCK_E2E_SUBAGENT_PROMPT);
+    await expect(page.getByText(MOCK_E2E_SUBAGENT_SUMMARY)).toBeVisible({ timeout: 120_000 });
+
+    // The MCP subagent sits directly under the session row in the sidebar tree.
+    await expect(sessionAgentTreeRow(page, MOCK_E2E_SUBAGENT_NAME)).toBeVisible();
+    await saveE2eScreenshot(page, 'session-sidebar-agent-tree.png');
+
+    await selectAgentInTree(page, MOCK_E2E_SUBAGENT_NAME);
     await expectMcpReadonlyComposer(page);
     await saveE2eScreenshot(page, 'mcp-readonly-composer.png');
 
-    await selectAgentInPanel(page, 'Main');
+    // The primary builder is the session row itself — switch via the composer.
+    await selectAgentViaComposer(page, 'Builder');
     await expect(await sessionChatComposer(page)).toBeVisible();
     await expect(
       page.getByText(
         'This agent only accepts new messages via MCP. Switch to another agent to chat in'
       )
     ).toHaveCount(0);
-
-    await deleteAgentFromPanel(page, MOCK_E2E_SUBAGENT_NAME);
-    await expect(page.locator('li').filter({ hasText: MOCK_E2E_SUBAGENT_NAME })).toHaveCount(0);
   });
 });

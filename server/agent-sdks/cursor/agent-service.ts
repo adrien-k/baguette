@@ -16,11 +16,14 @@ import type {
 } from '@cursor/sdk';
 import { SqliteLocalAgentStore } from '@cursor/sdk/sqlite';
 import { access, mkdir, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { cursorSdkStateRoot, cursorWorkspaceRef } from './session-paths.js';
 import logger from '../../logger.js';
 import { disableExternal } from '../../services/feathers/hooks.js';
+import { METADATA_TIMEOUT_MS } from '../../services/session-metadata.js';
 import { resolveDataDirRelativePath, DATA_DIR } from '../../config.js';
+import { agentWorktreeCwd } from '../../services/subagent-worktree.js';
 import { buildBaguetteToolList, buildReviewerAgentTools } from '../../services/mcp/server.js';
 import { loadEnabledMcpServersForSession } from '../../services/user-mcp-runtime.js';
 import { loadConfiguredSlackApps } from '../../services/mcp/lib/slack.js';
@@ -33,7 +36,12 @@ import {
   type CursorStreamUsageCallback,
   type ProcessCursorRunStreamResult,
 } from './sdk-turn.ts';
-import { cursorSilentEndStatusText, cursorTerminalStatusSurfacing } from './turn-error.ts';
+import {
+  cursorSilentEndStatusText,
+  cursorTerminalStatusSurfacing,
+  cursorUsageLimit,
+  type CursorUsageLimit,
+} from './turn-error.ts';
 import { extractUserTextFromUserPayload } from '../../../shared/user-message-content.js';
 import { isSteerableUserMessage, requireTurnModelFromRow } from '../../../shared/turn-model.js';
 import { attachAppErrorHandler, handleAppError } from '../../lib/app-error-handler.js';
@@ -49,6 +57,7 @@ import {
   rejectTurnMismatch,
 } from '../../services/agent-message-dispatch.js';
 import { createMessageStreamWriter } from '../../services/message-writer-factory.ts';
+import { prepareAgentTurnStart } from '../../services/agent-turn-prelude.js';
 import { sessionMessageIdentity } from '../../services/feathers/message-create-fields.js';
 import type { MessageStreamWriter } from '../../../shared/message-stream-writer.ts';
 import type { SystemMessagePayload } from '../../../shared/session-messages.ts';
@@ -81,6 +90,26 @@ import {
 } from '../../services/agent-turn-patch.js';
 
 const CURSOR_CHEAP_MODEL_ID = 'claude-haiku-4-5';
+
+/**
+ * Throwaway store root for one-shot completions (`completeText`): per process so
+ * concurrent runs never contend on one SQLite file, and disposable since nothing
+ * reads the state back. OS tmp cleanup handles the leftovers.
+ */
+const COMPLETE_TEXT_STATE_ROOT = join(tmpdir(), `baguette-cursor-complete-text-${process.pid}`);
+let completeTextScratchStore = null;
+
+/** Lazy singleton `SqliteLocalAgentStore` under the scratch root (see COMPLETE_TEXT_STATE_ROOT). */
+async function getCompleteTextScratchStore() {
+  completeTextScratchStore ??= (async () => {
+    await mkdir(COMPLETE_TEXT_STATE_ROOT, { recursive: true });
+    return SqliteLocalAgentStore.open({
+      workspaceRef: COMPLETE_TEXT_STATE_ROOT,
+      stateRoot: COMPLETE_TEXT_STATE_ROOT,
+    });
+  })();
+  return completeTextScratchStore;
+}
 
 const SYSTEM_PROMPT_RULE_FILENAME = 'system-prompt.mdc';
 const PROMPT_RULE_MODES = ['build', 'review'];
@@ -267,7 +296,8 @@ ${body}`,
       agent?: AgentRow | null;
     } = {}
   ): Promise<AgentOptions> {
-    const cwd = resolveDataDirRelativePath(session.session_path) || '';
+    const cwd =
+      agentWorktreeCwd(session, agent) || resolveDataDirRelativePath(session.session_path) || '';
     const configId = requireAgentConfigId(agentConfigId);
     const resolvedApiKey =
       apiKey !== undefined ? apiKey : await this.resolveApiKey(session, channel, configId);
@@ -411,7 +441,7 @@ ${body}`,
         ...session,
         absolute_session_path: absoluteCwd,
       },
-      { agent, db: this.app.get('db') as never, agentSdk: CURSOR_AGENT_SDK_KEY }
+      { agent, db: this.app.get('db') as never, app: this.app, agentSdk: CURSOR_AGENT_SDK_KEY }
     );
     return this.writePromptRule(session, 'build', {
       description: 'Baguette session rules (always applied)',
@@ -498,9 +528,13 @@ ${body}`,
     agent: SDKAgent,
     session: AgentSessionRow,
     userText: string,
-    sendOptions: Record<string, unknown> = {}
+    sendOptions: Record<string, unknown> = {},
+    baguetteAgent: AgentRow | null = null
   ): Promise<Run> {
-    const cwd = resolveDataDirRelativePath(session.session_path) || '';
+    const cwd =
+      agentWorktreeCwd(session, baguetteAgent) ||
+      resolveDataDirRelativePath(session.session_path) ||
+      '';
     const store = await this.openSessionStore(session);
     try {
       return await agent.send(userText, sendOptions as never);
@@ -533,6 +567,7 @@ ${body}`,
     sendOptions = {},
     activeKey,
     abortController,
+    baguetteAgent = null,
   }: {
     session: AgentSessionRow;
     userText: string;
@@ -547,6 +582,7 @@ ${body}`,
     sendOptions?: Record<string, unknown>;
     activeKey?: string | number;
     abortController?: AbortController;
+    baguetteAgent?: AgentRow | null;
   }): Promise<{ outcome: 'completed' | 'failed' | 'stopped'; agent?: SDKAgent; run?: Run }> {
     const key = activeKey ?? session.id;
     const controller = abortController ?? new AbortController();
@@ -564,7 +600,13 @@ ${body}`,
         resumeAgentId,
         persistAgentId,
       });
-      const run = await this._sendWithBusyRetry(agent, session, userText, sendOptions);
+      const run = await this._sendWithBusyRetry(
+        agent,
+        session,
+        userText,
+        sendOptions,
+        baguetteAgent
+      );
       sessionState.currentRun = run;
       const turnUsage = emptyTurnUsage() as TurnUsage;
       const { allFinishedOk } = await this._streamRunChainWithFollowUps(
@@ -581,6 +623,7 @@ ${body}`,
           onUsage,
           onStatus,
         },
+        baguetteAgent ?? null,
         (nextRun) => {
           sessionState.currentRun = nextRun;
         }
@@ -673,6 +716,10 @@ ${body}`,
         requiresModelParamsOnTurn: getSdkPlugin('cursor')?.requiresModelParamsOnTurn === true,
       });
       const turnAgentConfigId = requireAgentConfigId(row.agent_config_id);
+      await prepareAgentTurnStart(this.app, session, agent, {
+        channel,
+        agentSdk: CURSOR_AGENT_SDK_KEY,
+      });
       const writer =
         turnId != null
           ? createMessageStreamWriter(this.app, {
@@ -741,7 +788,7 @@ ${body}`,
         sendOptions.mode = 'plan';
       }
 
-      const run = await this._sendWithBusyRetry(cursorAgent, session, userText, sendOptions);
+      const run = await this._sendWithBusyRetry(cursorAgent, session, userText, sendOptions, agent);
       sessionState.currentRun = run;
 
       const { allFinishedOk } = await this._streamRunChainWithFollowUps(
@@ -751,6 +798,7 @@ ${body}`,
         turnUsage,
         turnModel,
         { activeKey, channel, writer },
+        agent,
         (nextRun) => {
           sessionState.currentRun = nextRun;
         }
@@ -786,26 +834,28 @@ ${body}`,
       }
     } catch (err) {
       awaitingUser = Boolean(sessionState.endTurnAwaitingUser);
-      if ((err as Error).name !== 'AbortError') {
+      const thrownLimit = channel === 'review' ? null : cursorUsageLimit(err as Error);
+      if (thrownLimit) {
+        logger.warn({ sessionId, err: (err as Error).message }, 'Cursor usage limit reached');
+        await this._handleCursorUsageLimit(session, userId, agent.id, thrownLimit).catch((e) =>
+          logger.warn(
+            { sessionId, err: (e as Error).message },
+            'cursor-agent: usage limit handling failed'
+          )
+        );
+      } else if ((err as Error).name !== 'AbortError') {
         handleAppError(this.app, err, { userId, sessionId });
         logger.error({ sessionId, err: (err as Error).message }, 'Cursor session stream error');
         try {
           if (channel === 'review') {
             await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'failed', {
               sdk: 'cursor',
+              error_message: (err as Error).message,
             });
-            await getReviewAgentTurn(this.app)._persistStatus(session, (err as Error).message);
           } else {
-            await setAgentTurnTerminal(this.app, agent, userId, 'failed');
-            await this._persistStatusMessage(
-              sessionId,
-              userId,
-              (err as Error).message,
-              session,
-              channel,
-              agent.id,
-              turnId
-            );
+            await setAgentTurnTerminal(this.app, agent, userId, 'failed', {
+              error_message: (err as Error).message,
+            });
           }
         } catch {
           // ignore secondary errors
@@ -836,7 +886,7 @@ ${body}`,
   /**
    * Stream one run to completion. Returns { finishedOk, hasBackgroundTask, sawTerminalBreak }.
    * Terminal ERROR/CANCELLED/EXPIRED statuses and silent stream ends mark the turn failed and
-   * persist a status message; real failures also emit `app:error` so the UI bubbles them up
+   * persist a turn_result error; real failures also emit `app:error` so the UI bubbles them up
    * (a bare CANCELLED with no message killed session 922 turn 10 silently, "Service unavailable"
    * only visible on Cursor's side). Only a user-initiated stop (stopTurn → stopRequested) stays
    * quiet, and CANCELLED after a turn-ending Baguette tool (plan / questions) is expected.
@@ -942,6 +992,7 @@ ${body}`,
           surfacing: {
             statusText: cursorSilentEndStatusText(detail),
             isFailure: true,
+            usageLimit: cursorUsageLimit(detail),
           },
         });
       }
@@ -960,7 +1011,7 @@ ${body}`,
 
   /**
    * Terminal failure bookkeeping shared by the terminal-status and silent-end paths:
-   * persist the status row (with the turn id so it lands in the failed turn), mark the
+   * persist a turn_result error (with the turn id so it lands in the failed turn), mark the
    * agent failed unless the stop was deliberate, and emit `app:error` for real failures.
    */
   private async _surfaceCursorTurnFailure(
@@ -974,37 +1025,74 @@ ${body}`,
     }: {
       channel: MessageChannel;
       sessionState: CursorSessionState | undefined;
-      surfacing: { statusText: string; isFailure: boolean };
+      surfacing: { statusText: string; isFailure: boolean; usageLimit?: CursorUsageLimit | null };
     }
   ): Promise<void> {
+    if (surfacing.usageLimit && channel !== 'review' && sessionState?.agentId != null) {
+      await this._handleCursorUsageLimit(
+        session,
+        userId,
+        sessionState.agentId,
+        surfacing.usageLimit
+      );
+      return;
+    }
     if (channel === 'review') {
-      await getReviewAgentTurn(this.app)._persistStatus(session, surfacing.statusText);
       if (surfacing.isFailure) {
         await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'failed', {
           sdk: 'cursor',
+          error_message: surfacing.statusText,
         });
+      } else {
+        await getReviewAgentTurn(this.app)._persistStatus(session, surfacing.statusText);
       }
     } else {
       const agentId = sessionState?.agentId;
       const agentRow = agentId != null ? await getAgentById(this.app.get('db'), agentId) : null;
       if (surfacing.isFailure && agentRow) {
-        await setAgentTurnTerminal(this.app, agentRow, userId, 'failed');
+        await setAgentTurnTerminal(
+          this.app,
+          { ...agentRow, active_turn_id: sessionState?.turnId ?? agentRow.active_turn_id },
+          userId,
+          'failed',
+          {
+            error_message: surfacing.statusText,
+          }
+        );
+      } else {
+        await this._persistStatusMessage(
+          sessionId,
+          userId,
+          surfacing.statusText,
+          session,
+          channel,
+          agentId,
+          sessionState?.turnId ?? null
+        );
       }
-      await this._persistStatusMessage(
-        sessionId,
-        userId,
-        surfacing.statusText,
-        session,
-        channel,
-        agentId,
-        sessionState?.turnId ?? null
-      );
     }
     if (surfacing.isFailure) {
       this.app
         .service('sessions')
         .emit('app:error', { sessionId, message: surfacing.statusText, user_id: userId });
     }
+  }
+
+  /** Stop the agent and apply the session's usage limit action (stop, or wait until reset). */
+  private async _handleCursorUsageLimit(
+    session: AgentSessionRow,
+    userId: number,
+    agentId: number,
+    limit: CursorUsageLimit
+  ): Promise<void> {
+    await setAgentTurnTerminal(this.app, { id: agentId }, userId, 'stopped');
+    // `onUsageLimit` never throws; the agent is already stopped either way.
+    await this.app.service('sessions').onUsageLimit(session.id, agentId, {
+      label: 'Cursor',
+      sdk: 'cursor',
+      reason: 'rejected',
+      reset_at_ms: limit.resetAtMs,
+    });
   }
 
   /**
@@ -1054,6 +1142,7 @@ ${body}`,
     turnUsage: TurnUsage,
     turnModel: { model?: string | null; modelParams?: unknown },
     streamOpts: StreamOneRunOpts,
+    baguetteAgent?: AgentRow | null,
     onFollowUpRun?: (run: Run) => void
   ): Promise<{ allFinishedOk: boolean }> {
     const sessionId = session.id;
@@ -1066,7 +1155,12 @@ ${body}`,
 
     const MAX_FOLLOW_UPS = 10;
     for (let i = 0; hasBackgroundTask && i < MAX_FOLLOW_UPS; i++) {
-      const followUpRun = await this._findFollowUpRun(session, agent, lastCompletedRunId);
+      const followUpRun = await this._findFollowUpRun(
+        session,
+        agent,
+        lastCompletedRunId,
+        baguetteAgent ?? null
+      );
       if (!followUpRun) break;
 
       logger.info(
@@ -1090,9 +1184,13 @@ ${body}`,
   async _findFollowUpRun(
     session: AgentSessionRow,
     agent: SDKAgent,
-    completedRunId: string
+    completedRunId: string,
+    baguetteAgent?: AgentRow | null
   ): Promise<Run | null> {
-    const cwd = resolveDataDirRelativePath(session.session_path) || '';
+    const cwd =
+      agentWorktreeCwd(session, baguetteAgent ?? null) ||
+      resolveDataDirRelativePath(session.session_path) ||
+      '';
     const store = await this.openSessionStore(session);
     const INTERVAL_MS = 2000;
     const MAX_IDLE_POLLS = 30;
@@ -1163,48 +1261,34 @@ ${body}`,
     return this.getActiveSession(id);
   }
 
-  async generateSessionMetadata(
-    initialPrompt: string,
-    shortId = '',
-    user: { id?: number } | null = null,
-    repo: { id?: number | null } | null = null,
-    session: Pick<AgentSessionRow, 'model' | 'model_params' | 'agent_config_id'> | null = null
-  ): Promise<{ label: string; branchName: string }> {
-    const fallbackBranch = `task-${shortId}`;
-    const prompt = `Generate metadata for a coding task. Output ONLY a JSON object with no markdown or explanation:
-- "label": very short label (max 50 chars) summarizing the task
-- "branch": short kebab-case git branch name suffixed with "-${shortId}" (e.g. "fix-auth-token-${shortId}"), max 60 chars
-
-Task: ${initialPrompt}`;
-
-    let label = '';
-    let branchName = fallbackBranch;
-
-    const apiKey = user?.id
-      ? await this.loadAgentConfigApiKey(user.id, session?.agent_config_id)
-      : undefined;
-    // Generate the label/branch with the session's selected model (and its variant params)
-    // so the metadata matches the agent that will actually run the task. Sessions created
-    // without an explicit model fall back to a cheap one so provisioning stays fast.
-    const modelId = session?.model || CURSOR_CHEAP_MODEL_ID;
-    const modelParams = this.parseModelParams(session?.model_params);
-    let repoFullName: string | null = null;
-    if (repo?.id) {
-      const repoRow = await (this.app.get('db') as DbLike)('repos').where({ id: repo.id }).first();
-      repoFullName = (repoRow?.full_name as string) ?? null;
-    }
-    const homeSession = {
-      short_id: shortId,
-      repo_full_name: repoFullName,
-      session_path: null,
-    } as AgentSessionRow;
+  /**
+   * One-shot completion: send a prompt, return the raw response text.
+   * Must resolve within METADATA_TIMEOUT_MS — callers treat '' as "no completion"
+   * and fall back to defaults. Runs on the requested model (and variant params);
+   * calls without an explicit model fall back to a cheap one so provisioning stays fast.
+   */
+  async completeText(
+    prompt: string,
+    opts: {
+      userId?: number | null;
+      agentConfigId?: number | null;
+      model?: string | null;
+      modelParams?: unknown;
+    } = {}
+  ): Promise<string> {
+    const apiKey =
+      opts.userId != null
+        ? await this.loadAgentConfigApiKey(opts.userId, opts.agentConfigId)
+        : undefined;
+    const modelId = opts.model || CURSOR_CHEAP_MODEL_ID;
+    const modelParams = this.parseModelParams(opts.modelParams);
 
     let collectedText = '';
 
-    const store = await SqliteLocalAgentStore.open({
-      workspaceRef: cursorWorkspaceRef(homeSession),
-      stateRoot: cursorSdkStateRoot(homeSession) ?? join(DATA_DIR, 'cursor-sdk-store'),
-    });
+    // One-shot completions need no persistence: the SDK requires a store, so a
+    // throwaway per-process scratch dir keeps run state out of DATA_DIR and out
+    // of every session folder. Opened once and reused across completions.
+    const store = await getCompleteTextScratchStore();
     const agent = await Agent.create({
       apiKey,
       model: modelParams?.length ? { id: modelId, params: modelParams } : { id: modelId },
@@ -1216,45 +1300,44 @@ Task: ${initialPrompt}`;
 
     const run = await agent.send(prompt);
 
-    for await (const sdkMsg of run.stream()) {
-      if (sdkMsg.type === 'assistant') {
-        const content = (
-          sdkMsg as { message?: { content?: Array<{ type?: string; text?: string }> } }
-        ).message?.content;
-        for (const block of content ?? []) {
-          if (block.type === 'text') collectedText += block.text ?? '';
+    const consume = (async () => {
+      for await (const sdkMsg of run.stream()) {
+        if (sdkMsg.type === 'assistant') {
+          const content = (
+            sdkMsg as { message?: { content?: Array<{ type?: string; text?: string }> } }
+          ).message?.content;
+          for (const block of content ?? []) {
+            if (block.type === 'text') collectedText += block.text ?? '';
+          }
+        }
+        if (
+          sdkMsg.type === 'status' &&
+          (sdkMsg as { status?: string }).status &&
+          ['FINISHED', 'ERROR', 'CANCELLED', 'EXPIRED'].includes(
+            (sdkMsg as { status?: string }).status as string
+          )
+        ) {
+          break;
         }
       }
-      if (
-        sdkMsg.type === 'status' &&
-        (sdkMsg as { status?: string }).status &&
-        ['FINISHED', 'ERROR', 'CANCELLED', 'EXPIRED'].includes(
-          (sdkMsg as { status?: string }).status as string
-        )
-      ) {
-        break;
-      }
+    })();
+
+    // Cursor runs surface errors via terminal statuses but can still stall; fail fast
+    // like the other SDKs so provisioning never waits on a stuck stream.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        consume,
+        new Promise<void>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('Completion timed out')), METADATA_TIMEOUT_MS);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+      consume.catch(() => {}); // late stream events after timeout are non-fatal
     }
 
-    const text = collectedText.trim();
-    if (text) {
-      try {
-        const jsonText = text
-          .replace(/^```(?:json)?\n?/, '')
-          .replace(/\n?```$/, '')
-          .trim();
-        const parsed = JSON.parse(jsonText) as { label?: string; branch?: string };
-        label = (parsed.label || '').slice(0, 80);
-        branchName = (parsed.branch || fallbackBranch)
-          .replace(/[^a-z0-9-]/g, '-')
-          .replace(/-+/g, '-')
-          .slice(0, 60);
-      } catch {
-        label = text.slice(0, 80);
-      }
-    }
-
-    return { label, branchName };
+    return collectedText.trim();
   }
 
   async prepareTiedSessionLoopCompaction(args: TiedSessionLoopCompactionArgs): Promise<void> {
@@ -1293,7 +1376,7 @@ export function registerCursorAgentService(app: AgentApp, path = CURSOR_AGENT_SE
       'writeAlwaysApplyRule',
       'writePromptRule',
       'createOrResumeAgent',
-      'generateSessionMetadata',
+      'completeText',
       'openSessionStore',
       'disposeSessionStore',
       'prepareTiedSessionLoopCompaction',

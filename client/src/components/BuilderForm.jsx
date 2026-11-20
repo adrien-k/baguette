@@ -1,12 +1,17 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronRight, HelpCircle, Repeat, Trash2 } from 'lucide-react';
+import { HelpCircle, Repeat, Trash2 } from 'lucide-react';
 import Alert from './Alert.jsx';
 import GithubIcon from './svg/GithubIcon.jsx';
 import LoopScheduleFields from './LoopScheduleFields.jsx';
 import Tooltip from './Tooltip.jsx';
 import { scheduleFromLoop, schedulePayload, isScheduleComplete } from '../utils/loopSchedule.js';
-import { agentConfigsService, mcpServersService, pluginsService } from '../feathers.js';
+import {
+  agentConfigsService,
+  mcpServersService,
+  pluginsService,
+  skillsService,
+} from '../feathers.js';
 import { useCurrentUser } from '../context/CurrentUserContext.jsx';
 import { localStateFromConfigDefault } from '../utils/agentConfigDefaultModel.js';
 import { useAgentConfigs } from '../hooks/useAgentConfigs.js';
@@ -19,9 +24,11 @@ import { usePersistentState } from '../hooks/usePersistentState.js';
 import { useMediaQuery } from '../hooks/useMediaQuery.js';
 import { useCursorModelPrefs } from '../hooks/useAgentPreferences.js';
 import AgentMessageComposer from './AgentMessageComposer.jsx';
+import { PRIMARY_BUTTON_SIZED } from '../utils/buttonStyles.js';
 import ComposerPrimaryMenuAddon from './ComposerPrimaryMenuAddon.jsx';
 import FileAttachmentPicker from './FileAttachmentPicker.jsx';
 import SearchableSelect from './SearchableSelect';
+import SkillPreloadSelect from './SkillPreloadSelect.jsx';
 import RepoPicker from './RepoPicker.jsx';
 import { autoPushEnabledForRepo, isLocalRepo } from '../utils/repoDisplayName.js';
 import { isMobile } from '../utils/isMobile.js';
@@ -32,6 +39,13 @@ import {
   stringifyModelParams,
 } from '../utils/models.js';
 import Toggle from './Toggle.jsx';
+import UsageLimitActionSelect from './UsageLimitActionSelect.jsx';
+import UsageLimitInput from './UsageLimitInput.jsx';
+import {
+  DEFAULT_USAGE_LIMIT_ACTION,
+  parseUsageLimit,
+  usageLimitInputText,
+} from '../utils/usageLimitActions.jsx';
 import { isSessionOwner } from '@baguette/shared/session-sharing.js';
 import { INPUT_CLASS, INLINE_SECONDARY_LINK_CLASS } from '../utils/ui.js';
 import { DROPDOWN_PANEL_CLASS } from '../utils/dropdownPanel.js';
@@ -69,12 +83,16 @@ const SESSION_START_MODES = [
   },
 ];
 
+function loopSaveButtonLabel(loading, editing) {
+  if (loading) return editing ? 'Saving…' : 'Creating…';
+  return editing ? 'Save' : 'Create';
+}
+
 export default function BuilderForm({
   onSubmit,
   onCreateLoop,
   onUpdateLoop,
   onDeleteLoop,
-  onCancelEdit,
   editingLoop,
   loading,
   repoFullName: repoFullNameProp,
@@ -94,11 +112,12 @@ export default function BuilderForm({
         ? 'builder-form-all'
         : `builder-form-${isGlobalProp ? 'global' : repoFullNameProp}`;
   const persistentState = usePersistentState(persistKey);
-  const globalState = usePersistentState('builder-form-global');
   // Whether this mount hydrated from a snapshot that captured prompt text. Such snapshots only
   // exist through hasPromptText, so their sdk/model/params picks are intentional and should not
   // be re-seeded from agent defaults or the last session.
   const hasPersistedPromptRef = useRef(Boolean(persistKey && hasPromptText(persistentState.store)));
+  const seededDefaultSkillsRef = useRef(false);
+  const seededUsageLimitsRef = useRef(false);
   /** Last repo/global scope we applied lastUsed() for — avoids clobbering manual picks on user/config refetches. */
   const lastSeededScopeRef = useRef(null);
   const { repos, loading: loadingRepos } = useRepoContext();
@@ -134,13 +153,22 @@ export default function BuilderForm({
     if (!trimmed || editingLoop) return;
     setInitialPrompt(trimmed);
   }, [defaultPrompt, editingLoop, setInitialPrompt]);
-  const [showMore, setShowMore] = globalState.useState('showMore', false);
   const [branchName, setBranchName] = persistentState.useState('branchName', '', {
     persistWhen: hasPromptText,
   });
   const [autoPush, setAutoPush] = persistentState.useState('autoPush', true, {
     persistWhen: hasPromptText,
   });
+  const [usageLimitAction, setUsageLimitAction] = persistentState.useState(
+    'usageLimitAction',
+    editingLoop?.usage_limit_action ?? DEFAULT_USAGE_LIMIT_ACTION,
+    { persistWhen: hasPromptText }
+  );
+  const [usageLimitText, setUsageLimitText] = persistentState.useState(
+    'usageLimit',
+    usageLimitInputText(editingLoop?.usage_limit),
+    { persistWhen: hasPromptText }
+  );
   useEffect(() => {
     if (localRepo) setAutoPush(false);
   }, [localRepo, setAutoPush]);
@@ -163,7 +191,13 @@ export default function BuilderForm({
     editingLoop?.plugins ?? [],
     { persistWhen: hasPromptText }
   );
+  const [selectedAutoLoadSkills, setSelectedAutoLoadSkills] = persistentState.useState(
+    'autoLoadSkills',
+    editingLoop?.auto_load_skills ?? [],
+    { persistWhen: hasPromptText }
+  );
   const [availablePlugins, setAvailablePlugins] = useState([]);
+  const [skillCatalog, setSkillCatalog] = useState([]);
   const [mcpCatalog, setMcpCatalog] = useState([]);
   const [mcpEnabled, setMcpEnabled] = useState({});
   const [files, setFiles] = useState([]);
@@ -174,6 +208,10 @@ export default function BuilderForm({
   const [sessionStartMode, setSessionStartMode] = useState('new-branch');
   const [loopName, setLoopName] = useState(editingLoop?.name ?? '');
   const [singleSession, setSingleSession] = useState(!!editingLoop?.single_session);
+  const [newBranch, setNewBranch] = useState(editingLoop?.create_new_branch ?? true);
+  const [loopEnabled, setLoopEnabled] = useState(
+    editingLoop?.enabled === undefined ? true : !!editingLoop.enabled
+  );
   const [isShared, setIsShared] = persistentState.useState('isShared', !!editingLoop?.is_shared, {
     persistWhen: hasPromptText,
   });
@@ -181,10 +219,41 @@ export default function BuilderForm({
     editingLoop && userSettings && !isSessionOwner(editingLoop, userSettings)
   );
   const [schedule, setSchedule] = useState(() => scheduleFromLoop(editingLoop));
+
+  useEffect(() => {
+    if (!editingLoop) return;
+    setLoopEnabled(!!editingLoop.enabled);
+  }, [editingLoop]);
+
+  useEffect(() => {
+    if (editingLoop || userSettings == null) return;
+    if (seededUsageLimitsRef.current) return;
+    if (
+      persistKey &&
+      ('usageLimitAction' in persistentState.store || 'usageLimit' in persistentState.store)
+    ) {
+      seededUsageLimitsRef.current = true;
+      return;
+    }
+    const action = userSettings.default_usage_limit_action ?? DEFAULT_USAGE_LIMIT_ACTION;
+    setUsageLimitAction(action);
+    setUsageLimitText(usageLimitInputText(userSettings.default_usage_limit));
+    seededUsageLimitsRef.current = true;
+  }, [
+    editingLoop,
+    userSettings,
+    persistKey,
+    persistentState.store,
+    setUsageLimitAction,
+    setUsageLimitText,
+  ]);
+
   // Whether the initial SDK/model seeding (agent defaults or last session) has resolved;
   // the models fetch waits for it so the persisted default never resolves against
   // another SDK's list.
   const [sdkModelSeeded, setSdkModelSeeded] = useState(false);
+  /** Bumped when Clear runs so mount-style seed effects re-run without a scope change. */
+  const [formSeedToken, setFormSeedToken] = useState(0);
   const { configOptions, loading: configsLoading } = useAgentConfigs();
   const { getMeta } = useSdkMetas();
   const selectedConfig =
@@ -281,7 +350,7 @@ export default function BuilderForm({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- scope + readiness only; configOptions read inside effect
-  }, [editingLoop, userSettings?.id, configsLoading, selectedRepo?.id, isGlobal]);
+  }, [editingLoop, userSettings?.id, configsLoading, selectedRepo?.id, isGlobal, formSeedToken]);
   const {
     branches,
     loading: loadingBranches,
@@ -303,7 +372,7 @@ export default function BuilderForm({
     const defaultBranch = selectedRepo?.default_branch || branches[0];
     if (defaultBranch) setBranch(defaultBranch);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repoFullName, selectedRepo?.default_branch, branches]);
+  }, [repoFullName, selectedRepo?.default_branch, branches, formSeedToken]);
 
   useEffect(() => {
     if (isGlobal && sessionStartMode === 'same-branch') setSessionStartMode('new-branch');
@@ -340,6 +409,45 @@ export default function BuilderForm({
 
   useEffect(() => {
     let cancelled = false;
+    const repoId = isGlobal ? null : selectedRepo?.id;
+    const defaultLabels = userSettings?.default_auto_load_skills ?? [];
+    skillsService
+      .listCatalog({ repo_id: repoId ?? undefined })
+      .then((res) => {
+        if (cancelled) return;
+        const rows = res?.skills ?? [];
+        setSkillCatalog(rows);
+        const labels = new Set(rows.map((s) => s.label));
+        setSelectedAutoLoadSkills((prev) => {
+          const kept = prev.filter((item) => labels.has(item));
+          if (kept.length) return kept;
+          if (editingLoop || seededDefaultSkillsRef.current) return kept;
+          if (persistKey && 'autoLoadSkills' in persistentState.store) {
+            seededDefaultSkillsRef.current = true;
+            return kept;
+          }
+          seededDefaultSkillsRef.current = true;
+          return defaultLabels.filter((item) => labels.has(item));
+        });
+      })
+      .catch((err) => {
+        if (!cancelled) toastError('Failed to load skills', err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isGlobal,
+    selectedRepo?.id,
+    setSelectedAutoLoadSkills,
+    editingLoop,
+    persistKey,
+    persistentState.store,
+    userSettings?.default_auto_load_skills,
+  ]);
+
+  useEffect(() => {
+    let cancelled = false;
     mcpServersService
       .find()
       .then((res) => {
@@ -367,28 +475,70 @@ export default function BuilderForm({
   }, [editingLoop?.id]);
 
   const isLoop = mode === 'loop';
-  // The branch-name field is the only other entry, and a loop never shows it.
-  const hasMoreOptions =
-    (!isGlobal && !isLoop) || availablePlugins.length > 0 || mcpCatalog.length > 0;
+  const hasMcpOrPlugins = mcpCatalog.length > 0 || availablePlugins.length > 0;
+  const showBranchNameField = !isLoop && !isGlobal && sessionStartMode !== 'same-branch';
+  const skillPreloadBlock =
+    skillCatalog.length > 0 ? (
+      <div>
+        <label className="block text-sm font-medium text-secondary mb-1.5">Preload skills</label>
+        <p className="text-xs text-faint mb-2">
+          {isLoop
+            ? 'Inject selected skills into the agent system prompt for every turn in sessions this loop starts.'
+            : 'Inject selected skills into the agent system prompt for every turn in this session.'}
+        </p>
+        <SkillPreloadSelect
+          skills={skillCatalog}
+          value={selectedAutoLoadSkills}
+          onChange={setSelectedAutoLoadSkills}
+          disabled={loopReadOnly}
+        />
+      </div>
+    ) : null;
+  // The dollar cap only exists under Continue: null = none, undefined = invalid text.
+  const usageCap = usageLimitAction === 'continue' ? parseUsageLimit(usageLimitText) : null;
   const canSubmit =
     !loopReadOnly &&
     !loading &&
+    usageCap !== undefined &&
     hasAgentConfig &&
     (isGlobal || (repos.length > 0 && repoFullName && branch)) &&
     (!isLoop || (Boolean(initialPrompt.trim()) && isScheduleComplete(schedule)));
 
   const clearForm = () => {
+    if (editingLoop) return;
     const keepTarget = allowRepoChoice ? targetScope : null;
     persistentState.clear();
-    if (keepTarget) setTargetScope(keepTarget);
+    hasPersistedPromptRef.current = false;
+    seededDefaultSkillsRef.current = false;
+    seededUsageLimitsRef.current = false;
+    lastSeededScopeRef.current = null;
+    setSdkModelSeeded(false);
+
+    setInitialPrompt(String(defaultPrompt || '').trim() ? defaultPrompt : '');
+    setUsageLimitAction(userSettings?.default_usage_limit_action ?? DEFAULT_USAGE_LIMIT_ACTION);
+    setUsageLimitText(usageLimitInputText(userSettings?.default_usage_limit));
+    setLoopName('');
+    setSingleSession(false);
+    setNewBranch(true);
+    setLoopEnabled(true);
+    setSessionStartMode('new-branch');
+    setSchedule(scheduleFromLoop(null));
     setFiles([]);
     setFileError(null);
-    setLoopName('');
-    if (!editingLoop) {
-      const next = {};
-      for (const server of mcpCatalog) next[String(server.id)] = !!server.enabled;
-      setMcpEnabled(next);
+    if (keepTarget) setTargetScope(keepTarget);
+    const next = {};
+    for (const server of mcpCatalog) next[String(server.id)] = !!server.enabled;
+    setMcpEnabled(next);
+    if (!isGlobal && repoFullName && branches.length) {
+      const defaultBranch = selectedRepo?.default_branch || branches[0];
+      if (defaultBranch && branches.includes(defaultBranch)) setBranch(defaultBranch);
     }
+    setFormSeedToken((n) => n + 1);
+  };
+
+  const handleClearForm = () => {
+    if (loading) return;
+    clearForm();
   };
 
   const buildPayload = ({ createNewBranch = true }) => {
@@ -419,10 +569,13 @@ export default function BuilderForm({
       model: model || undefined,
       modelParams: usesModelParams ? stringifyModelParams(finalParams) : undefined,
       createNewBranch,
-      branchName: branchName || undefined,
+      branchName: createNewBranch ? branchName || undefined : undefined,
       autoPush: autoPushEnabledForRepo(repoFullName, autoPush, linkedRepo),
+      usageLimitAction,
+      usageLimit: usageCap,
       isShared,
       plugins: selectedPlugins.length > 0 ? selectedPlugins : undefined,
+      autoLoadSkills: selectedAutoLoadSkills.length > 0 ? selectedAutoLoadSkills : undefined,
       mcpServers: mcpEnabled,
       agentConfigId: agentConfigId ? Number(agentConfigId) : undefined,
     };
@@ -449,13 +602,17 @@ export default function BuilderForm({
         single_session: singleSession,
         create_new_branch: false,
         auto_push: false,
+        usage_limit_action: payload.usageLimitAction,
+        usage_limit: payload.usageLimit,
         agent_config_id: payload.agentConfigId,
         model: payload.model ?? null,
         model_params: payload.modelParams ?? null,
         plugins: payload.plugins ?? [],
         mcp_servers: payload.mcpServers ?? {},
         is_shared: payload.isShared,
+        enabled: loopEnabled,
         ...schedulePayload(schedule),
+        ...(payload.autoLoadSkills?.length ? { auto_load_skills: payload.autoLoadSkills } : {}),
       };
     }
     return {
@@ -464,15 +621,18 @@ export default function BuilderForm({
       name: loopName.trim() || null,
       prompt: payload.initialPrompt,
       single_session: singleSession,
-      // Every run needs its own branch pushed somewhere reviewable, so neither is optional.
-      create_new_branch: true,
+      create_new_branch: newBranch,
       auto_push: autoPushEnabledForRepo(payload.repoFullName, payload.autoPush, linkedRepo),
+      usage_limit_action: payload.usageLimitAction,
+      usage_limit: payload.usageLimit,
       agent_config_id: payload.agentConfigId,
       model: payload.model ?? null,
       model_params: payload.modelParams ?? null,
       plugins: payload.plugins ?? [],
       mcp_servers: payload.mcpServers ?? {},
+      ...(payload.autoLoadSkills?.length ? { auto_load_skills: payload.autoLoadSkills } : {}),
       is_shared: payload.isShared,
+      enabled: loopEnabled,
       ...schedulePayload(schedule),
     };
   };
@@ -499,16 +659,6 @@ export default function BuilderForm({
     setModel(modelId);
     setModelParamsJson(paramsJson ?? null);
   };
-
-  const composerToolbarExtra = editingLoop ? (
-    <button
-      type="button"
-      onClick={onCancelEdit}
-      className="inline-flex items-center justify-center shrink-0 h-8 px-3 rounded-md border border-strong bg-control hover:bg-control-hover text-secondary hover:text-fg text-xs font-medium transition-colors"
-    >
-      Cancel
-    </button>
-  ) : null;
 
   const composerPlaceholder = isLoop
     ? 'Describe what the agent should do on every run...'
@@ -547,6 +697,7 @@ export default function BuilderForm({
       canSend={canSubmit}
       submitDisabled={!canSubmit}
       submitLabel={isLoop ? (editingLoop ? 'Save' : 'Create') : loading ? 'Creating...' : 'Start'}
+      showSubmitButton={!isLoop}
       submitSubtitle={!isLoop ? activeSessionStartMode.subtitle : undefined}
       sendAddon={
         !isLoop ? (
@@ -563,12 +714,7 @@ export default function BuilderForm({
           />
         ) : undefined
       }
-      toolbarExtra={
-        <>
-          {attachButton}
-          {composerToolbarExtra}
-        </>
-      }
+      toolbarExtra={attachButton}
       autoFocus={!isMobile()}
     />
   );
@@ -584,8 +730,23 @@ export default function BuilderForm({
 
   const { owner: repoOwner, name: repoName } = parseRepoFullName(repoFullName);
 
+  const showNewFormClear = !editingLoop;
+  const showModeTabs = onCreateLoop && !builderModeControlled;
+
   return (
     <div className="space-y-4">
+      {showNewFormClear && !showModeTabs ? (
+        <div className="flex justify-end -mt-1">
+          <button
+            type="button"
+            onClick={handleClearForm}
+            disabled={loading}
+            className="text-xs text-faint hover:text-secondary disabled:opacity-50"
+          >
+            Clear
+          </button>
+        </div>
+      ) : null}
       {userSettings && !configsLoading && !hasAgentConfig && (
         <Alert variant="alert">
           Add an agent configuration in <Link to="/settings?tab=agent">Settings → Agent</Link> to
@@ -622,10 +783,9 @@ export default function BuilderForm({
             </button>
           )}
         </div>
-      ) : (
-        onCreateLoop &&
-        !builderModeControlled && (
-          <div className="flex gap-1 border-b border-line -mt-1">
+      ) : showModeTabs ? (
+        <div className="flex items-center justify-between gap-2 border-b border-line -mt-1">
+          <div className="flex gap-1 min-w-0">
             {[
               { value: 'session', label: 'Session' },
               { value: 'loop', label: 'Loop' },
@@ -644,8 +804,18 @@ export default function BuilderForm({
               </button>
             ))}
           </div>
-        )
-      )}
+          {showNewFormClear ? (
+            <button
+              type="button"
+              onClick={handleClearForm}
+              disabled={loading}
+              className="shrink-0 text-xs text-faint hover:text-secondary disabled:opacity-50 pb-2"
+            >
+              Clear
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       {isLoop && (
         <div>
@@ -773,6 +943,15 @@ export default function BuilderForm({
 
       {isLoop && (
         <>
+          <Toggle
+            checked={loopEnabled}
+            onChange={setLoopEnabled}
+            disabled={loopReadOnly}
+            label="Enabled"
+            title="When off, the loop is paused and will not run on a schedule or via Run now."
+            className="gap-2"
+          />
+
           <LoopScheduleFields schedule={schedule} onChange={setSchedule} disabled={loopReadOnly} />
 
           <div className="flex items-center gap-4">
@@ -796,120 +975,152 @@ export default function BuilderForm({
             >
               <HelpCircle className="w-3.5 h-3.5 text-faint hover:text-fg-muted transition-colors" />
             </Tooltip>
+            <Toggle
+              checked={!isGlobal && newBranch}
+              onChange={setNewBranch}
+              disabled={isGlobal}
+              label="Create new branch"
+              title={isGlobal ? 'Global loops have no repository or branch' : undefined}
+              className="gap-2"
+            />
+            <Tooltip
+              content={
+                <span className="block max-w-xs whitespace-normal leading-relaxed">
+                  On: runs branch out of the selected branch, which creates a new PR.
+                  <br />
+                  Off: runs work directly on the selected branch.
+                </span>
+              }
+            >
+              <HelpCircle className="w-3.5 h-3.5 text-faint hover:text-fg-muted transition-colors" />
+            </Tooltip>
           </div>
         </>
       )}
 
-      {hasMoreOptions && (
+      <div className="space-y-4">
+        <div className="text-sm font-medium text-heading">Options</div>
         <div>
-          <button
-            type="button"
-            onClick={() => setShowMore((v) => !v)}
-            className="flex items-center gap-1.5 text-xs text-fg-muted hover:text-heading transition-colors"
-          >
-            <ChevronRight
-              className={`w-3 h-3 transition-transform ${showMore ? 'rotate-90' : ''}`}
+          <label className="block text-sm font-medium text-secondary mb-1">
+            When a usage limit is reached
+          </label>
+          <UsageLimitActionSelect value={usageLimitAction} onChange={setUsageLimitAction} />
+        </div>
+
+        {usageLimitAction === 'continue' && (
+          <div>
+            <label className="block text-sm font-medium text-secondary mb-1">
+              Overage Usage limit{' '}
+              <span className="text-faint font-normal">
+                (USD of credits this session may spend — empty for unlimited)
+              </span>
+            </label>
+            <UsageLimitInput value={usageLimitText} onChange={setUsageLimitText} />
+          </div>
+        )}
+        {skillPreloadBlock}
+        {showBranchNameField && (
+          <div>
+            <label className="block text-sm font-medium text-secondary mb-1">
+              New branch name{' '}
+              <span className="text-faint font-normal">(optional, auto-generated if empty)</span>
+            </label>
+            <input
+              type="text"
+              value={branchName}
+              onChange={(e) => setBranchName(e.target.value)}
+              placeholder="my-feature-branch"
+              className={`${INPUT_CLASS} focus:border-transparent`}
             />
-            More options
-          </button>
+          </div>
+        )}
+      </div>
 
-          {showMore && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mt-3">
-              {/* A loop reuses its template on every run, so a fixed branch name would clash. */}
-              {!isLoop && !isGlobal && (
-                <>
-                  <div className="sm:col-span-2">
-                    <label className="block text-sm font-medium text-secondary mb-1">
-                      Branch name{' '}
-                      <span className="text-faint font-normal">
-                        (optional, for Start — auto-generated if empty)
-                      </span>
-                    </label>
+      {hasMcpOrPlugins && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+          {mcpCatalog.length > 0 && (
+            <div className="sm:col-span-2">
+              <label className="block text-sm font-medium text-secondary mb-1.5">MCP servers</label>
+              <div className="space-y-1.5">
+                {mcpCatalog.map((server) => (
+                  <label
+                    key={server.id}
+                    className="flex cursor-pointer items-start gap-2 rounded-md border border-strong/80 bg-control/40 px-3 py-2"
+                  >
                     <input
-                      type="text"
-                      value={branchName}
-                      onChange={(e) => setBranchName(e.target.value)}
-                      placeholder="my-feature-branch"
-                      className={`${INPUT_CLASS} focus:border-transparent`}
+                      type="checkbox"
+                      checked={!!mcpEnabled[String(server.id)]}
+                      onChange={(e) =>
+                        setMcpEnabled((prev) => ({
+                          ...prev,
+                          [String(server.id)]: e.target.checked,
+                        }))
+                      }
+                      className="mt-0.5 rounded border-strong text-accent focus:ring-brand/50"
                     />
-                  </div>
-                </>
-              )}
-
-              {mcpCatalog.length > 0 && (
-                <div className="sm:col-span-2">
-                  <label className="block text-sm font-medium text-secondary mb-1.5">
-                    MCP servers
+                    <span className="text-sm text-secondary leading-tight">
+                      <span className="font-medium text-heading">{server.name}</span>
+                      <span className="block text-xs font-normal text-faint mt-0.5">
+                        {server.url}
+                        {server.transport === 'sse' ? ' · not attached on Pi' : ''}
+                      </span>
+                      {server.description ? (
+                        <span className="block text-xs font-normal text-secondary mt-0.5 whitespace-pre-wrap">
+                          {server.description}
+                        </span>
+                      ) : null}
+                    </span>
                   </label>
-                  <div className="space-y-1.5">
-                    {mcpCatalog.map((server) => (
-                      <label
-                        key={server.id}
-                        className="flex cursor-pointer items-start gap-2 rounded-md border border-strong/80 bg-control/40 px-3 py-2"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={!!mcpEnabled[String(server.id)]}
-                          onChange={(e) =>
-                            setMcpEnabled((prev) => ({
-                              ...prev,
-                              [String(server.id)]: e.target.checked,
-                            }))
-                          }
-                          className="mt-0.5 rounded border-strong text-accent focus:ring-brand/50"
-                        />
-                        <span className="text-sm text-secondary leading-tight">
-                          <span className="font-medium text-heading">{server.name}</span>
-                          <span className="block text-xs font-normal text-faint mt-0.5">
-                            {server.url}
-                            {server.transport === 'sse' ? ' · not attached on Pi' : ''}
-                          </span>
-                          {server.description ? (
-                            <span className="block text-xs font-normal text-secondary mt-0.5 whitespace-pre-wrap">
-                              {server.description}
-                            </span>
-                          ) : null}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {availablePlugins.length > 0 && (
-                <div className="sm:col-span-2">
-                  <label className="block text-sm font-medium text-secondary mb-1.5">Plugins</label>
-                  <div className="space-y-1.5">
-                    {availablePlugins.map((plugin) => (
-                      <label
-                        key={plugin.id}
-                        className="flex cursor-pointer items-start gap-2 rounded-md border border-strong/80 bg-control/40 px-3 py-2"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedPlugins.includes(plugin.id)}
-                          onChange={(e) =>
-                            setSelectedPlugins((prev) =>
-                              e.target.checked
-                                ? [...prev, plugin.id]
-                                : prev.filter((id) => id !== plugin.id)
-                            )
-                          }
-                          className="mt-0.5 rounded border-strong text-accent focus:ring-brand/50"
-                        />
-                        <span className="text-sm text-secondary leading-tight">
-                          <span className="font-medium text-heading">{plugin.name}</span>
-                          <span className="block text-xs font-normal text-faint mt-0.5">
-                            {plugin.marketplace_repo} · {plugin.plugin_path}
-                          </span>
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
+                ))}
+              </div>
             </div>
           )}
+
+          {availablePlugins.length > 0 && (
+            <div className="sm:col-span-2">
+              <label className="block text-sm font-medium text-secondary mb-1.5">Plugins</label>
+              <div className="space-y-1.5">
+                {availablePlugins.map((plugin) => (
+                  <label
+                    key={plugin.id}
+                    className="flex cursor-pointer items-start gap-2 rounded-md border border-strong/80 bg-control/40 px-3 py-2"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedPlugins.includes(plugin.id)}
+                      onChange={(e) =>
+                        setSelectedPlugins((prev) =>
+                          e.target.checked
+                            ? [...prev, plugin.id]
+                            : prev.filter((id) => id !== plugin.id)
+                        )
+                      }
+                      className="mt-0.5 rounded border-strong text-accent focus:ring-brand/50"
+                    />
+                    <span className="text-sm text-secondary leading-tight">
+                      <span className="font-medium text-heading">{plugin.name}</span>
+                      <span className="block text-xs font-normal text-faint mt-0.5">
+                        {plugin.marketplace_repo} · {plugin.plugin_path}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {isLoop && !loopReadOnly && (
+        <div className="flex items-center justify-end gap-2 border-t border-line pt-4">
+          <button
+            type="button"
+            disabled={!canSubmit}
+            onClick={() => handleSaveLoop()}
+            className={PRIMARY_BUTTON_SIZED}
+          >
+            {loopSaveButtonLabel(loading, Boolean(editingLoop))}
+          </button>
         </div>
       )}
     </div>

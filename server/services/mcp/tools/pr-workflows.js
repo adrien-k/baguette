@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { getPRWorkflows } from '../../github.js';
-import { ok } from '../lib/result.js';
+import { ok, fail } from '../lib/result.js';
 
 const workflowConclusion = z.enum([
   'success',
@@ -24,12 +24,14 @@ const workflowStatus = z.enum([
 ]);
 
 export function createPrWorkflowsTool(ctx) {
-  const { getSession, getToken, requireGitHubApi } = ctx;
+  const { resolveReadTargetSession, requireGitHubApiForSession, getToken } = ctx;
   return {
     name: 'PrWorkflows',
     description:
-      'Get CI status for the PR branch: recent Actions workflow runs (with jobs, workflow path, and run metadata) and check-run rollup for the PR head (name, conclusion, required, app), matching the GitHub PR checks list. Resolves the open PR by branch when the session has no pr_number. checks_source reports the rollup source: "graphql" (includes branch-protection required) or "rest" (fallback; required is always false there). Optional filters and wait/poll until runs finish. When waiting ends without confirmed completion, the response carries wait_timed_out (deadline elapsed), wait_fetch_failed (last poll request failed), and/or wait_run_not_found (wait_for_run_id was never observed).',
+      'Get CI status for a repo session\'s PR branch: recent Actions workflow runs (with jobs, workflow path, and run metadata) and check-run rollup for the PR head (name, conclusion, required, app), matching the GitHub PR checks list. Resolves the open PR by branch when the session has no pr_number. checks_source reports the rollup source: "graphql" (includes branch-protection required) or "rest" (fallback; required is always false there). Optional filters and wait/poll until runs finish. When waiting ends without confirmed completion, the response carries wait_timed_out (deadline elapsed), wait_fetch_failed (last poll request failed), and/or wait_run_not_found (wait_for_run_id was never observed). ' +
+      'When running inside a repo session, omit session_id to read its PR. From a global session or when triaging another session, pass session_id (from GetSession or SearchSessions).',
     schema: {
+      session_id: z.number().int().optional().describe('Target repo session id'),
       conclusion: workflowConclusion
         .optional()
         .describe('If set, return only workflow runs with this conclusion'),
@@ -68,6 +70,7 @@ export function createPrWorkflowsTool(ctx) {
         .describe('Number of recent workflow runs to include (default 10)'),
     },
     handler: async ({
+      session_id,
       conclusion,
       status,
       wait_for_completion: waitForCompletion,
@@ -75,9 +78,10 @@ export function createPrWorkflowsTool(ctx) {
       wait_timeout_seconds: waitTimeoutSeconds,
       per_page: perPage,
     } = {}) => {
-      const localErr = await requireGitHubApi();
+      const { session, error } = await resolveReadTargetSession(session_id);
+      if (error) return fail(error);
+      const localErr = await requireGitHubApiForSession(session);
       if (localErr) return localErr;
-      const session = await getSession();
       const branch = session?.remote_branch || session?.local_branch;
       if (!branch) {
         return ok({

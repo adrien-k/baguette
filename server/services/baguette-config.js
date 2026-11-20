@@ -4,8 +4,9 @@ import * as yaml from 'js-yaml';
 import logger from '../logger.js';
 import { resolveDataDirRelativePath } from '../config.js';
 import { dockerBuildImageTag, dockerContainerHostname } from './docker-session.js';
+import { getBuiltinChatRecipes } from '../../shared/session-chat-recipes.js';
 
-const BAGUETTE_DIR = '.baguette';
+export const BAGUETTE_DIR = '.baguette';
 export const CONFIG_FILENAME = '.baguette.yaml';
 const AGENT_PROMPT_ROLES = new Set(['builder', 'reviewer', 'subagent']);
 
@@ -22,6 +23,33 @@ function parseBaguetteConfigYaml(raw, sourceLabel) {
   if (content.config != null && typeof content.config === 'object') return content.config;
   if (typeof content === 'object' && !Array.isArray(content)) return content;
   return { error: `Invalid ${sourceLabel}: expected a config object` };
+}
+
+const SESSION_BLOCK_KEYS = ['env', 'init', 'cleanup', 'tasks', 'commands'];
+
+/**
+ * Session-wide config fields (`env`, `init`, `cleanup`, `tasks`, `commands`).
+ * Prefer top-level keys; fall back to nested `session.*` for backward compatibility.
+ */
+export function resolveConfigSessionBlock(baguetteConfig) {
+  if (!baguetteConfig || typeof baguetteConfig !== 'object') {
+    return Object.fromEntries(SESSION_BLOCK_KEYS.map((k) => [k, undefined]));
+  }
+  const nested =
+    baguetteConfig.session &&
+    typeof baguetteConfig.session === 'object' &&
+    !Array.isArray(baguetteConfig.session)
+      ? baguetteConfig.session
+      : {};
+  const block = {};
+  for (const key of SESSION_BLOCK_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(baguetteConfig, key)) {
+      block[key] = baguetteConfig[key];
+    } else {
+      block[key] = nested[key];
+    }
+  }
+  return block;
 }
 
 /** Thrown when `.baguette.yaml` task definitions are invalid (callers map to HTTP 400). */
@@ -195,7 +223,7 @@ export function resolveTaskEnv(
 /** Hostnames for `type: docker` tasks on the session Docker network. */
 export function buildDockerTaskHostnames(baguetteConfig, shortId) {
   const hostnames = {};
-  const userTasks = baguetteConfig?.session?.tasks;
+  const userTasks = resolveConfigSessionBlock(baguetteConfig).tasks;
   if (!userTasks || typeof userTasks !== 'object' || Array.isArray(userTasks)) return hostnames;
   if (!shortId) return hostnames;
   for (const [key, val] of Object.entries(userTasks)) {
@@ -207,7 +235,7 @@ export function buildDockerTaskHostnames(baguetteConfig, shortId) {
 /** Image refs for `type: docker` tasks (declared `container.image` or default build tag). */
 export function buildDockerTaskImages(baguetteConfig, shortId, interpolateOpts = null) {
   const images = {};
-  const userTasks = baguetteConfig?.session?.tasks;
+  const userTasks = resolveConfigSessionBlock(baguetteConfig).tasks;
   if (!userTasks || typeof userTasks !== 'object' || Array.isArray(userTasks)) return images;
   if (!shortId) return images;
   for (const [key, val] of Object.entries(userTasks)) {
@@ -304,7 +332,7 @@ export function interpolateDockerContainer(container, opts) {
 }
 
 /**
- * Normalize a script block from the config (`session.init`, `session.cleanup`, `tasks.*.run`).
+ * Normalize a script block from the config (`init`, `cleanup`, `tasks.*.run`).
  * Multi-line blocks are kept verbatim — Task writes them to a script file rather than
  * collapsing them into a single shell command.
  * Returns null if the block is empty or missing.
@@ -376,19 +404,20 @@ export function interpolateEnvTaskPorts(env, taskPortMap) {
  * Build a tasks hash from a baguette config.
  * Returns `{ [taskKey]: { run, ports?, depends_on?, env?, internal? } }`.
  *
- * Supports both the new `session.tasks` hash format and the legacy `session.commands` array.
- * Synthesizes `baguette:init` from `session.init` if defined.
+ * Supports the `tasks` hash and legacy `commands` array (top-level or under `session`).
+ * Synthesizes `baguette:init` from `init` if defined.
  */
 export function getAvailableTasks(baguetteConfig) {
   const tasks = {};
+  const sessionBlock = resolveConfigSessionBlock(baguetteConfig);
 
   // Init task
-  const initScript = getScriptBlock(baguetteConfig?.session?.init);
+  const initScript = getScriptBlock(sessionBlock.init);
   if (initScript) tasks['baguette:init'] = { type: 'command', run: initScript };
 
   // User tasks: prefer `tasks` hash, fallback to `commands` array
-  const userTasks = baguetteConfig?.session?.tasks;
-  const userCommands = baguetteConfig?.session?.commands;
+  const userTasks = sessionBlock.tasks;
+  const userCommands = sessionBlock.commands;
   if (userTasks && typeof userTasks === 'object' && !Array.isArray(userTasks)) {
     for (const [key, val] of Object.entries(userTasks)) {
       if (!val || typeof val !== 'object') continue;
@@ -441,6 +470,122 @@ export function getAvailableTasks(baguetteConfig) {
  * Backward-compatible wrapper around getAvailableTasks().
  * Returns an array of { label, run, ports?, depends_on?, description?, confirm? }.
  */
+function normalizeRecipeLabel(value) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
+function normalizeRecipeTextField(value, fieldName, index) {
+  if (typeof value !== 'string') {
+    throw new BaguetteConfigError(`recipes[${index}] is missing required "${fieldName}"`);
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new BaguetteConfigError(`recipes[${index}] is missing required "${fieldName}"`);
+  }
+  return trimmed;
+}
+
+function slugifyRecipeId(label) {
+  const slug = label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return slug || 'recipe';
+}
+
+/**
+ * Custom chat recipes from `.baguette.yaml` `recipes` (top-level; legacy `session.recipes`).
+ * @returns {Array<{ id: string, label: string, description: string | null, prompt: string, builtin: false }>}
+ */
+export function getCustomChatRecipes(baguetteConfig) {
+  if (!baguetteConfig || typeof baguetteConfig !== 'object') return [];
+  const raw =
+    baguetteConfig.recipes ??
+    (baguetteConfig.session && typeof baguetteConfig.session === 'object'
+      ? baguetteConfig.session.recipes
+      : undefined);
+  if (!raw) return [];
+  if (!Array.isArray(raw)) {
+    throw new BaguetteConfigError('recipes must be an array of { label, prompt, description? }');
+  }
+
+  const seenLabels = new Set();
+  const seenIds = new Set();
+  const recipes = [];
+
+  for (let i = 0; i < raw.length; i += 1) {
+    const entry = raw[i];
+    if (!entry || typeof entry !== 'object') {
+      throw new BaguetteConfigError(`recipes[${i}] must be an object`);
+    }
+    const label = normalizeRecipeLabel(entry.label);
+    if (!label) {
+      throw new BaguetteConfigError(`recipes[${i}] is missing required "label"`);
+    }
+    if (seenLabels.has(label.toLowerCase())) {
+      throw new BaguetteConfigError(`Duplicate recipes label "${label}"`);
+    }
+    seenLabels.add(label.toLowerCase());
+
+    const prompt = normalizeRecipeTextField(entry.prompt, 'prompt', i);
+    let description = null;
+    if (entry.description != null) {
+      if (typeof entry.description !== 'string') {
+        throw new BaguetteConfigError(`recipes[${i}].description must be a string`);
+      }
+      const trimmed = entry.description.trim();
+      description = trimmed || null;
+    }
+
+    let id = `custom:${slugifyRecipeId(label)}`;
+    if (seenIds.has(id)) {
+      let n = 2;
+      while (seenIds.has(`${id}-${n}`)) n += 1;
+      id = `${id}-${n}`;
+    }
+    seenIds.add(id);
+
+    recipes.push({ id, label, description, prompt, builtin: false });
+  }
+
+  return recipes;
+}
+
+/**
+ * Built-in plus custom recipes for the session chat footer.
+ * @param {object | null} baguetteConfig
+ * @param {{ agent_type?: string | null }} [options]
+ */
+export function getSessionChatRecipes(baguetteConfig, options = {}) {
+  const builtin = getBuiltinChatRecipes(options);
+  const custom = getCustomChatRecipes(baguetteConfig);
+  return [...builtin, ...custom];
+}
+
+/**
+ * Built-in recipes always; custom recipes only when config is valid.
+ * @returns {{ recipes: Array, config_error?: string }}
+ */
+export function resolveSessionChatRecipes(baguetteConfig, options = {}) {
+  const builtin = getBuiltinChatRecipes(options);
+  if (!baguetteConfig) {
+    return { recipes: builtin };
+  }
+  if (baguetteConfig.error) {
+    return { recipes: builtin, config_error: baguetteConfig.error };
+  }
+  try {
+    return { recipes: [...builtin, ...getCustomChatRecipes(baguetteConfig)] };
+  } catch (err) {
+    if (err instanceof BaguetteConfigError) {
+      return { recipes: builtin, config_error: err.message };
+    }
+    throw err;
+  }
+}
+
 export function getAvailableCommands(baguetteConfig) {
   const tasks = getAvailableTasks(baguetteConfig);
   return Object.entries(tasks)
@@ -483,42 +628,52 @@ function normalizeServiceDescription(value) {
 /**
  * Resolve the services block into an array of service configs.
  * Returns `Array<{ name, command, ports, expose, taskKey }>` or null if no services block.
+ * A broken service entry is skipped; a failure reading tasks drops the whole block.
  */
 export function resolveServicesConfig(baguetteConfig) {
-  if (!baguetteConfig) return null;
+  if (!baguetteConfig || baguetteConfig.error) return null;
   const servicesBlock = baguetteConfig.services;
   if (!servicesBlock || typeof servicesBlock !== 'object') return null;
 
-  const tasks = getAvailableTasks(baguetteConfig);
+  let tasks;
+  try {
+    tasks = getAvailableTasks(baguetteConfig);
+  } catch (err) {
+    logger.warn({ err }, 'Skipping services: failed to read tasks from .baguette.yaml');
+    return null;
+  }
+
   const result = [];
-
   for (const [name, svcDef] of Object.entries(servicesBlock)) {
-    if (!SERVICE_NAME_REGEX.test(name)) {
-      throw new Error(`Invalid service name "${name}": must be lowercase alphanumeric + hyphens`);
+    try {
+      if (!SERVICE_NAME_REGEX.test(name)) {
+        throw new Error(`Invalid service name "${name}": must be lowercase alphanumeric + hyphens`);
+      }
+      if (name === 'vscode') {
+        throw new Error('Service name "vscode" is reserved by Baguette');
+      }
+      if (!svcDef || typeof svcDef !== 'object') continue;
+      if (!svcDef.task) {
+        throw new Error(`services.${name} must specify a task`);
+      }
+      const taskDef = tasks[svcDef.task];
+      if (!taskDef) {
+        throw new Error(`services.${name}.task "${svcDef.task}" not found in tasks`);
+      }
+      const description =
+        normalizeServiceDescription(svcDef.description) ??
+        normalizeServiceDescription(taskDef.description);
+      result.push({
+        name,
+        command: taskDef.run,
+        ports: taskDef.ports || [],
+        expose: svcDef.expose,
+        taskKey: svcDef.task,
+        description,
+      });
+    } catch (err) {
+      logger.warn({ err, service: name }, 'Skipping invalid service in .baguette.yaml');
     }
-    if (name === 'vscode') {
-      throw new Error(`Service name "vscode" is reserved by Baguette`);
-    }
-    if (!svcDef || typeof svcDef !== 'object') continue;
-
-    if (!svcDef.task) {
-      throw new Error(`services.${name} must specify a task`);
-    }
-    const taskDef = tasks[svcDef.task];
-    if (!taskDef) {
-      throw new Error(`services.${name}.task "${svcDef.task}" not found in session.tasks`);
-    }
-    const description =
-      normalizeServiceDescription(svcDef.description) ??
-      normalizeServiceDescription(taskDef.description);
-    result.push({
-      name,
-      command: taskDef.run,
-      ports: taskDef.ports || [],
-      expose: svcDef.expose,
-      taskKey: svcDef.task,
-      description,
-    });
   }
 
   return result;

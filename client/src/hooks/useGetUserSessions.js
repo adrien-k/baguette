@@ -1,154 +1,101 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { agentsService, sessionsService } from '../feathers.js';
-import { applyAgentPatchToSession } from '../utils/sessionAgents.js';
+import { useCallback, useMemo } from 'react';
+import { useInfiniteQuery } from '@tanstack/react-query';
+import { sessionsService } from '../feathers.js';
 import { sortSessionsForList } from '@baguette/shared/session-sort.js';
-import { sessionMatchesListQuery } from '@baguette/shared/session-list-query.js';
-import { applySessionRealtimeList } from '../utils/sessionRealtime.js';
-import { useRefetchOnSseReconnect } from './useRefetchOnSseReconnect.js';
+import { sessionKeys } from '../queries/keys.js';
+import { feathersFindPage } from '../queries/feathersFinders.js';
 
 const PAGE_SIZE = 50;
 
-function queryKey(query) {
-  return JSON.stringify(query ?? {});
+/**
+ * Count unique session ids across pages, mirroring `flattenSessionPages`.
+ *
+ * Realtime events can prepend the same row to several cached pages (a row the
+ * window does not contain yet is inserted into every page by the bridge), so
+ * raw page row-counts overstate the loaded window. Offsets must derive from
+ * the deduped count or `fetchNextPage` permanently skips server rows that
+ * fall in the duplicated gap.
+ */
+function countUniqueSessionRows(pages) {
+  const seen = new Set();
+  for (const page of pages) {
+    for (const row of page?.data ?? []) {
+      if (row?.id != null) seen.add(row.id);
+    }
+  }
+  return seen.size;
+}
+
+/**
+ * Flatten infinite-query pages into one deduped, list-sorted session array.
+ * Dedupe guards against realtime inserts duplicating a row across pages.
+ */
+function flattenSessionPages(data) {
+  const rows = [];
+  const seen = new Set();
+  for (const page of data?.pages ?? []) {
+    for (const row of page?.data ?? []) {
+      if (seen.has(row.id)) continue;
+      seen.add(row.id);
+      rows.push(row);
+    }
+  }
+  return sortSessionsForList(rows);
 }
 
 /**
  * Returns sessions for the current user, filtered on the server.
  * `listQuery` is sent on every page; only `$skip` / `$limit` change on load more.
+ *
+ * Realtime updates (SSE `created`/`patched`/`removed`, agent patches) are
+ * applied to the query cache by the central `sseCacheBridge`; this hook only
+ * reads and flattens the cached pages.
  */
-export function useGetUserSessions(listQuery = {}, { repos, currentUserId } = {}) {
-  const [sessions, setSessions] = useState([]);
-  const [hasMore, setHasMore] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const skipRef = useRef(0);
-  const listQueryRef = useRef(listQuery);
-  const reposRef = useRef(repos);
-  const currentUserIdRef = useRef(currentUserId);
-  useEffect(() => {
-    listQueryRef.current = listQuery;
-    reposRef.current = repos;
-    currentUserIdRef.current = currentUserId;
-  }, [listQuery, repos, currentUserId]);
-  const listKey = queryKey(listQuery);
-
-  const fetchPage = useCallback((skip, replace, { silent = false } = {}) => {
-    const query = { $limit: PAGE_SIZE, $skip: skip, ...listQueryRef.current };
-    if (replace && !silent) {
-      setLoading(true);
-      setHasMore(false);
-    }
-    return sessionsService
-      .find({ query })
-      .then((res) => {
-        const list = Array.isArray(res) ? res : (res?.data ?? []);
-        const serverTotal = Number(res?.total ?? list.length);
-        const nextSkip = skip + list.length;
-        skipRef.current = nextSkip;
-        setHasMore(nextSkip < serverTotal && list.length > 0);
-        if (!replace && list.length === 0) {
-          setHasMore(false);
-        }
-        setSessions((prev) => {
-          const merged = replace
-            ? list
-            : [...prev, ...list.filter((s) => !prev.some((p) => p.id === s.id))];
-          return sortSessionsForList(merged);
+export function useGetUserSessions(listQuery = {}) {
+  const { data, isPending, error, refetch, hasNextPage, isFetchingNextPage, fetchNextPage } =
+    useInfiniteQuery({
+      queryKey: sessionKeys.list(listQuery),
+      queryFn: async ({ pageParam }) => {
+        const { rows, total } = await feathersFindPage(sessionsService, {
+          $limit: PAGE_SIZE,
+          $skip: pageParam,
+          ...listQuery,
         });
-        setError(null);
-      })
-      .catch((err) => {
-        setError(err);
-        if (replace && !silent) setSessions([]);
-      })
-      .finally(() => {
-        if (replace && !silent) setLoading(false);
-      });
-  }, []);
+        // Pages store `{ data, total }` — the shape the cache bridge updaters
+        // and `flattenSessionPages` read back.
+        return { data: rows, total };
+      },
+      initialPageParam: 0,
+      getNextPageParam: (lastPage, allPages) => {
+        const loaded = countUniqueSessionRows(allPages);
+        const total = lastPage?.total ?? loaded;
+        return loaded < total && (lastPage?.data?.length ?? 0) > 0 ? loaded : undefined;
+      },
+    });
 
-  const refetch = useCallback(
+  const sessions = useMemo(() => flattenSessionPages(data), [data]);
+
+  const refetchSilently = useCallback(
     (opts) => {
-      skipRef.current = 0;
-      fetchPage(0, true, opts);
+      // `silent` callers only wanted no loading spinner; React Query refetch
+      // keeps showing existing data either way.
+      void opts;
+      return refetch().then(() => undefined);
     },
-    [fetchPage]
+    [refetch]
   );
 
   const loadMore = useCallback(() => {
-    if (!hasMore) return;
-    fetchPage(skipRef.current, false);
-  }, [fetchPage, hasMore]);
+    if (!hasNextPage || isFetchingNextPage) return;
+    void fetchNextPage();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  useEffect(() => {
-    refetch();
-  }, [refetch, listKey]);
-
-  useRefetchOnSseReconnect(refetch);
-
-  useEffect(() => {
-    setSessions((prev) => {
-      const filtered = prev.filter((s) =>
-        sessionMatchesListQuery(s, listQueryRef.current, reposRef.current, {
-          currentUserId: currentUserIdRef.current,
-        })
-      );
-      if (filtered.length === prev.length) return prev;
-      return sortSessionsForList(filtered);
-    });
-  }, [repos]);
-
-  useEffect(() => {
-    const matches = (session) =>
-      sessionMatchesListQuery(session, listQueryRef.current, reposRef.current, {
-        currentUserId: currentUserIdRef.current,
-      });
-
-    const mergeRealtime = (session) => {
-      setSessions((prev) => {
-        const { next, skipDelta } = applySessionRealtimeList(prev, session, matches);
-        if (skipDelta) {
-          skipRef.current = Math.max(0, skipRef.current + skipDelta);
-        }
-        return sortSessionsForList(next);
-      });
-    };
-
-    const onCreated = (session) => mergeRealtime(session);
-    const onUpdated = (session) => mergeRealtime(session);
-    const onPatched = (session) => mergeRealtime(session);
-    const onRemoved = (session) => {
-      if (!session?.id) return;
-      setSessions((prev) => {
-        if (!prev.some((s) => s.id === session.id)) return prev;
-        skipRef.current = Math.max(0, skipRef.current - 1);
-        return sortSessionsForList(prev.filter((s) => s.id !== session.id));
-      });
-    };
-
-    const onAgentPatched = (agent) => {
-      if (!agent?.session_id) return;
-      setSessions((prev) => {
-        const idx = prev.findIndex((s) => s.id === agent.session_id);
-        if (idx < 0) return prev;
-        const next = applyAgentPatchToSession(prev[idx], agent);
-        return sortSessionsForList(prev.map((s) => (s.id === next.id ? next : s)));
-      });
-    };
-
-    sessionsService.on('created', onCreated);
-    sessionsService.on('updated', onUpdated);
-    sessionsService.on('patched', onPatched);
-    sessionsService.on('removed', onRemoved);
-    agentsService.on('patched', onAgentPatched);
-
-    return () => {
-      sessionsService.off('created', onCreated);
-      sessionsService.off('updated', onUpdated);
-      sessionsService.off('patched', onPatched);
-      sessionsService.off('removed', onRemoved);
-      agentsService.off('patched', onAgentPatched);
-    };
-  }, []);
-
-  return { sessions, loading, error, refetch, hasMore, loadMore };
+  return {
+    sessions,
+    loading: isPending,
+    error: error ?? null,
+    refetch: refetchSilently,
+    hasMore: hasNextPage,
+    loadMore,
+  };
 }

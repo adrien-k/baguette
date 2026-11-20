@@ -144,6 +144,18 @@ export async function resolveExplicitBuilderDefaults(db, userId, _repoId = null)
   return null;
 }
 
+/** Account reviewer defaults only (Settings → Agent → Reviewer default). */
+export async function resolveExplicitReviewerDefaults(db, userId) {
+  const fromUser = await userDefaultReviewerFields(db, userId);
+  if (!fromUser?.review_agent_config_id || !fromUser.review_model) return null;
+  return {
+    agent_config_id: fromUser.review_agent_config_id,
+    agent_sdk: fromUser.review_agent_sdk,
+    model: fromUser.review_model,
+    model_params: fromUser.review_model_params ?? null,
+  };
+}
+
 /** Account policy for models on agent-created sessions, loops, and subagents. */
 export async function resolveEffectiveSubagentDefaultSettings(db, userId, _repoId = null) {
   const user = await db('users')

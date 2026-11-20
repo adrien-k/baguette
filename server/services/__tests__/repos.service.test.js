@@ -45,6 +45,7 @@ vi.mock('../github.js', async (importOriginal) => {
           .replace(/-+/g, '-')
           .replace(/^-|-$/g, '') || 'repo'
     ),
+    findPublicRemoteRepos: vi.fn(async () => []),
   };
 });
 
@@ -59,6 +60,7 @@ import {
   listBranches,
   ensureMainClone,
   initLocalRepo,
+  findPublicRemoteRepos,
 } from '../github.js';
 
 const db = createTestDb();
@@ -322,6 +324,7 @@ describe('Repos service - findRemote', () => {
       .service('repos')
       .findRemote({ org: 'myorg', query: 'alp' }, params(regularUser));
 
+    expect(findPublicRemoteRepos).not.toHaveBeenCalled();
     expect(result.repos).toEqual([{ full_name: 'myorg/alpha', private: false }]);
   });
 
@@ -352,6 +355,32 @@ describe('Repos service - findRemote', () => {
       repos: [{ full_name: 'pat-org/alpha', private: false }],
       hasMore: false,
     });
+  });
+});
+
+describe('Repos service - findPublicRemote', () => {
+  it('returns public repos from GitHub search', async () => {
+    findPublicRemoteRepos.mockResolvedValueOnce([{ full_name: 'torvalds/linux', private: false }]);
+
+    const result = await app
+      .service('repos')
+      .findPublicRemote({ query: 'linux' }, params(regularUser));
+
+    expect(findPublicRemoteRepos).toHaveBeenCalledWith('gh_token_user', {
+      query: 'linux',
+      org: '',
+    });
+    expect(result).toEqual({
+      repos: [{ full_name: 'torvalds/linux', private: false }],
+      hasMore: false,
+    });
+  });
+
+  it('unauthenticated findPublicRemote is rejected', async () => {
+    await expect(
+      app.service('repos').findPublicRemote({ query: 'x' }, unauthParams)
+    ).rejects.toThrow('Not authenticated');
+    expect(findPublicRemoteRepos).not.toHaveBeenCalled();
   });
 });
 

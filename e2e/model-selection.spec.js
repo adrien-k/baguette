@@ -10,7 +10,7 @@ import {
   addManualBuilderAgent,
   createLocalRepo,
   createPresetModel,
-  deleteAgentFromPanel,
+  deleteAgentViaApi,
   devLogin,
   ensureMockE2eConfigs,
   expectComposerShowsModel,
@@ -18,7 +18,8 @@ import {
   openComposerModelMenu,
   patchUserSessionDefaults,
   saveE2eScreenshot,
-  selectAgentInPanel,
+  selectAgentInTree,
+  selectAgentViaComposer,
   sendSubagentPromptAndWait,
   sessionComposerRoot,
   setupAccountModelDefaults,
@@ -45,16 +46,16 @@ test.describe('model selection (mock)', () => {
 
     await expectComposerShowsModel(page, 'Mock Alt Primary');
 
-    await addManualBuilderAgent(page, MANUAL_BUILDER);
-    await selectAgentInPanel(page, MANUAL_BUILDER);
+    const manualName = await addManualBuilderAgent(page, MANUAL_BUILDER);
+    await selectAgentInTree(page, manualName);
     await expectComposerShowsModel(page, 'Mock Alt Primary');
 
     await sendSubagentPromptAndWait(page);
-    await selectAgentInPanel(page, MOCK_E2E_SUBAGENT_NAME);
+    await selectAgentInTree(page, MOCK_E2E_SUBAGENT_NAME);
     await expectMcpReadonlyComposer(page);
     await expectComposerShowsModel(page, 'Mock Alt Primary');
 
-    await deleteAgentFromPanel(page, MOCK_E2E_SUBAGENT_NAME);
+    await deleteAgentViaApi(page, MOCK_E2E_SUBAGENT_NAME);
 
     await patchUserSessionDefaults(page, {
       subagent_default_mode: SUBAGENT_DEFAULT_CONFIG,
@@ -62,9 +63,9 @@ test.describe('model selection (mock)', () => {
       subagent_default_model: { model: MOCK_SECONDARY_MODEL_ID, model_params: null },
     });
     await sendSubagentPromptAndWait(page);
-    await selectAgentInPanel(page, MOCK_E2E_SUBAGENT_NAME);
+    await selectAgentInTree(page, MOCK_E2E_SUBAGENT_NAME);
     await expectComposerShowsModel(page, 'Mock Secondary');
-    await deleteAgentFromPanel(page, MOCK_E2E_SUBAGENT_NAME);
+    await deleteAgentViaApi(page, MOCK_E2E_SUBAGENT_NAME);
 
     await createPresetModel(page, {
       description: MOCK_E2E_SUBAGENT_PRESET_DESCRIPTION,
@@ -77,10 +78,11 @@ test.describe('model selection (mock)', () => {
       subagent_default_model: null,
     });
     await sendSubagentPromptAndWait(page);
-    await selectAgentInPanel(page, MOCK_E2E_SUBAGENT_NAME);
+    await selectAgentInTree(page, MOCK_E2E_SUBAGENT_NAME);
     await expectComposerShowsModel(page, 'Mock Secondary');
 
-    await selectAgentInPanel(page, 'Main');
+    // The primary builder is the session row itself — switch via the composer.
+    await selectAgentViaComposer(page, 'Builder');
     await switchSessionComposerConfig(page, MOCK_E2E_CONFIG_A_LABEL);
     await expectComposerShowsModel(page, 'Mock Standard');
     await expectComposerModelMenuLists(page, {
@@ -97,7 +99,7 @@ test.describe('model selection (mock)', () => {
       hide: ['Mock Standard', 'Mock Secondary'],
     });
 
-    await selectAgentInPanel(page, MANUAL_BUILDER);
+    await selectAgentInTree(page, manualName);
     await switchSessionComposerConfig(page, MOCK_E2E_CONFIG_A_LABEL);
     await expectComposerShowsModel(page, 'Mock Standard');
     await expectComposerModelMenuLists(page, {
@@ -106,9 +108,10 @@ test.describe('model selection (mock)', () => {
     });
 
     await startMockReviewFromIssuesTab(page);
-    await selectAgentInPanel(page, 'Main');
+    // The primary builder is the session row itself — switch via the composer.
+    await selectAgentViaComposer(page, 'Builder');
     await expectComposerShowsModel(page, 'Mock Alt Primary');
-    await selectAgentInPanel(page, 'Reviewer');
+    await selectAgentInTree(page, 'Reviewer');
     await expectComposerShowsModel(page, 'Mock Secondary');
   });
 });

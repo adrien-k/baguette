@@ -1,5 +1,6 @@
 import { KnexService } from '@feathersjs/knex';
 import { BadRequest, NotFound } from 'feathers/errors';
+import logger from '../../logger.js';
 import { requireUser, scopeBySessionUser, only } from './hooks.js';
 import { getReviewAgentTurn, reviewTurnKey } from '../review-agent-turn.js';
 import { loadOwnedAgentConfig } from '../agent-config-resolver.js';
@@ -9,17 +10,88 @@ import {
   builderChatActiveKey,
   getAgentById,
   listActiveChildAgents,
-  listSubagentsForSession,
+  listAgentsForSession,
+  SESSION_AGENT_TYPES,
 } from '../agents-db.js';
-import { getAgentServiceForAgent } from '../agent-session-routing.js';
+import { getAgentServiceForAgent, getAgentServiceForSession } from '../agent-session-routing.js';
+import { getUtilityModelService } from '../utility-model.js';
+import { completeSessionMetadata } from '../session-metadata.js';
 import { setAgentTurnTerminal } from '../agent-turn-patch.js';
-import { resolveMcpStartSubagentModel } from '../agent-mcp-model-resolver.js';
+import {
+  resolveMcpReviewerModel,
+  resolveMcpStartSubagentModel,
+} from '../agent-mcp-model-resolver.js';
+import { assertReviewNotInProgress, assertReviewNotifyObserver } from '../review-mcp.js';
+import {
+  BAGUETTE_REVIEW_LATEST_TITLE,
+  buildReviewLatestChangesContent,
+} from '../../../shared/review-latest-changes-prompt.js';
 import { waitForAgentTurnEnd } from '../wait-for-agent-turn.js';
+import {
+  insertAgentObserver,
+  isParentAncestorOf,
+  notifyParentAgentIds,
+  upsertReviewNotifyObserver,
+} from '../agents-db.js';
 import {
   buildMcpUserMessageJson,
   summarizeAssistantMessage,
 } from '../mcp/lib/session-resolution.js';
+import { resolveMcpMessageSenderForParentAgent } from '../mcp/lib/mcp-message-sender.js';
+import { agentFailureError, hydrateAgentFailureErrors } from '../agent-error-message.js';
 import { nextSessionItemRef } from '../session-item-ref.js';
+import { titleFromPrompt } from '../../../shared/agent-naming.js';
+import {
+  assertIsolatedWorktreeAllowed,
+  provisionIsolatedSubagentWorktree,
+  subagentWorktreePayload,
+  killTasksUnderSubagentWorktrees,
+  teardownIsolatedSubagentWorktree,
+} from '../subagent-worktree.js';
+
+function normalizeListAgentTypes(raw) {
+  if (raw == null) return [...SESSION_AGENT_TYPES];
+  if (!Array.isArray(raw)) throw new BadRequest('agent_types must be an array');
+  const allowed = new Set(SESSION_AGENT_TYPES);
+  const types = [...new Set(raw.map((t) => String(t).trim()).filter(Boolean))];
+  if (!types.length) throw new BadRequest('agent_types cannot be empty');
+  for (const t of types) {
+    if (!allowed.has(t)) {
+      throw new BadRequest(`agent_types must be builder, reviewer, or subagent (got ${t})`);
+    }
+  }
+  return types;
+}
+
+function mapListedAgentRow(row, watching) {
+  const base = {
+    agent_id: row.id,
+    ref: row.ref,
+    name: row.name,
+    agent_type: row.agent_type,
+    is_primary: Boolean(row.is_primary),
+    status: row.status,
+    error_message: agentFailureError(row),
+    agent_sdk: row.agent_sdk ?? null,
+    model: row.model ?? null,
+    agent_config_id: row.agent_config_id ?? null,
+    parent_agent_id: row.parent_agent_id ?? null,
+    active_turn_id: row.active_turn_id ?? null,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+  if (row.agent_type === 'subagent') {
+    return {
+      ...base,
+      notify_parent: watching.has(row.id),
+      ...subagentWorktreePayload(row),
+    };
+  }
+  if (row.agent_type === 'reviewer') {
+    return { ...base, notify_parent: watching.has(row.id) };
+  }
+  return base;
+}
 
 async function resolveStartSubagentParentId(db, sessionId, parentAgentId) {
   if (parentAgentId == null || parentAgentId === '') return null;
@@ -35,9 +107,10 @@ async function resolveStartSubagentParentId(db, sessionId, parentAgentId) {
   return id;
 }
 
-async function subagentTurnResult(app, sessionId, agentId) {
+async function awaitAgentTurnResult(app, sessionId, agentId) {
   const db = app.get('db');
   const agent = await getAgentById(db, agentId);
+  await hydrateAgentFailureErrors(db, [agent]);
   const lastAssistant = await db('session_messages')
     .where({ session_id: sessionId, agent_id: agentId, type: 'assistant' })
     .orderBy('id', 'desc')
@@ -45,9 +118,12 @@ async function subagentTurnResult(app, sessionId, agentId) {
   return {
     agent_id: agent.id,
     ref: agent.ref,
+    agent_type: agent.agent_type,
     status: agent.status,
+    error_message: agentFailureError(agent),
     session_id: sessionId,
     last_assistant_message: summarizeAssistantMessage(lastAssistant),
+    ...(agent.agent_type === 'subagent' ? subagentWorktreePayload(agent) : {}),
   };
 }
 
@@ -116,6 +192,41 @@ class AgentsService extends KnexService {
     }
   }
 
+  /**
+   * Generate a short agent label from a prompt. Prefers the account utility model;
+   * otherwise uses the session's primary builder. Throws when nothing usable comes back
+   * so the client can keep the heuristic prefill.
+   */
+  async generateName(data, params) {
+    const prompt = String(data?.prompt ?? '').trim();
+    const sessionId = Number(data?.session_id);
+    if (!prompt) throw new BadRequest('prompt is required');
+    if (!Number.isFinite(sessionId)) throw new BadRequest('session_id is required');
+    const session = await this.app.service('sessions').get(sessionId, { user: params.user });
+
+    let name = await completeUtilityAgentName(this.app, params.user, prompt);
+    if (!name) {
+      try {
+        const builderService = await getAgentServiceForSession(this.app, session);
+        const builder = await this.app
+          .get('db')('agents')
+          .where({ session_id: sessionId, is_primary: 1 })
+          .first();
+        name = await labelFromMetadataService(builderService, {
+          taskPrompt: prompt,
+          userId: params.user?.id ?? null,
+          agentConfigId: builder?.agent_config_id ?? session.agent_config_id ?? null,
+          model: builder?.model ?? session.model ?? null,
+          modelParams: builder?.model_params ?? session.model_params ?? null,
+        });
+      } catch (err) {
+        logger.warn({ err: err?.message }, 'Session builder name generation failed');
+      }
+    }
+    if (!name) throw new BadRequest('Could not generate a label');
+    return { name };
+  }
+
   async startSubagent(data, params) {
     const sessionId = Number(data?.session_id);
     const name = data?.name != null ? String(data.name).trim() : '';
@@ -126,9 +237,15 @@ class AgentsService extends KnexService {
 
     const waitForCompletion = data.wait_for_completion !== false;
     const notifyParent = data.notify_parent === true;
+    const isolatedWorktree = data.isolated_worktree === true;
 
     const session = await this.app.service('sessions').get(sessionId, { user: params.user });
+    if (isolatedWorktree) {
+      assertIsolatedWorktreeAllowed(session);
+    }
     const db = this.app.get('db');
+    const repo =
+      session.repo_id != null ? await db('repos').where({ id: session.repo_id }).first() : null;
     const parentAgentId = await resolveStartSubagentParentId(
       db,
       sessionId,
@@ -155,13 +272,53 @@ class AgentsService extends KnexService {
         model: resolved.model,
         model_params: modelParamsStored,
         initial_prompt: initialPrompt,
-        notify_parent: notifyParent,
         ...(parentAgentId != null ? { parent_agent_id: parentAgentId } : {}),
       },
       { ...params, provider: 'rest' }
     );
 
-    const message_json = buildMcpUserMessageJson(initialPrompt);
+    let worktreeMeta = null;
+    if (isolatedWorktree) {
+      try {
+        worktreeMeta = await provisionIsolatedSubagentWorktree(session, repo, agent.id);
+        await this.patch(
+          agent.id,
+          {
+            worktree_path: worktreeMeta.worktree_path_stored,
+            local_branch: worktreeMeta.local_branch,
+          },
+          { user: params.user, provider: undefined }
+        );
+      } catch (err) {
+        if (worktreeMeta) {
+          await teardownIsolatedSubagentWorktree(repo, {
+            worktree_path: worktreeMeta.worktree_path_stored,
+            local_branch: worktreeMeta.local_branch,
+          });
+        }
+        await this.remove(agent.id, { user: params.user, provider: undefined });
+        throw err;
+      }
+    }
+
+    // Observer row must exist before the first message dispatches the turn — a very
+    // fast turn would otherwise go terminal before the wake-up subscription lands.
+    if (notifyParent && parentAgentId != null) {
+      try {
+        await insertAgentObserver(this.app.get('db'), {
+          agentId: agent.id,
+          observerAgentId: parentAgentId,
+        });
+      } catch (err) {
+        logger.warn(
+          { agentId: agent.id, parentAgentId, err: err?.message },
+          'Failed to insert subagent notify_parent observer row'
+        );
+      }
+    }
+
+    const mcpSender = await resolveMcpMessageSenderForParentAgent(db, sessionId, parentAgentId);
+    const message_json = buildMcpUserMessageJson(initialPrompt, mcpSender);
 
     try {
       await this.app.service('messages').create(
@@ -179,38 +336,59 @@ class AgentsService extends KnexService {
         { user: params.user, provider: 'rest' }
       );
     } catch (err) {
+      if (worktreeMeta) {
+        await teardownIsolatedSubagentWorktree(repo, {
+          worktree_path: worktreeMeta.worktree_path_stored,
+          local_branch: worktreeMeta.local_branch,
+        });
+      }
       await this.remove(agent.id, { user: params.user, provider: undefined });
       throw err;
     }
 
     if (!waitForCompletion) {
       const fresh = await getAgentById(this.app.get('db'), agent.id);
+      const watching = await notifyParentAgentIds(this.app.get('db'), [agent.id]);
       return {
         agent_id: agent.id,
         ref: agent.ref,
         status: fresh?.status ?? agent.status,
         session_id: sessionId,
-        notify_parent: Boolean(fresh?.notify_parent),
+        notify_parent: watching.has(agent.id),
+        ...subagentWorktreePayload(fresh ?? agent),
       };
     }
 
     await waitForAgentTurnEnd(this.app.get('db'), agent.id);
-    return subagentTurnResult(this.app, sessionId, agent.id);
+    return awaitAgentTurnResult(this.app, sessionId, agent.id);
   }
 
-  async awaitSubagent(data, params) {
+  async awaitAgent(data, params) {
     const sessionId = Number(data?.session_id);
     if (!Number.isFinite(sessionId)) throw new BadRequest('session_id is required');
     await this.app.service('sessions').get(sessionId, { user: params.user });
     const db = this.app.get('db');
-    const agent = await this._resolveSubagentTarget(db, sessionId, data);
+    const agent = await this._resolveAwaitAgentTarget(db, sessionId, data);
+    const callerAgentId = data?.caller_agent_id != null ? Number(data.caller_agent_id) : null;
+    if (Number.isFinite(callerAgentId)) {
+      if (callerAgentId === agent.id) {
+        throw new BadRequest(
+          'Cannot await your own agent while its turn is running — end the wait or use a different tool.'
+        );
+      }
+      if (await isParentAncestorOf(db, agent.id, callerAgentId)) {
+        throw new BadRequest(
+          'Cannot await a parent agent while your turn is running — that deadlocks with attach.'
+        );
+      }
+    }
     if (agent.status === 'running') {
       await waitForAgentTurnEnd(db, agent.id);
     }
-    return subagentTurnResult(this.app, sessionId, agent.id);
+    return awaitAgentTurnResult(this.app, sessionId, agent.id);
   }
 
-  async _resolveSubagentTarget(db, sessionId, data) {
+  async _resolveAwaitAgentTarget(db, sessionId, data) {
     const agentId = data?.agent_id != null ? Number(data.agent_id) : null;
     const agentRef = data?.agent_ref != null ? Number(data.agent_ref) : null;
     if (!Number.isFinite(agentId) && !Number.isFinite(agentRef)) {
@@ -222,30 +400,162 @@ class AgentsService extends KnexService {
     } else {
       agent = await db('agents').where({ session_id: sessionId, ref: agentRef }).first();
     }
-    if (!agent || agent.session_id !== sessionId || agent.agent_type !== 'subagent') {
-      throw new NotFound('Subagent not found');
+    if (!agent || agent.session_id !== sessionId) {
+      throw new NotFound('Agent not found');
+    }
+    if (!SESSION_AGENT_TYPES.includes(agent.agent_type)) {
+      throw new NotFound('Agent not found');
     }
     return agent;
   }
 
-  async listSubagents(data, params) {
+  async listAgents(data, params) {
     const sessionId = Number(data?.session_id);
     if (!Number.isFinite(sessionId)) throw new BadRequest('session_id is required');
     await this.app.service('sessions').get(sessionId, { user: params.user });
-    const rows = await listSubagentsForSession(this.app.get('db'), sessionId, {
+    const agentTypes = normalizeListAgentTypes(data?.agent_types);
+    if (data?.status != null && data?.active_only === true) {
+      throw new BadRequest('Pass status or active_only, not both');
+    }
+    const rows = await listAgentsForSession(this.app.get('db'), sessionId, {
+      agent_types: agentTypes,
       status: data?.status,
       active_only: data?.active_only === true,
     });
+    const watching = await notifyParentAgentIds(
+      this.app.get('db'),
+      rows.map((row) => row.id)
+    );
+    await hydrateAgentFailureErrors(this.app.get('db'), rows);
     return {
       session_id: sessionId,
-      subagents: rows.map((row) => ({
-        agent_id: row.id,
-        ref: row.ref,
-        name: row.name,
-        status: row.status,
-        parent_agent_id: row.parent_agent_id ?? null,
-        notify_parent: Boolean(row.notify_parent),
-      })),
+      agents: rows.map((row) => mapListedAgentRow(row, watching)),
+    };
+  }
+
+  async startReview(data, params) {
+    const sessionId = Number(data?.session_id);
+    if (!Number.isFinite(sessionId)) throw new BadRequest('session_id is required');
+    const session = await this.app.service('sessions').get(sessionId, { user: params.user });
+    const db = this.app.get('db');
+    const existing = await assertReviewNotInProgress(db, sessionId);
+    if (existing && data?.clear_previous_review !== true) {
+      throw new BadRequest(
+        'Session already has a reviewer; pass clear_previous_review to clear and restart'
+      );
+    }
+    if (existing) {
+      await this.remove(existing.id, { user: params.user, provider: 'rest' });
+    }
+    const notifyParent = data.notify_parent === true;
+    const observerAgentId = data.observer_agent_id != null ? Number(data.observer_agent_id) : null;
+    if (notifyParent && !Number.isFinite(observerAgentId)) {
+      throw new BadRequest('observer_agent_id is required when notify_parent is true');
+    }
+    if (notifyParent) {
+      await assertReviewNotifyObserver(db, {
+        reviewedSessionId: sessionId,
+        observerAgentId,
+        userId: params.user.id,
+      });
+    }
+    const resolved = await resolveMcpReviewerModel(db, params.user.id);
+    const initialPrompt =
+      data?.initial_prompt != null ? String(data.initial_prompt).trim() || null : null;
+    const extraPrompt =
+      data?.extra_prompt != null ? String(data.extra_prompt).trim() || null : null;
+    const agent = await this.create(
+      {
+        session_id: sessionId,
+        agent_type: 'reviewer',
+        agent_config_id: resolved.agent_config_id,
+        model: resolved.model,
+        ...(resolved.model_params != null ? { model_params: resolved.model_params } : {}),
+        initial_prompt: initialPrompt,
+        ...(extraPrompt != null ? { extra_prompt: extraPrompt } : {}),
+      },
+      {
+        user: params.user,
+        provider: 'rest',
+        ...(notifyParent ? { _reviewObserverAgentId: observerAgentId } : {}),
+      }
+    );
+    const watching = await notifyParentAgentIds(db, [agent.id]);
+    return {
+      ok: true,
+      session_id: sessionId,
+      agent_id: agent.id,
+      ref: agent.ref,
+      status: agent.status,
+      agent_sdk: agent.agent_sdk,
+      model: agent.model,
+      cleared_previous_reviewer: Boolean(existing),
+      repo_full_name: session.repo_full_name ?? null,
+      notify_parent: watching.has(agent.id),
+    };
+  }
+
+  async continueReview(data, params) {
+    const sessionId = Number(data?.session_id);
+    if (!Number.isFinite(sessionId)) throw new BadRequest('session_id is required');
+    const session = await this.app.service('sessions').get(sessionId, { user: params.user });
+    const db = this.app.get('db');
+    const reviewer = await assertReviewNotInProgress(db, sessionId);
+    if (!reviewer) {
+      throw new BadRequest('Start a review first');
+    }
+    const notifyParent = data.notify_parent === true;
+    const observerAgentId = data.observer_agent_id != null ? Number(data.observer_agent_id) : null;
+    if (notifyParent && !Number.isFinite(observerAgentId)) {
+      throw new BadRequest('observer_agent_id is required when notify_parent is true');
+    }
+    if (notifyParent) {
+      await assertReviewNotifyObserver(db, {
+        reviewedSessionId: sessionId,
+        observerAgentId,
+        userId: params.user.id,
+      });
+      await upsertReviewNotifyObserver(db, {
+        agentId: reviewer.id,
+        observerAgentId,
+      });
+    }
+    let content = buildReviewLatestChangesContent(session.base_branch);
+    const extra =
+      data?.additional_instructions != null ? String(data.additional_instructions).trim() : '';
+    if (extra) {
+      content = `${content}\n\nAdditional instructions:\n${extra}`;
+    }
+    const messageJson = JSON.stringify({
+      type: 'user',
+      subtype: 'baguette',
+      source: 'baguette',
+      title: BAGUETTE_REVIEW_LATEST_TITLE,
+      content,
+    });
+    const result = await this.app.service('messages').create(
+      {
+        session_id: sessionId,
+        type: 'user',
+        subtype: 'baguette',
+        message_json: messageJson,
+        agent_id: reviewer.id,
+        agent_sdk: reviewer.agent_sdk,
+        model: reviewer.model,
+        ...(reviewer.model_params != null ? { model_params: reviewer.model_params } : {}),
+        ...(reviewer.agent_config_id != null ? { agent_config_id: reviewer.agent_config_id } : {}),
+      },
+      { user: params.user, provider: 'rest' }
+    );
+    const watching = await notifyParentAgentIds(db, [reviewer.id]);
+    return {
+      ok: true,
+      session_id: sessionId,
+      agent_id: reviewer.id,
+      ref: reviewer.ref,
+      queued: result?.queued === true,
+      message_id: result?.id ?? null,
+      notify_parent: watching.has(reviewer.id),
     };
   }
 }
@@ -258,6 +568,13 @@ const EXTERNAL_PATCH_FIELDS = [
   'initial_prompt',
 ];
 
+/** Bump `updated_at` on every non-empty agent patch (sidebar "last activity" label). */
+function touchUpdatedAt(context) {
+  if (!context.data || Object.keys(context.data).length === 0) return context;
+  context.data.updated_at = new Date().toISOString();
+  return context;
+}
+
 const CREATE_FIELDS = [
   'session_id',
   'agent_type',
@@ -267,8 +584,66 @@ const CREATE_FIELDS = [
   'initial_prompt',
   'name',
   'parent_agent_id',
-  'notify_parent',
+  // Naming-only hint for secondary builders; consumed by resolveSecondaryBuilderName.
+  'naming_prompt',
 ];
+
+const AGENT_NAME_MAX_LENGTH = 120;
+
+async function labelFromMetadataService(service, opts) {
+  const { label } = await completeSessionMetadata(service, opts);
+  return label.slice(0, AGENT_NAME_MAX_LENGTH);
+}
+
+/**
+ * Ask the account utility model for a short agent name. Returns '' when none is
+ * configured or the completion is unusable; callers apply their own fallback.
+ */
+async function completeUtilityAgentName(app, user, prompt) {
+  const trimmed = String(prompt ?? '').trim();
+  if (!trimmed) return '';
+  try {
+    const utility = await getUtilityModelService(app, user?.id);
+    if (!utility) return '';
+    return await labelFromMetadataService(utility.service, {
+      taskPrompt: trimmed,
+      userId: user?.id ?? null,
+      agentConfigId: utility.agent_config_id,
+      model: utility.model,
+      modelParams: utility.model_params,
+    });
+  } catch (err) {
+    logger.warn({ err: err?.message }, 'Utility model name generation failed');
+    return '';
+  }
+}
+
+/**
+ * Name a manually started secondary builder when the caller does not pass a name:
+ * the user's utility model (Settings → Agent) summarizes `naming_prompt`, falling back
+ * to the prompt's first words, then 'Builder'. The hint is never persisted.
+ */
+async function resolveSecondaryBuilderName(context) {
+  if (context.method !== 'create') return context;
+  const data = context.data ?? {};
+  const namingPrompt = typeof data.naming_prompt === 'string' ? data.naming_prompt : '';
+  delete data.naming_prompt;
+  if (data.agent_type !== 'builder') return context;
+  if (typeof data.name === 'string' && data.name.trim()) return context;
+  const sessionId = data.session_id;
+  if (!sessionId) return context;
+  const primary = await context.app
+    .get('db')('agents')
+    .where({ session_id: sessionId, is_primary: 1 })
+    .first();
+  if (!primary) return context; // first builder keeps the default naming
+  const prompt = namingPrompt.trim();
+  const name = prompt
+    ? await completeUtilityAgentName(context.app, context.params.user, prompt)
+    : '';
+  context.data.name = name || titleFromPrompt(prompt);
+  return context;
+}
 
 async function stashReviewerCreateExtras(context) {
   if (!context.params?.provider) return context;
@@ -354,8 +729,8 @@ async function validateCreate(context) {
     const name = context.data.name?.trim();
     if (!name) throw new BadRequest('name is required for a subagent');
     context.data.is_primary = 0;
-    // Only subagents report back to a parent on completion (StartSubagent notify_parent).
-    context.data.notify_parent = context.data.notify_parent ? 1 : 0;
+    // Parent wake-ups are `agent_observers` rows created by StartSubagent (notify_parent).
+    delete context.data.notify_parent;
     if (context.data.parent_agent_id != null) {
       context.data.parent_agent_id = await resolveStartSubagentParentId(
         db,
@@ -369,13 +744,8 @@ async function validateCreate(context) {
   }
   if (agent_type === 'builder') {
     const existingPrimary = await db('agents').where({ session_id, is_primary: 1 }).first();
-    if (existingPrimary) {
-      const name = context.data.name?.trim();
-      if (!name) throw new BadRequest('name is required for an additional builder agent');
-      context.data.is_primary = 0;
-    } else {
-      context.data.is_primary = 1;
-    }
+    // Secondary builders are named by resolveSecondaryBuilderName before this hook.
+    context.data.is_primary = existingPrimary ? 0 : 1;
   }
   if (agent_type === 'reviewer') {
     const existing = await db('agents').where({ session_id, agent_type: 'reviewer' }).first();
@@ -409,6 +779,13 @@ async function afterReviewerCreate(context) {
   if (!agent || agent.agent_type !== 'reviewer' || !context.params?.provider) return context;
   const session = await context.app.get('db')('sessions').where({ id: agent.session_id }).first();
   if (!session) throw new NotFound('Session not found');
+  const observerAgentId = context.params._reviewObserverAgentId;
+  if (observerAgentId != null) {
+    await upsertReviewNotifyObserver(context.app.get('db'), {
+      agentId: agent.id,
+      observerAgentId: Number(observerAgentId),
+    });
+  }
   try {
     await dispatchReviewerAfterCreate(
       context.app,
@@ -436,6 +813,18 @@ async function stopReviewerBeforeRemove(app, row, user) {
   if (row.status !== 'running' && row.status !== 'approval') return;
   const session = await app.service('sessions').get(row.session_id, { user });
   await getReviewAgentTurn(app).stopReviewerAgent(session, row);
+}
+
+/** External name changes are limited to extra builders (not primary, reviewer, or MCP subagent). */
+async function restrictNamePatch(context) {
+  if (!context.params?.provider) return context;
+  if (context.data?.name === undefined) return context;
+  const agent = await getAgentById(context.app.get('db'), context.id);
+  if (!agent) throw new NotFound('Agent not found');
+  if (agent.agent_type !== 'builder' || Number(agent.is_primary) === 1) {
+    throw new BadRequest('Only secondary builders can be renamed');
+  }
+  return context;
 }
 
 /** Collaborators may stop a run; only the owner can create, reconfigure, or delete agents. */
@@ -466,6 +855,16 @@ async function beforeRemove(context) {
     throw new BadRequest('Could not stop agent before removal');
   }
   const db = context.app.get('db');
+  if (row.worktree_path) {
+    const session = await db('sessions').where({ id: row.session_id }).first();
+    const repo =
+      session?.repo_id != null ? await db('repos').where({ id: session.repo_id }).first() : null;
+    await killTasksUnderSubagentWorktrees(context.app, row.session_id, [row]);
+    await teardownIsolatedSubagentWorktree(repo, {
+      worktree_path: row.worktree_path,
+      local_branch: row.local_branch,
+    });
+  }
   if (row.agent_type === 'reviewer') {
     context.app.service('sessions').resetUsageTotals(reviewTurnKey(row.id));
   }
@@ -483,6 +882,7 @@ const agentsHooks = {
     create: [
       requireOwnSessionForWrite,
       pickCreateFields,
+      resolveSecondaryBuilderName,
       stashReviewerCreateExtras,
       allocateAgentRef,
       inheritPrimaryBuilderDefaults,
@@ -493,8 +893,10 @@ const agentsHooks = {
     patch: [
       requireOwnSessionForWrite,
       only(EXTERNAL_PATCH_FIELDS),
+      restrictNamePatch,
       normalizeModelParams,
       resolveSdkOnConfigChange,
+      touchUpdatedAt,
     ],
     remove: [requireOwnSessionForWrite, beforeRemove],
     stop: [requireUser],
@@ -519,9 +921,12 @@ export function registerAgentsService(app, path = 'agents') {
       'patch',
       'remove',
       'stop',
+      'generateName',
       'startSubagent',
-      'awaitSubagent',
-      'listSubagents',
+      'awaitAgent',
+      'listAgents',
+      'startReview',
+      'continueReview',
     ],
   });
   app.service(path).hooks(agentsHooks);

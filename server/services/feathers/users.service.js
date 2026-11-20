@@ -20,6 +20,8 @@ import { DEFAULT_PAGINATE } from '../../config.js';
 import { cacheScopeForUser, clearUserReposPickerCache } from '../github.js';
 import { parseAgentDefaultModelJson } from '../../../shared/agent-default-model.js';
 import { normalizeUserAgentDefaultsPatch } from '../../services/user-agent-defaults.js';
+import { userDefaultUsageLimitsPatchError } from '../../lib/usage-limit.js';
+import { parseAutoLoadSkillLabels, serializeAutoLoadSkillLabels } from '../skill-resolution.js';
 import {
   buildPasskeyRegistrationOptions,
   verifyPasskeyRegistration,
@@ -305,6 +307,26 @@ async function stripPrivilegedFieldsFromExternalPatch(context) {
   return context;
 }
 
+async function normalizeDefaultUsageLimitsPatch(context) {
+  const error = userDefaultUsageLimitsPatchError(context.data || {});
+  if (error) throw new BadRequest(error);
+  return context;
+}
+
+async function normalizeDefaultAutoLoadSkillsPatch(context) {
+  if (context.data?.default_auto_load_skills === undefined) return context;
+  const value = context.data.default_auto_load_skills;
+  if (value == null) {
+    context.data.default_auto_load_skills = null;
+    return context;
+  }
+  if (!Array.isArray(value)) {
+    throw new BadRequest('default_auto_load_skills must be an array of skill labels');
+  }
+  context.data.default_auto_load_skills = serializeAutoLoadSkillLabels(value);
+  return context;
+}
+
 async function orderByCreatedAt(context) {
   const query = context.service.createQuery(context.params);
   context.params.knex = query.orderBy('created_at', 'desc');
@@ -374,6 +396,8 @@ function formatUserExternal(context) {
     user.agent_default_model = parseAgentDefaultModelJson(user.agent_default_model);
     user.reviewer_default_model = parseAgentDefaultModelJson(user.reviewer_default_model);
     user.subagent_default_model = parseAgentDefaultModelJson(user.subagent_default_model);
+    user.utility_default_model = parseAgentDefaultModelJson(user.utility_default_model);
+    user.default_auto_load_skills = parseAutoLoadSkillLabels(user.default_auto_load_skills);
     user.admin = !!user.admin;
     return user;
   };
@@ -467,6 +491,8 @@ const usersHooks = {
       normalizeColorSchemePatch,
       normalizeCursorModelPrefsPatch,
       normalizeUserAgentDefaultsPatch,
+      normalizeDefaultUsageLimitsPatch,
+      normalizeDefaultAutoLoadSkillsPatch,
       clearGithubPickerCacheOnTokenPatch,
       encryptUserSecrets,
     ],

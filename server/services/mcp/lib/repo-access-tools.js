@@ -10,6 +10,7 @@ const GITHUB_API_MCP_TOOLS = [
   'PrComments',
   'PrMarkCommentViewed',
   'PrComment',
+  'EditPrComment',
   'PrReview',
   'PrWorkflows',
   'PrWorkflowLogs',

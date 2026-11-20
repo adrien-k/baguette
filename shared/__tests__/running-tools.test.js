@@ -33,6 +33,20 @@ describe('collectRunningTools', () => {
     expect(detail).toBe('My PR title');
   });
 
+  it('shows EditPrComment with a truncated body preview', () => {
+    const short = runningToolDisplay({
+      name: 'mcp__baguette__EditPrComment',
+      input: { commentId: 5, commentType: 'issue', body: 'Fixed in abc123' },
+    });
+    expect(short).toEqual({ label: 'EditPrComment', detail: 'Fixed in abc123' });
+
+    const long = runningToolDisplay({
+      name: 'mcp__baguette__EditPrComment',
+      input: { commentId: 5, commentType: 'issue', body: 'x'.repeat(80) },
+    });
+    expect(long.detail).toBe(`${'x'.repeat(45)}…`);
+  });
+
   it('returns running tool_call rows without results', () => {
     const messages = [
       runningToolCall('a', 'Read', { file_path: '/wt/src/a.js' }),

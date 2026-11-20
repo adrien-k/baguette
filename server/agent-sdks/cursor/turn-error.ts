@@ -9,7 +9,28 @@
  * keeping deliberate user stops quiet.
  */
 
+import { isUsageLimitText, parseUsageLimitResetMs } from '../../lib/usage-limit.js';
+
 export type CursorTerminalStatus = 'ERROR' | 'CANCELLED' | 'EXPIRED';
+
+/** Cursor reported a plan/usage limit; `resetAtMs` is parsed from its text when present. */
+export type CursorUsageLimit = { resetAtMs: number | null };
+
+/**
+ * Detect a Cursor usage/rate limit from an SDK error or terminal-status detail.
+ * Cursor exposes no structured reset time, so it is parsed from the text (null when absent).
+ */
+export function cursorUsageLimit(
+  source: { name?: string; status?: number; message?: string } | string | null | undefined,
+  nowMs = Date.now()
+): CursorUsageLimit | null {
+  if (!source) return null;
+  const text = typeof source === 'string' ? source : (source.message ?? '');
+  const structured =
+    typeof source !== 'string' && (source.name === 'RateLimitError' || source.status === 429);
+  if (!structured && !isUsageLimitText(text)) return null;
+  return { resetAtMs: parseUsageLimitResetMs(text, nowMs) };
+}
 
 export type CursorTerminalSurfacingInput = {
   /** Cursor's own error text (`SDKStatusMessage.message` / run-handle detail), when present. */
@@ -19,10 +40,12 @@ export type CursorTerminalSurfacingInput = {
 };
 
 export type CursorTerminalSurfacing = {
-  /** Copy for the persisted `system/status` transcript row. */
+  /** Copy for the persisted `turn_result` error (or a quiet status row on user stop). */
   statusText: string;
   /** True when the run failed without the user asking for it (emit `app:error`). */
   isFailure: boolean;
+  /** Set when the failure is a usage limit: stop or wait per the session's usage limit action. */
+  usageLimit?: CursorUsageLimit | null;
 };
 
 const RETRY_HINT = 'Send your message again to continue in a fresh conversation.';
@@ -40,6 +63,10 @@ export function cursorTerminalStatusSurfacing(
   { detail, userInitiated }: CursorTerminalSurfacingInput = {}
 ): CursorTerminalSurfacing {
   if (status === 'ERROR') {
+    const usageLimit = cursorUsageLimit(detail);
+    if (usageLimit) {
+      return { statusText: `Cursor usage limit reached. ${detail}`, isFailure: true, usageLimit };
+    }
     const sentence = detailSentence(detail);
     const detailText = sentence ? ` ${sentence}` : '';
     return {

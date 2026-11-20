@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { liveSdkSuiteTimeoutMs, readLiveSdkEnv } from '../../../test-utils/sdk-live-env.js';
+import {
+  liveBashStdoutTimeoutMs,
+  liveSdkSuiteTimeoutMs,
+  readLiveSdkEnv,
+} from '../../../test-utils/sdk-live-env.js';
 
 const env = readLiveSdkEnv('mock');
 
 describe.skipIf(!env.enabled)('mock live SDK', () => {
   it(
-    'listModels, connectivity, and builder tool tour',
+    'listModels, connectivity, completeText, and builder tool tour',
     { timeout: liveSdkSuiteTimeoutMs(env, { includeReviewer: false }) },
     async () => {
       const { runLiveSdkSuite } = await import('../../../test-utils/sdk-live.js');
@@ -19,6 +23,15 @@ describe.skipIf(!env.enabled)('mock live SDK', () => {
         },
       });
       expect(toolNames.some((n) => /bash|write|task/i.test(n))).toBe(true);
+    }
+  );
+
+  it(
+    'persists bash stdout on completed bash tool_call rows',
+    { timeout: liveBashStdoutTimeoutMs(env) },
+    async () => {
+      const { runLiveBashStdoutSuite } = await import('../../../test-utils/sdk-live.js');
+      await runLiveBashStdoutSuite('mock');
     }
   );
 });

@@ -1,8 +1,12 @@
 import path from 'path';
-import { fileURLToPath } from 'url';
-import { DB_PATH } from './server/config.js';
+import { fileURLToPath, pathToFileURL } from 'url';
+import { resolveServerDir } from './lib/paths.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+const rootDir = path.dirname(fileURLToPath(import.meta.url));
+const serverDir = resolveServerDir(rootDir);
+const { DB_PATH } = await import(pathToFileURL(path.join(serverDir, 'config.js')).href);
 
 const SQLITE_TIMESTAMP_RE = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
 
@@ -23,7 +27,7 @@ export default {
     filename: DB_PATH,
   },
   migrations: {
-    directory: path.join(__dirname, 'server', 'migrations'),
+    directory: path.join(serverDir, 'migrations'),
   },
   useNullAsDefault: true,
   postProcessResponse: (result) => {

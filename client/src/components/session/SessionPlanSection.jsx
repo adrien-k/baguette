@@ -1,28 +1,16 @@
 import { CheckCircle } from 'lucide-react';
 import CollapsibleMarkdown from '../chat/CollapsibleMarkdown.tsx';
+import RunPlanButton from '../chat/RunPlanButton.tsx';
 import SessionTodosPanel from './SessionTodosPanel.jsx';
+import PlanStatusBadge from './PlanStatusBadge.jsx';
 import { NEUTRAL_BUTTON_CLASS } from '../../utils/buttonStyles.js';
-
-const PLAN_STATUS_BADGE_CLASS = {
-  open: 'bg-brand/15 text-accent border-brand/35',
-  completed: 'bg-success/15 text-success border-success/35',
-};
-
-function PlanStatusBadge({ status = 'open' }) {
-  const key = status === 'completed' ? 'completed' : 'open';
-  return (
-    <span
-      className={`inline-flex shrink-0 items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${PLAN_STATUS_BADGE_CLASS[key]}`}
-    >
-      {key}
-    </span>
-  );
-}
+import { sessionPlanTitle } from '../../utils/sessionPlanDisplay.ts';
 
 export default function SessionPlanSection({
   plan,
   todos,
   sessionId,
+  runPlanAgentId,
   editable = false,
   completing = false,
   onComplete,
@@ -30,15 +18,20 @@ export default function SessionPlanSection({
   const markdown = (plan.markdown ?? '').trim();
   const isCompleted = plan.status === 'completed';
   const refLabel = plan.ref != null ? `#${plan.ref}` : null;
+  const title = sessionPlanTitle(plan);
 
   return (
     <section
-      className={`space-y-4 rounded-xl border p-3 sm:p-4 ${
+      id={plan.ref != null ? `plan-${plan.ref}` : undefined}
+      className={`space-y-4 rounded-xl border p-3 sm:p-4 scroll-mt-4 ${
         isCompleted ? 'border-line bg-inset/20 opacity-90' : 'border-line bg-inset/30'
       }`}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <h2 className="text-sm font-medium text-heading">Plan{refLabel ? ` ${refLabel}` : ''}</h2>
+        <h2 className="text-sm font-medium text-heading">
+          {title}
+          {refLabel ? <span className="text-faint font-normal">{` ${refLabel}`}</span> : null}
+        </h2>
         <PlanStatusBadge status={plan.status} />
         {editable && !isCompleted && (
           <button
@@ -58,6 +51,14 @@ export default function SessionPlanSection({
         </CollapsibleMarkdown>
       ) : (
         <p className="text-sm text-faint">No plan content yet.</p>
+      )}
+      {editable && !isCompleted && (
+        <div className="space-y-2">
+          <RunPlanButton sessionId={sessionId} agentId={runPlanAgentId} planRef={plan.ref} />
+          <p className="text-xs text-faint">
+            or continue chatting with the agent to refine the plan
+          </p>
+        </div>
       )}
       <div className="space-y-3">
         <h3 className="text-xs font-medium uppercase tracking-wide text-faint">Todos</h3>

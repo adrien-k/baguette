@@ -10,8 +10,13 @@ import {
   type SDKUserMessage,
   type SettingSource,
 } from '@anthropic-ai/claude-agent-sdk';
+import { ClaudeUsageLimitGuard } from './usage-limit.js';
+import { getLastResultTotals } from './usage-totals.js';
+import { allowsOverage, usageLimitStatusText } from '../../lib/usage-limit.js';
+import type { ClaudeUsageLimitHit } from './sdk-turn.ts';
 import logger from '../../logger.js';
 import { disableExternal } from '../../services/feathers/hooks.js';
+import { METADATA_TIMEOUT_MS } from '../../services/session-metadata.js';
 import { remoteHasNewCommits } from '../../services/github.js';
 import { getGithubToken, getAllowedCommandsFromUser } from '../../services/agent-settings.js';
 import { attachAppErrorHandler, handleAppError } from '../../lib/app-error-handler.js';
@@ -23,6 +28,7 @@ import { toolListToClaudeMcpServer } from './adapt-tools.js';
 import { createMessageChannel } from '../../services/message-channel.js';
 import { buildSystemPromptAppend } from '../../services/session-prompt.js';
 import { resolveDataDirRelativePath } from '../../config.js';
+import { agentWorktreeCwd } from '../../services/subagent-worktree.js';
 import { SDK_QUERY_CLOSED_MESSAGE } from './claude-agent-sdk-constants.js';
 import { normalizeUserMessageForAgentSdk } from '../../../shared/user-message-content.js';
 import { isBaguetteUserMessage, requireTurnModelFromRow } from '../../../shared/turn-model.js';
@@ -38,11 +44,12 @@ import {
   rejectTurnMismatch,
 } from '../../services/agent-message-dispatch.js';
 import { createMessageStreamWriter } from '../../services/message-writer-factory.ts';
+import { prepareAgentTurnStart } from '../../services/agent-turn-prelude.js';
 import { sessionMessageIdentity } from '../../services/feathers/message-create-fields.js';
 import { claudeResultErrorText } from './mapping.ts';
 import { processClaudeQueryStream, type ClaudeStreamTurnOutcome } from './sdk-turn.ts';
 import type { MessageStreamWriter } from '../../../shared/message-stream-writer.ts';
-import type { SystemMessagePayload, UserMessagePayload } from '../../../shared/session-messages.ts';
+import type { UserMessagePayload } from '../../../shared/session-messages.ts';
 import type {
   AgentApp,
   AgentRow,
@@ -71,6 +78,20 @@ import {
 } from '../../services/agent-turn-patch.js';
 
 type TurnOutcome = ClaudeStreamTurnOutcome;
+
+const CLAUDE_SILENT_END_TEXT =
+  'Agent ended the turn without completing. Send your message again to continue.';
+
+function claudeTurnFailureError(opts: {
+  lastStreamError: string | null;
+  lastResult: SDKMessage | null;
+  silentQueryEnd: boolean;
+}): string | null {
+  if (opts.lastStreamError) return opts.lastStreamError;
+  if (opts.lastResult) return claudeResultErrorText(opts.lastResult as SDKResultMessage);
+  if (opts.silentQueryEnd) return CLAUDE_SILENT_END_TEXT;
+  return null;
+}
 
 /** Push/end handle feeding user messages into an open SDK query. */
 type ChannelHandle = {
@@ -110,7 +131,6 @@ type RunTurnOpts = {
   prompt?: unknown;
   queryOptions?: ClaudeSdkOptions;
   persistMessage?: (message: SDKMessage) => Promise<void>;
-  persistStatus?: (text: string) => Promise<void>;
   onInitSessionId?: (id: string) => Promise<void>;
   onResult?: (message: SDKMessage) => Promise<void>;
   onStreamError?: (err: Error) => Promise<void>;
@@ -123,7 +143,6 @@ type RunTurnOpts = {
 type ConsumeQueryOpts = {
   streamWriter?: MessageStreamWriter | null;
   persistMessage?: (message: SDKMessage) => Promise<void>;
-  persistStatus?: (text: string) => Promise<void>;
   onInitSessionId?: (id: string) => Promise<void>;
   onResult?: (message: SDKMessage) => Promise<void>;
   onStreamError?: (err: Error) => Promise<void>;
@@ -163,9 +182,6 @@ const REVIEWER_ALLOWED_TOOLS = [
   'mcp__baguette__UpdateIssue',
   'mcp__baguette__CloseIssue',
 ];
-
-/** Hard cap on session metadata (label/branch) generation — provisioning must not stall on CLI API retries. */
-const METADATA_TIMEOUT_MS = 30_000;
 
 function claudeSdkPermissionMode(sessionRow: AgentSessionRow): 'plan' | 'acceptEdits' {
   return sessionRow.plan_mode ? 'plan' : 'acceptEdits';
@@ -235,7 +251,10 @@ export class ClaudeAgentService {
     if (!claudeEnv) throw new Error('Agent configuration is required to run this turn');
     const resolvedModel = model;
     const cwd =
-      resolveDataDirRelativePath(sessionRow.session_path) || sessionRow.absolute_session_path || '';
+      agentWorktreeCwd(sessionRow, agent) ||
+      sessionRow.absolute_session_path ||
+      resolveDataDirRelativePath(sessionRow.session_path) ||
+      '';
     const resolvedMcp =
       mcpServer ??
       (getSdkPlugin(CLAUDE_AGENT_SDK_KEY)?.adaptTools ?? toolListToClaudeMcpServer)(
@@ -303,6 +322,7 @@ export class ClaudeAgentService {
     const systemPrompt = await buildSystemPromptAppend(sessionRow, {
       agent,
       db: this.app.get('db') as never,
+      app: this.app,
       agentSdk: CLAUDE_AGENT_SDK_KEY,
     });
     return this.buildQueryOptions(sessionRow, {
@@ -374,7 +394,6 @@ export class ClaudeAgentService {
     }
     return await this._consumeQuery(state, {
       persistMessage: opts.persistMessage,
-      persistStatus: opts.persistStatus,
       onInitSessionId: opts.onInitSessionId,
       onResult: opts.onResult,
       onStreamError: opts.onStreamError,
@@ -479,6 +498,33 @@ export class ClaudeAgentService {
     });
     const { model, modelParams } = turnModel;
     const turnAgentConfigId = requireAgentConfigId(row.agent_config_id);
+
+    // Never start a turn on a used-up plan window: providers would keep serving it on paid
+    // overage. Applies to every agent of the session (builder, subagents, reviewer).
+    const blocked = await this.app
+      .service('sessions')
+      .checkUsageLimitGate(sessionId, agent.id, { agentConfigId: turnAgentConfigId });
+    if (blocked) {
+      if (isReview) {
+        await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'failed', {
+          sdk: 'claude',
+          error_message: usageLimitStatusText({
+            label: 'Claude',
+            reason: blocked.reason,
+            action: 'stop',
+            resetAtMs: blocked.reset_at_ms,
+          }),
+        });
+        return;
+      }
+      await setAgentTurnTerminal(this.app, agent, session.user_id, 'stopped');
+      await this.app.service('sessions').onUsageLimit(sessionId, agent.id, {
+        ...blocked,
+        label: 'Claude',
+      });
+      return;
+    }
+    await prepareAgentTurnStart(this.app, session, agent, { channel, agentSdk: sdk });
     const writer =
       row.turn_id != null
         ? createMessageStreamWriter(this.app, {
@@ -621,40 +667,6 @@ export class ClaudeAgentService {
     await this._closeQueryInstanceSafe(session.sessionId, session.queryInstance);
   }
 
-  /**
-   * Persist a system/status message on the agent the failure belongs to — reviewer,
-   * primary builder, or subagent are all rows in `agents`, so no channel distinction
-   * is needed here. Falls back to the primary builder when no agent id is given.
-   */
-  private async _persistSessionStatusMessage(
-    sessionId: number,
-    userId: number,
-    statusText: string,
-    agentId?: number | null
-  ) {
-    const payload: SystemMessagePayload = {
-      type: 'system',
-      subtype: 'status',
-      status: statusText,
-    };
-    const db = this.app.get('db') as DbLike;
-    const agent =
-      agentId != null
-        ? ((await getAgentById(db, agentId)) as AgentRow | undefined)
-        : ((await getPrimaryBuilderAgent(db, sessionId)) as AgentRow | undefined);
-    if (!agent) return;
-    await this.app.service('messages').create(
-      {
-        session_id: sessionId,
-        type: 'system',
-        subtype: 'status',
-        message_json: JSON.stringify(payload),
-        ...sessionMessageIdentity(agent),
-      },
-      { provider: undefined, user: { id: userId } }
-    );
-  }
-
   createCanUseTool() {
     return async (toolName: string, input: Record<string, unknown>): Promise<PermissionResult> => {
       if (toolName === 'ExitPlanMode') {
@@ -741,7 +753,7 @@ export class ClaudeAgentService {
     const resolvedActiveKey = activeKey ?? sessionId;
     // Env from the turn's agent config row — the config id was resolved at dispatch
     // from the message row snapshot and is required to be present.
-    const claudeEnv = await getClaudeEnv(this.app, sessionRow.user_id, null, turnConfigId);
+    const claudeEnv = await getClaudeEnv(this.app, sessionRow.user_id, turnConfigId);
     let queryOptions: ClaudeSdkOptions;
     if (channel === 'review') {
       const extras = getReviewAgentTurn(this.app).peekTurnExtras(sessionId) ?? {};
@@ -905,6 +917,65 @@ export class ClaudeAgentService {
     return recordClaudeTurnUsage(this.app, session, result, opts);
   }
 
+  /** Paid overage spent this turn counts against the session's `usage_limit` in later turns. */
+  async _recordOverageSpend(
+    sessionState: ClaudeAgentState,
+    guard: ClaudeUsageLimitGuard | null
+  ): Promise<void> {
+    if (!guard || guard.spentUsd <= 0) return;
+    const db = this.app.get('db') as DbLike;
+    await db('sessions')
+      .where({ id: sessionState.sessionId })
+      .increment('usage_limit_spent', guard.spentUsd)
+      .catch((err: Error) =>
+        logger.warn(
+          { sessionId: sessionState.sessionId, err: err.message },
+          'claude-agent: failed to record overage spend'
+        )
+      );
+  }
+
+  /**
+   * A synthetic `result` for a turn cut before its own: absolute per-model totals (what the
+   * last recorded result left in the running totals, plus the tokens seen since), so the
+   * usual delta recording yields exactly the cut turn's usage.
+   */
+  _partialResult(
+    sessionState: ClaudeAgentState,
+    partial: Record<string, Record<string, number>> | null | undefined
+  ): SDKMessage | null {
+    if (!partial) return null;
+    const prev = getLastResultTotals(sessionState.sessionId).models as Record<
+      string,
+      Record<string, number>
+    >;
+    const modelUsage: Record<string, Record<string, number>> = {};
+    for (const [model, used] of Object.entries(partial)) {
+      const before = prev?.[model] ?? {};
+      modelUsage[model] = Object.fromEntries(
+        Object.entries(used).map(([field, n]) => [field, (before[field] ?? 0) + n])
+      );
+    }
+    return { type: 'result', modelUsage } as unknown as SDKMessage;
+  }
+
+  /** Usage for a turn cut short by a limit, so the spend before the cut is still recorded. */
+  async _recordLimitTurnUsage(sessionState: ClaudeAgentState, result: SDKMessage): Promise<void> {
+    const db = this.app.get('db') as DbLike;
+    const session = (await db('sessions').where({ id: sessionState.sessionId }).first()) as
+      AgentSessionRow | undefined;
+    const agent = (await getAgentById(db as never, sessionState.agentId)) as AgentRow | undefined;
+    if (!session || !agent) return;
+    await this._recordClaudeTurnUsage(
+      session,
+      agent,
+      result,
+      sessionState.turnChannel ?? 'chat',
+      sessionState.turnAgentConfigId,
+      sessionState.turnModel
+    );
+  }
+
   /** Persist one turn's Claude usage from the final SDK `result` for this consume pass. */
   async _recordClaudeTurnUsage(
     session: AgentSessionRow,
@@ -934,16 +1005,10 @@ export class ClaudeAgentService {
     const db = this.app.get('db') as DbLike;
     const activeKey = sessionState.activeKey ?? sessionId;
     const isReview = sessionState.turnChannel === 'review';
-    const { turnComplete, streamFailed, outcome, lastResult } = await this._consumeQuery(
-      sessionState,
-      {
+    const { turnComplete, streamFailed, outcome, lastResult, lastStreamError, usageLimit } =
+      await this._consumeQuery(sessionState, {
         streamWriter: sessionState.streamWriter ?? null,
         persistMessage: (message) => this.persistMessage(sessionState, message),
-        // Shared by the stream's thrown-error path and the silent-end path below:
-        // attributed to the agent whose turn it is, not just the primary builder
-        // (see _persistSessionStatusMessage).
-        persistStatus: (text: string): Promise<void> =>
-          this._persistSessionStatusMessage(sessionId, userId, text, sessionState.agentId),
         onInitSessionId: async (id) => {
           await patchAgentInternal(
             this.app,
@@ -953,21 +1018,46 @@ export class ClaudeAgentService {
           );
           sessionState.claudeSessionId = id;
         },
-        onStreamError: async () => {
+        onStreamError: async (err: Error) => {
           if (!isReview) return; // Chat status is patched once after the stream ends below.
           const session = (await db('sessions').where({ id: sessionId }).first()) as
             AgentSessionRow | undefined;
           if (!session) return;
+          const userFacing =
+            err.message === SDK_QUERY_CLOSED_MESSAGE
+              ? 'Agent connection closed before the response finished. Try sending your message again.'
+              : err.message;
           await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'failed', {
             sdk: 'claude',
+            error_message: userFacing,
           });
         },
         trackBackgroundTasks: true,
         activeKey,
-      }
-    );
+      });
 
     const awaitingUser = Boolean(sessionState.endTurnAwaitingUser);
+
+    // A subscription limit (or the session's usage limit) ended the turn: persist the notice,
+    // stop the agent, and — when the session asks for it — schedule the resume.
+    if (usageLimit && !isReview) {
+      if (lastResult) {
+        await this._recordLimitTurnUsage(sessionState, lastResult).catch((err) =>
+          logger.warn(
+            { sessionId, err: (err as Error).message },
+            'claude-agent: failed to record limit-turn usage'
+          )
+        );
+      }
+      await setAgentTurnTerminal(this.app, { id: sessionState.agentId }, userId, 'stopped');
+      await this.app.service('sessions').onUsageLimit(sessionId, sessionState.agentId, {
+        label: 'Claude',
+        sdk: 'claude',
+        reason: usageLimit.reason,
+        reset_at_ms: usageLimit.resetAtMs,
+      });
+      return;
+    }
 
     // A turn can also end with a failed `result` message (quota, max turns, budget) without
     // the stream throwing — the mirror of the Cursor terminal-status gap. Bubble it to the
@@ -993,12 +1083,9 @@ export class ClaudeAgentService {
     const silentQueryEnd = !turnComplete && !streamFailed && outcome === 'failed';
     if (silentQueryEnd && !awaitingUser) {
       logger.warn({ sessionId }, 'Claude query ended without a result message');
-      const statusText =
-        'Agent ended the turn without completing. Send your message again to continue.';
-      await this._persistSessionStatusMessage(sessionId, userId, statusText, sessionState.agentId);
       this.app.service('sessions').emit('app:error', {
         sessionId,
-        message: statusText,
+        message: CLAUDE_SILENT_END_TEXT,
         user_id: userId,
       });
     }
@@ -1019,15 +1106,26 @@ export class ClaudeAgentService {
       }
     }
 
+    const failureError = claudeTurnFailureError({
+      lastStreamError,
+      lastResult,
+      silentQueryEnd,
+    });
+
     if (isReview && (turnComplete || silentQueryEnd) && !awaitingUser) {
       const session = (await db('sessions').where({ id: sessionId }).first()) as
         AgentSessionRow | undefined;
       if (session) {
-        await getReviewAgentTurn(this.app).onAgentTurnComplete(
-          session,
-          outcome === 'completed' ? 'completed' : 'failed',
-          { sdk: 'claude' }
-        );
+        if (outcome === 'completed') {
+          await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'completed', {
+            sdk: 'claude',
+          });
+        } else {
+          await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'failed', {
+            sdk: 'claude',
+            error_message: failureError,
+          });
+        }
       }
     }
 
@@ -1037,9 +1135,12 @@ export class ClaudeAgentService {
       const turnEnded = turnComplete || streamFailed || silentQueryEnd;
       if (awaitingUser) {
         await setAgentTurnTerminal(this.app, { id: sessionState.agentId }, userId, 'approval');
+      } else if (turnEnded && outcome === 'completed') {
+        await setAgentTurnTerminal(this.app, { id: sessionState.agentId }, userId, 'completed');
       } else if (turnEnded) {
-        const terminalStatus = outcome === 'completed' ? 'completed' : 'failed';
-        await setAgentTurnTerminal(this.app, { id: sessionState.agentId }, userId, terminalStatus);
+        await setAgentTurnTerminal(this.app, { id: sessionState.agentId }, userId, 'failed', {
+          error_message: failureError,
+        });
       } else if (outcome === 'stopped') {
         await setAgentTurnTerminal(this.app, { id: sessionState.agentId }, userId, 'stopped');
       }
@@ -1069,7 +1170,6 @@ export class ClaudeAgentService {
     {
       streamWriter,
       persistMessage,
-      persistStatus,
       onInitSessionId,
       onResult,
       onStreamError,
@@ -1082,28 +1182,33 @@ export class ClaudeAgentService {
     streamFailed: boolean;
     outcome: TurnOutcome;
     lastResult: SDKMessage | null;
+    lastStreamError: string | null;
+    usageLimit: ClaudeUsageLimitHit | null;
   }> {
     const { queryInstance, sessionId, userId } = sessionState;
     const key = activeKey ?? sessionId;
 
     let streamFailed = false;
+    let lastStreamError: string | null = null;
+    const usageGuard = await this._createUsageGuard(sessionState);
     const result = await processClaudeQueryStream(queryInstance, {
       writer: streamWriter,
+      usageGuard,
+      usageCheck: usageGuard ? () => this._checkPlanLimits(sessionState) : null,
       persistMessage,
-      persistStatus,
       onInitSessionId,
       onResult,
       trackBackgroundTasks,
-      connectionClosedHint,
       onStreamError: async (err) => {
         // Service-level error wiring: log, emit app:error, route through
-        // onStreamError. The stream mapper has already persisted the status row.
+        // onStreamError. The failed turn_result is persisted by setAgentTurnTerminal.
         if (err.name !== 'AbortError') {
           handleAppError(this.app, err, { userId, sessionId });
           logger.error({ sessionId }, 'Session stream error');
           logger.error(err, 'Session stream error');
           const userFacing =
             err.message === SDK_QUERY_CLOSED_MESSAGE ? connectionClosedHint : err.message;
+          lastStreamError = userFacing;
           this.app
             .service('sessions')
             .emit('app:error', { sessionId, message: userFacing, user_id: userId });
@@ -1122,12 +1227,66 @@ export class ClaudeAgentService {
       }
     });
 
+    await this._recordOverageSpend(sessionState, usageGuard);
+    // A turn cut before its own `result` is recorded from the tokens seen so far.
+    const lastResult =
+      result.lastResult ??
+      (result.usageLimit
+        ? this._partialResult(sessionState, usageGuard?.partialModelUsageSinceResult())
+        : null);
+
     return {
       turnComplete: result.turnComplete,
       streamFailed: result.streamFailed || streamFailed,
       outcome: result.outcome,
-      lastResult: result.lastResult,
+      lastResult,
+      lastStreamError,
+      usageLimit: result.usageLimit,
     };
+  }
+
+  /**
+   * Guard that ends a chat turn on a subscription limit (see `usage-limit.js`). Review turns
+   * are not guarded: they have no resume path, so they keep the old rejected-limit behavior.
+   */
+  async _createUsageGuard(sessionState: ClaudeAgentState): Promise<ClaudeUsageLimitGuard | null> {
+    if (sessionState.turnChannel === 'review') return null;
+    try {
+      const db = this.app.get('db') as DbLike;
+      const row = (await db('sessions').where({ id: sessionState.sessionId }).first()) as
+        | {
+            usage_limit_action?: string | null;
+            usage_limit?: number | null;
+            usage_limit_spent?: number | null;
+          }
+        | undefined;
+      return new ClaudeUsageLimitGuard({
+        overage: allowsOverage(row?.usage_limit_action),
+        usageLimitUsd: row?.usage_limit ?? null,
+        priorSpentUsd: row?.usage_limit_spent ?? 0,
+      });
+    } catch (err) {
+      // The guard is optional: without it the turn just runs unguarded.
+      logger.warn(
+        { sessionId: sessionState.sessionId, err: (err as Error).message },
+        'claude-agent: usage guard unavailable'
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Re-read the plan limits mid-turn (see `ClaudeUsageLimitGuard.checkpointDue`). A full
+   * session/weekly window ends the turn for `stop` / `wait` sessions — including turns run by
+   * subagents — instead of letting the provider roll it onto paid overage.
+   */
+  async _checkPlanLimits(sessionState: ClaudeAgentState): Promise<ClaudeUsageLimitHit | null> {
+    const blocked = await this.app
+      .service('sessions')
+      .checkUsageLimitGate(sessionState.sessionId, sessionState.agentId, {
+        agentConfigId: sessionState.turnAgentConfigId ?? null,
+      });
+    return blocked ? { reason: blocked.reason, resetAtMs: blocked.reset_at_ms } : null;
   }
 
   async sendMessage(sessionId: number, content: string): Promise<void> {
@@ -1183,7 +1342,10 @@ export class ClaudeAgentService {
     session?.channel.push(toSdkUserMessage(content));
   }
 
-  syncSessionSettingsFromPatch(sessionId: number, _sessionRow: AgentSessionRow): void {
+  async syncSessionSettingsFromPatch(
+    sessionId: number,
+    _sessionRow: AgentSessionRow
+  ): Promise<void> {
     const session = this.getActiveSession(sessionId);
     if (!session?.queryInstance) return;
     void (async () => {
@@ -1212,35 +1374,31 @@ export class ClaudeAgentService {
     await this._disposeActiveSession(sessionId);
   }
 
-  async generateSessionMetadata(
-    initialPrompt: string,
-    shortId = '',
-    user: { id: number } | null,
-    repo: { full_name?: string | null } | null = null,
-    session: Pick<AgentSessionRow, 'model'> | null = null
-  ): Promise<{ label: string; branchName: string }> {
-    const fallbackBranch = `task-${shortId}`;
-    const prompt = `Generate metadata for a coding task. Output ONLY a JSON object with no markdown or explanation:
-- "label": very short label (max 50 chars) summarizing the task
-- "branch": short kebab-case git branch name suffixed with "-${shortId}" (e.g. "fix-auth-token-${shortId}"), max 60 chars
-
-Task: ${initialPrompt}`;
-
-    let label = '';
-    let branchName = fallbackBranch;
-
-    const metadataModel = session?.model || 'haiku';
+  /**
+   * One-shot completion: send a prompt, return the raw response text.
+   * Must resolve within METADATA_TIMEOUT_MS and clean up its own CLI subprocess on
+   * timeout — callers treat '' as "no completion" and fall back to defaults.
+   */
+  async completeText(
+    prompt: string,
+    opts: {
+      userId?: number | null;
+      agentConfigId?: number | null;
+      model?: string | null;
+    } = {}
+  ): Promise<string> {
+    // Run with the requested model so the completion matches the agent that will
+    // actually use it. Calls without an explicit model fall back to the cheap alias
+    // so provisioning stays fast.
+    const model = opts.model || 'haiku';
+    // Credentials follow the config that selected the model (the user's utility
+    // default, else the session's builder config) so gateway models resolve correctly.
     const env = applyClaudeAgentModelEnv(
-      await getClaudeEnv(this.app, user?.id ?? 0, repo?.full_name ?? null),
-      session?.model ?? null
+      await getClaudeEnv(this.app, opts.userId ?? 0, opts.agentConfigId ?? null),
+      opts.model ?? null
     );
-    const q = query({
-      prompt,
-      // Generate the label/branch with the session's selected model so the metadata
-      // matches the agent that will actually run the task. Sessions created without an
-      // explicit model fall back to the cheap alias so provisioning stays fast.
-      options: { model: metadataModel, env },
-    });
+    const q = query({ prompt, options: { model, env } });
+    let text = '';
     const consume = (async () => {
       for await (const message of q) {
         const msg = message as SDKMessage & {
@@ -1249,37 +1407,20 @@ Task: ${initialPrompt}`;
           result?: string;
         };
         if (msg.type === 'result' && msg.subtype === 'success' && !msg.is_error) {
-          const text = (msg.result || '').trim();
-          try {
-            const jsonText = text
-              .replace(/^```(?:json)?\n?/, '')
-              .replace(/\n?```$/, '')
-              .trim();
-            const parsed = JSON.parse(jsonText) as { label?: string; branch?: string };
-            label = (parsed.label || '').slice(0, 80);
-            branchName = (parsed.branch || fallbackBranch)
-              .replace(/[^a-z0-9-]/g, '-')
-              .replace(/-+/g, '-')
-              .slice(0, 60);
-          } catch {
-            label = text.slice(0, 80);
-          }
+          text = (msg.result || '').trim();
         }
       }
     })();
 
     // The CLI retries failed API calls up to 10 times with exponential backoff; a bad
-    // credential or model can stall metadata for minutes. Provisioning must not wait on
-    // that — fail fast and let the caller fall back to the default label/branch.
+    // credential or model can stall completions for minutes. Provisioning must not wait
+    // on that — fail fast and let the caller fall back to defaults.
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       await Promise.race([
         consume,
         new Promise<void>((_, reject) => {
-          timer = setTimeout(
-            () => reject(new Error('Metadata generation timed out')),
-            METADATA_TIMEOUT_MS
-          );
+          timer = setTimeout(() => reject(new Error('Completion timed out')), METADATA_TIMEOUT_MS);
         }),
       ]);
     } finally {
@@ -1292,7 +1433,7 @@ Task: ${initialPrompt}`;
       consume.catch(() => {}); // late failures after timeout/close are non-fatal
     }
 
-    return { label, branchName };
+    return text;
   }
 
   async isInterruptedSessionResumable(
@@ -1379,7 +1520,7 @@ export function registerClaudeAgentService(app: AgentApp, path = CLAUDE_AGENT_SE
       'syncSessionSettingsFromPatch',
       'prepareTiedSessionLoopCompaction',
       'handleMessageCreated',
-      'generateSessionMetadata',
+      'completeText',
       'isInterruptedSessionResumable',
     ],
   });

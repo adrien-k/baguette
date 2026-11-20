@@ -20,6 +20,9 @@ function makeDb({ sessionRow, builder, reviewer, extraAgents = [] }) {
     if (table === 'agents') {
       return {
         where: (query) => ({
+          whereIn() {
+            return this;
+          },
           first: async () => {
             if (query.is_primary === 1) return builder;
             if (query.agent_type === 'reviewer') return reviewer;

@@ -88,6 +88,7 @@ export default function ReviewView({
   const [clearingReviewer, setClearingReviewer] = useState(false);
   const { reviewer } = useSessionAgents(session?.id);
   const [savingIssueId, setSavingIssueId] = useState(null);
+  const [selectingIssueId, setSelectingIssueId] = useState(null);
   const reviewPersist = usePersistentState(
     session?.id ? `session-review-chat-${session.id}` : undefined
   );
@@ -154,7 +155,14 @@ export default function ReviewView({
   ]);
 
   const opened = issues.filter((i) => i.status === 'opened');
-  const activeIssues = useMemo(() => issues.filter((i) => i.status !== 'ignored'), [issues]);
+  const decisionIssues = useMemo(
+    () => issues.filter((i) => i.status === 'needs_decision'),
+    [issues]
+  );
+  const activeIssues = useMemo(
+    () => issues.filter((i) => i.status !== 'ignored' && i.status !== 'needs_decision'),
+    [issues]
+  );
   const ignoredIssues = useMemo(() => issues.filter((i) => i.status === 'ignored'), [issues]);
   const showIgnoredSection = ignoredIssues.length > 0;
   const showClosedSection = closedCount > 0;
@@ -255,6 +263,20 @@ export default function ReviewView({
     }
   };
 
+  const handleSelectOption = async (issue, optionId) => {
+    if (!issue?.id || !optionId) return;
+    setSelectingIssueId(issue.id);
+    try {
+      // Feathers custom methods are (data, params). The id has to ride in the
+      // body with option_id; a second argument is not sent over REST.
+      await sessionIssuesService.selectOption({ id: issue.id, option_id: optionId });
+    } catch (err) {
+      toastError('Failed to save decision', err);
+    } finally {
+      setSelectingIssueId(null);
+    }
+  };
+
   const handleIssueStatus = async (issueId, status) => {
     try {
       await sessionIssuesService.patch(issueId, { status });
@@ -295,6 +317,8 @@ export default function ReviewView({
       onDelete={readonly || archived ? undefined : handleDeleteIssue}
       onFix={handleFixIssue}
       onSave={handleIssueSave}
+      onSelectOption={readonly || archived ? undefined : handleSelectOption}
+      selectingOption={selectingIssueId === issue.id}
     />
   );
 
@@ -589,23 +613,47 @@ export default function ReviewView({
           ) : (
             <>
               {onlyClosedIssues && !isRunning && <AllIssuesFixedMessage />}
+              {decisionIssues.length > 0 && (
+                <section className="space-y-4">
+                  <h2 className={ISSUE_SECTION_HEADING_CLASS}>
+                    Needs your decision ({decisionIssues.length})
+                  </h2>
+                  {decisionIssues.map((issue) => renderIssueCard(issue))}
+                </section>
+              )}
               {showIgnoredSection ? (
                 <>
                   {activeIssues.length > 0 && (
-                    <section className="space-y-4">
+                    <section
+                      className={`space-y-4 ${decisionIssues.length > 0 ? 'border-t border-line pt-4' : ''}`}
+                    >
                       <h2 className={ISSUE_SECTION_HEADING_CLASS}>Issues</h2>
                       {activeIssues.map((issue) => renderIssueCard(issue))}
                     </section>
                   )}
                   <section
-                    className={`space-y-4 ${activeIssues.length > 0 ? 'border-t border-line pt-4' : ''}`}
+                    className={`space-y-4 ${
+                      activeIssues.length > 0 || decisionIssues.length > 0
+                        ? 'border-t border-line pt-4'
+                        : ''
+                    }`}
                   >
                     <h2 className={ISSUE_SECTION_HEADING_CLASS}>Ignored</h2>
                     {ignoredIssues.map((issue) => renderIssueCard(issue))}
                   </section>
                 </>
               ) : (
-                issues.map((issue) => renderIssueCard(issue))
+                activeIssues.length > 0 && (
+                  <div
+                    className={
+                      decisionIssues.length > 0
+                        ? 'space-y-4 border-t border-line pt-4'
+                        : 'space-y-4'
+                    }
+                  >
+                    {activeIssues.map((issue) => renderIssueCard(issue))}
+                  </div>
+                )
               )}
               {showClosedSection && (
                 <section

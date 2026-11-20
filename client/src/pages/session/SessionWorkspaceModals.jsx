@@ -63,14 +63,23 @@ export default function SessionWorkspaceModals({
       )}
       {showPushModal && (
         <PushConfirmModal
+          key={pushRequest?.requestId ?? 'manual-push'}
           sessionId={session?.id}
           repo={repos.find((r) => r.full_name === session?.repo_full_name) ?? null}
           commitsToPush={commitsToPush}
           initialBranch={pushRequest?.branch || session?.remote_branch || session?.local_branch}
+          initialSourceBranch={pushRequest?.sourceBranch || ''}
           initialForceMode={pushRequest?.forceMode || null}
+          localBranch={session?.remote_branch || session?.local_branch || ''}
+          sessionRemoteBranch={session?.remote_branch || ''}
+          sessionLocalBranch={session?.local_branch || ''}
+          reason={pushRequest?.reason || null}
+          autoPushOff={pushRequest?.autoPushOff === true}
+          agentRequest={pushRequest?.agentRequest === true}
           autoPush={sessionAutoPushOn}
           autoPushDisabled={sessionIsLocalRepo}
           onAutoPushChange={onAutoPushChange}
+          hasExistingPr={!!session?.pr_number}
           onConfirm={onPushConfirmed}
           onCancel={onPushCancel}
         />

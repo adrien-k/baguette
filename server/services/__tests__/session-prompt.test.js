@@ -3,6 +3,7 @@ import { createTestDb } from '../../test-utils/db.js';
 import {
   buildSystemPromptAppend,
   buildReviewSystemPromptAppend,
+  loadFullSessionPromptTemplate,
   loadFullSubagentPromptTemplate,
 } from '../session-prompt.js';
 
@@ -11,6 +12,7 @@ const { loadBaguetteAgentPrompt } = vi.hoisted(() => ({
 }));
 
 vi.mock('../baguette-config.js', () => ({
+  BAGUETTE_DIR: '.baguette',
   loadBaguetteConfig: vi.fn().mockResolvedValue(null),
   loadBaguetteAgentPrompt,
   interpolateEnv: vi.fn(),
@@ -63,6 +65,9 @@ describe('buildSystemPromptAppend', () => {
     expect(result).toContain('CurrentSessionInfo');
     expect(result).toContain('ListSkills');
     expect(result).toContain('ReadSkill');
+    expect(result).toContain('CreateIssue');
+    expect(result).toContain('needs_decision');
+    expect(result).toContain('out of the current task');
   });
 
   it('includes commit and UpdateSession instructions when auto_push=1', async () => {
@@ -73,7 +78,8 @@ describe('buildSystemPromptAppend', () => {
     expect(result).toContain('git add -A && git commit');
     expect(result).toContain('UpdateSession');
     expect(result).toContain('after your turn ends');
-    expect(result).not.toContain('GitPush');
+    expect(result).toContain('source_branch');
+    expect(result).toContain('You do not call push tools yourself');
     expect(result).not.toContain('PrUpsert');
     const lastShipping = result.lastIndexOf('End-of-turn shipping (required every turn)');
     const runningTests = result.lastIndexOf('## Running Tests');
@@ -119,7 +125,8 @@ describe('buildSystemPromptAppend', () => {
     expect(result).toContain('`./.baguette/scripts/`');
     expect(result).toContain('./.baguette/agents/');
     expect(result).toContain('unless the user explicitly asks');
-    expect(result).toContain('does **not** include the GitHub CLI (`gh`)');
+    expect(result).toContain('no GitHub credentials');
+    expect(result).toContain('{{image:');
   });
 
   it('documents Mermaid diagrams in messages and plans in the base prompt', async () => {
@@ -159,10 +166,18 @@ describe('buildSystemPromptAppend', () => {
     const session = await seedSession({ session_path: '/tmp/wt' });
     const result = await buildSystemPromptAppend(session, { agent: { agent_type: 'subagent' } });
     expect(result).toContain('Subagent role');
+    expect(result).toContain('Worktree (shared with the builder)');
+    expect(result).toContain('leave changes **uncommitted**');
+    expect(result).not.toContain('Worktree (isolated)');
     expect(result).toContain('StartSubagent');
     expect(result).not.toContain('End-of-turn shipping (required every turn)');
     expect(result).not.toContain('Baguette repo configuration');
     expect(result).toContain('do **not** have `UpdateSession`');
+    expect(result).toContain('CreateIssue');
+    expect(result).toContain('out-of-scope');
+    expect(result).toContain('mid-fix');
+    expect(result).toContain('needs_decision');
+    expect(result).toContain('no options');
     expect(result).toContain('StartPlan');
     expect(result).toContain('CompletePlan');
     expect(result).toContain('Mark todos **`completed`**');
@@ -170,12 +185,40 @@ describe('buildSystemPromptAppend', () => {
     expect(loadBaguetteAgentPrompt).toHaveBeenCalledWith('/tmp/wt', 'subagent');
   });
 
+  it('uses isolated subagent worktree rules when agent.worktree_path is set', async () => {
+    const session = await seedSession({ session_path: '/tmp/parent-wt' });
+    const result = await buildSystemPromptAppend(session, {
+      agent: {
+        agent_type: 'subagent',
+        worktree_path: '/tmp/subagent-wt',
+        local_branch: 'baguette/subagent/42',
+      },
+    });
+    expect(result).toContain('Worktree (isolated)');
+    expect(result).toContain('subagent_worktree_path');
+    expect(result).toContain('baguette/subagent/<id>');
+    expect(result).toContain('Do **not** run **`git push`**');
+    expect(result).not.toContain('Worktree (shared with the builder)');
+    expect(result).not.toContain('leave changes **uncommitted**');
+  });
+
   it('loadFullSubagentPromptTemplate includes subagent role rules', async () => {
     const result = await loadFullSubagentPromptTemplate();
     expect(result).toContain('Subagent role');
-    expect(result).not.toContain('End-of-turn shipping (required every turn)');
-    expect(result).not.toContain('does **not** include the GitHub CLI (`gh`)');
+    expect(result).not.toContain('{{image:');
+    expect(result).not.toContain('{{running_commands_prompt}}');
     expect(result).not.toContain('Baguette repo configuration');
+  });
+
+  it('shares the running-commands block between builder and subagent prompts', async () => {
+    const builder = await loadFullSessionPromptTemplate();
+    const subagent = await loadFullSubagentPromptTemplate();
+    for (const prompt of [builder, subagent]) {
+      expect(prompt).not.toContain('{{running_commands_prompt}}');
+      expect(prompt).toContain('Bash is the fallback, not the default');
+      expect(prompt).toContain('`depends_on`');
+      expect(prompt).toContain('## Running Tests');
+    }
   });
 
   it('keeps GitHub PR instructions for github remotes', async () => {
@@ -187,7 +230,8 @@ describe('buildSystemPromptAppend', () => {
       },
       user: { access_token: 'tok' },
     });
-    expect(result).toContain('does **not** include the GitHub CLI (`gh`)');
+    expect(result).toContain('no GitHub credentials');
+    expect(result).toContain('{{image:');
     expect(result).toContain('PrRead');
     expect(result).toContain('PrComments');
     expect(result).toContain('GitHub pull request template');
@@ -310,6 +354,8 @@ describe('buildReviewSystemPromptAppend', () => {
     expect(result).toContain('Watch for SQL injection');
     expect(result).toContain('implement fixes');
     expect(result).toContain('submitted');
+    expect(result).toContain('needs_decision');
+    expect(result).toContain('no options');
     expect(result).toContain('ListSkills');
     expect(result).toContain('ReadSkill');
   });

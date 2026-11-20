@@ -20,8 +20,11 @@ import { BANNER_WARN, INPUT_CLASS, TEXT_MUTED, TEXT_PRIMARY } from '../../utils/
 import UserAvatar from '../../components/UserAvatar.jsx';
 import { formatRelativeTime } from '../../utils/dates.js';
 import { countryCodeToFlagEmoji } from '../../utils/countryFlag.js';
-import { repoAccessModeLabel } from '../../utils/repoDisplayName.js';
+import { repoAccessModeLabel, repoDisplayName } from '../../utils/repoDisplayName.js';
+import GroupedRepositoriesList from '../../components/GroupedRepositoriesList.jsx';
 import { useAuth } from '../../hooks/useAuth.jsx';
+import { useCurrentUser } from '../../context/CurrentUserContext.jsx';
+import Toggle from '../../components/Toggle.jsx';
 import { USER_STATUS_APPROVED, USER_STATUS_REVOKED } from '@baguette/shared/user-status.js';
 
 function formatUserLastIpLine(user) {
@@ -224,19 +227,23 @@ export function AllRepositoriesSection() {
         headerAside={<SystemWideBadge />}
         description="Who linked each repository, how many sessions it has, and whether the clone is on disk."
       >
-        <div className="divide-y divide-line">
-          {repos.length === 0 && (
-            <p className="text-faint text-sm text-center py-8">No repositories registered</p>
-          )}
-          {repos.map((r) => (
+        <GroupedRepositoriesList
+          repos={repos}
+          emptyMessage="No repositories registered"
+          renderRepo={(r) => (
             <div key={r.id} className="flex items-center justify-between py-3 gap-3">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <code className="text-sm text-fg font-medium">{r.full_name}</code>
+                  <code className="text-sm text-fg font-medium">
+                    {repoDisplayName(r.full_name)}
+                  </code>
                   <span className="text-xs bg-control-hover text-secondary px-1.5 py-0.5 rounded font-mono">
                     {repoAccessModeLabel(r)}
                   </span>
                 </div>
+                {r.full_name.startsWith('/') ? (
+                  <div className="text-xs text-faint mt-0.5 font-mono truncate">{r.full_name}</div>
+                ) : null}
                 <div className="text-xs text-faint mt-0.5">
                   {r.session_count} session(s) · {r.exists_on_fs ? 'On disk' : 'Not on disk'}
                 </div>
@@ -270,8 +277,8 @@ export function AllRepositoriesSection() {
                 Delete
               </button>
             </div>
-          ))}
-        </div>
+          )}
+        />
 
         {confirmDelete && (
           <Modal maxWidth="max-w-md" padding="p-5">
@@ -556,24 +563,82 @@ function asList(data) {
   return [];
 }
 
+function SkillDefaultRow({ skill, preloadByDefault, disabled, onDefaultChange, actions = null }) {
+  return (
+    <div className="flex items-start justify-between py-3 gap-3">
+      <Toggle
+        checked={preloadByDefault}
+        disabled={disabled}
+        onChange={(next) => onDefaultChange(skill.label, next)}
+        title={
+          preloadByDefault ? 'Preload by default on new sessions' : 'Enable preload by default'
+        }
+        aria-label={`Preload by default: ${skill.label}`}
+        className="mt-0.5 shrink-0"
+      />
+      <div className="min-w-0 flex-1">
+        <div className="text-sm text-fg font-medium">{skill.label}</div>
+        <p className="text-xs text-faint mt-0.5">{skill.description}</p>
+      </div>
+      {actions ? <div className="flex items-center gap-2 shrink-0">{actions}</div> : null}
+    </div>
+  );
+}
+
 export function SkillsTab() {
+  const { currentUser, updateCurrentUser } = useCurrentUser();
   const [skills, setSkills] = useState([]);
+  const [builtinSkills, setBuiltinSkills] = useState([]);
+  const [defaultBusyLabel, setDefaultBusyLabel] = useState(null);
   const [label, setLabel] = useState('');
   const [description, setDescription] = useState('');
   const [content, setContent] = useState('');
   const [editingId, setEditingId] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [viewingBuiltin, setViewingBuiltin] = useState(null);
+  const [viewingBuiltinLoading, setViewingBuiltinLoading] = useState(null);
+
+  const defaultAutoLoadSkills = Array.isArray(currentUser?.default_auto_load_skills)
+    ? currentUser.default_auto_load_skills
+    : [];
 
   const load = useCallback(() => {
     skillsService
       .find()
       .then((data) => setSkills(asList(data)))
       .catch((err) => toastError('Failed to load skills', err));
+    skillsService
+      .listCatalog({})
+      .then((res) => {
+        const rows = res?.skills ?? [];
+        setBuiltinSkills(rows.filter((s) => s.source === 'builtin'));
+      })
+      .catch(() => setBuiltinSkills([]));
   }, []);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  const setSkillDefaultPreload = async (skillLabel, enabled) => {
+    if (!currentUser?.id) return;
+    const trimmed = String(skillLabel ?? '').trim();
+    if (!trimmed) return;
+    const next = enabled
+      ? [...new Set([...defaultAutoLoadSkills, trimmed])]
+      : defaultAutoLoadSkills.filter((l) => l !== trimmed);
+    setDefaultBusyLabel(trimmed);
+    try {
+      const updated = await usersService.patch(currentUser.id, {
+        default_auto_load_skills: next,
+      });
+      updateCurrentUser(updated);
+    } catch (err) {
+      toastError('Failed to update default skills', err);
+    } finally {
+      setDefaultBusyLabel(null);
+    }
+  };
 
   const resetForm = () => {
     setLabel('');
@@ -615,10 +680,29 @@ export function SkillsTab() {
     setContent(skill.content);
   };
 
+  const handleViewBuiltin = async (skill) => {
+    setViewingBuiltinLoading(skill.label);
+    try {
+      const row = await skillsService.readByLabel({ label: skill.label });
+      setViewingBuiltin(row);
+    } catch (err) {
+      toastError('Failed to load skill', err);
+    } finally {
+      setViewingBuiltinLoading(null);
+    }
+  };
+
   const handleRemove = async (skill) => {
     try {
       await skillsService.remove(skill.id);
       if (editingId === skill.id) resetForm();
+      if (currentUser?.id && defaultAutoLoadSkills.includes(skill.label)) {
+        const next = defaultAutoLoadSkills.filter((l) => l !== skill.label);
+        const updated = await usersService.patch(currentUser.id, {
+          default_auto_load_skills: next,
+        });
+        updateCurrentUser(updated);
+      }
       load();
     } catch (err) {
       toastError('Failed to delete skill', err);
@@ -633,7 +717,8 @@ export function SkillsTab() {
     <div>
       <SettingsTabHeader title="Skills">
         Skills belong to your account; other users cannot see them. Agents can list your skills and
-        load the content when its description matches the task.
+        load the content when its description matches the task. Use the toggle on each skill to
+        preload it by default on new sessions and loops.
       </SettingsTabHeader>
 
       <div className="space-y-6">
@@ -692,33 +777,85 @@ export function SkillsTab() {
           ) : (
             <div className="divide-y divide-line">
               {skills.map((skill) => (
-                <div key={skill.id} className="flex items-start justify-between py-3 gap-3">
-                  <div className="min-w-0">
-                    <div className="text-sm text-fg font-medium">{skill.label}</div>
-                    <p className="text-xs text-faint mt-0.5">{skill.description}</p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
+                <SkillDefaultRow
+                  key={skill.id}
+                  skill={skill}
+                  preloadByDefault={defaultAutoLoadSkills.includes(skill.label)}
+                  disabled={defaultBusyLabel === skill.label}
+                  onDefaultChange={setSkillDefaultPreload}
+                  actions={
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleEdit(skill)}
+                        className="text-xs text-fg-muted hover:text-fg"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRemove(skill)}
+                        className="text-xs text-danger hover:text-danger"
+                      >
+                        Delete
+                      </button>
+                    </>
+                  }
+                />
+              ))}
+            </div>
+          )}
+        </SettingsSection>
+
+        <SettingsSection title="Built-in skills">
+          {builtinSkills.length === 0 ? (
+            <p className="text-faint text-sm text-center py-8">No built-in skills</p>
+          ) : (
+            <div className="divide-y divide-line">
+              {builtinSkills.map((skill) => (
+                <SkillDefaultRow
+                  key={skill.label}
+                  skill={skill}
+                  preloadByDefault={defaultAutoLoadSkills.includes(skill.label)}
+                  disabled={defaultBusyLabel === skill.label}
+                  onDefaultChange={setSkillDefaultPreload}
+                  actions={
                     <button
                       type="button"
-                      onClick={() => handleEdit(skill)}
-                      className="text-xs text-fg-muted hover:text-fg"
+                      onClick={() => handleViewBuiltin(skill)}
+                      disabled={viewingBuiltinLoading === skill.label}
+                      className="text-xs text-fg-muted hover:text-fg disabled:opacity-50"
                     >
-                      Edit
+                      {viewingBuiltinLoading === skill.label ? 'Loading…' : 'View'}
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => handleRemove(skill)}
-                      className="text-xs text-danger hover:text-danger"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
+                  }
+                />
               ))}
             </div>
           )}
         </SettingsSection>
       </div>
+
+      {viewingBuiltin ? (
+        <Modal maxWidth="max-w-2xl" padding="p-5">
+          <ModalHeader title={viewingBuiltin.label} onClose={() => setViewingBuiltin(null)} />
+          {viewingBuiltin.description ? (
+            <p className={`${TEXT_MUTED} text-sm mb-3`}>{viewingBuiltin.description}</p>
+          ) : null}
+          <pre className="max-h-[min(60vh,28rem)] overflow-auto rounded-lg border border-line bg-muted/40 p-3 text-xs font-mono text-fg whitespace-pre-wrap">
+            {viewingBuiltin.content}
+          </pre>
+          <ModalActions className="flex justify-end mt-4">
+            <button
+              type="button"
+              onClick={() => setViewingBuiltin(null)}
+              className="px-4 py-2 text-sm text-secondary hover:text-fg"
+            >
+              Close
+            </button>
+          </ModalActions>
+        </Modal>
+      ) : null}
     </div>
   );
 }

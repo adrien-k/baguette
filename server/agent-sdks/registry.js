@@ -29,9 +29,11 @@
  * - `normalizePickerModelId(id, pickerIds)` — coerce picker ids (Claude 1M alias)
  * - `normalizeApiUrl(url)` — trim/canonicalize api_url when `credentialSchema.hasApiUrl`
  * - `resetUsageTotals(totalsKey)` — drop SDK running-total maps (Claude chat/review deltas)
+ * - `fetchSubscriptionLimits({ app, userId, agentConfigId })` — plan limits for the
+ *   Subscription card: `{ status, message, limits[] }` (see `lib/subscription-limits.js`)
  * - `usageLabelExtras(row)` — PR/Slack footer extras e.g. `{ fast: boolean }` (Cursor)
  * - `credentialSchema` — JSON-serializable Settings fields:
- *   `{ envVarOptions, defaultEnvVar, hasApiUrl, secretPlaceholder, secretPlaceholderByEnvVar }`
+ *   `{ envVarOptions, defaultEnvVar, hasApiUrl, secretPlaceholder, secretPlaceholderByEnvVar, credentialHelpBanner? }` — markdown shown via ? on credential type
  *
  * `agent-configs.getSdkMetas()` exposes the JSON-serializable subset (see
  * `sdkPluginPublicMeta`). Functions stay on the plugin; server callers use

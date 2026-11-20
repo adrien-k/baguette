@@ -3,6 +3,7 @@ import {
   sliceByteRange,
   resolveByteRange,
   buildLogRangeHeader,
+  rangeNeedsFullLogFetch,
   validateLogByteRange,
   DEFAULT_LOG_BYTES,
 } from '../mcp-pagination.js';
@@ -22,10 +23,11 @@ describe('resolveByteRange', () => {
     expect(resolveByteRange(10_000)).toEqual({ start: 0, end: 9999 });
   });
 
-  it('with only startByte, spans max(MAX, remaining) through EOF', () => {
+  it('with only startByte, caps the forward window at MAX_LOG_RANGE_BYTES', () => {
     expect(resolveByteRange(10_000, { startByte: 0 })).toEqual({ start: 0, end: 9999 });
     expect(resolveByteRange(3000, { startByte: 0 })).toEqual({ start: 0, end: 2999 });
-    expect(resolveByteRange(100_000, { startByte: 8000 })).toEqual({ start: 8000, end: 99999 });
+    expect(resolveByteRange(100_000, { startByte: 8000 })).toEqual({ start: 8000, end: 73535 });
+    expect(resolveByteRange(300_000, { startByte: 0 })).toEqual({ start: 0, end: 65535 });
   });
 
   it('caps explicit start and end at MAX_LOG_RANGE_BYTES', () => {
@@ -80,16 +82,34 @@ describe('buildLogRangeHeader', () => {
     expect(buildLogRangeHeader({})).toBe(`bytes=-${DEFAULT_LOG_BYTES}`);
   });
 
-  it('requests a full log when endByte is omitted with startByte', () => {
-    expect(buildLogRangeHeader({ startByte: 0 })).toBe('bytes=0-');
-    expect(buildLogRangeHeader({ startByte: -10 })).toBe('bytes=0-');
+  it('never requests more than MAX_LOG_RANGE_BYTES without an explicit endByte', () => {
+    expect(buildLogRangeHeader({ startByte: 0 })).toBe('bytes=0-65535');
+    expect(buildLogRangeHeader({ startByte: -10 })).toBe('bytes=-10');
+  });
+
+  it('caps an endByte-only range', () => {
+    expect(buildLogRangeHeader({ endByte: 100 })).toBe('bytes=0-100');
+    expect(buildLogRangeHeader({ endByte: 500_000 })).toBe('bytes=0-65535');
   });
 
   it('uses closed range when start and end are set', () => {
     expect(buildLogRangeHeader({ startByte: 0, endByte: 7999 })).toBe('bytes=0-7999');
   });
 
-  it('requests a full log when endByte is negative', () => {
-    expect(buildLogRangeHeader({ startByte: 0, endByte: -10 })).toBe('bytes=0-');
+  describe('rangeNeedsFullLogFetch', () => {
+    it('requires a full fetch only for non-suffix negative-end ranges', () => {
+      expect(rangeNeedsFullLogFetch({ startByte: 0, endByte: -10 })).toBe(true);
+      expect(rangeNeedsFullLogFetch({ startByte: -50, endByte: -10 })).toBe(true);
+      expect(rangeNeedsFullLogFetch({ startByte: -50, endByte: -1 })).toBe(false);
+      expect(rangeNeedsFullLogFetch({ startByte: 0 })).toBe(false);
+      expect(rangeNeedsFullLogFetch({ startByte: -10 })).toBe(false);
+      expect(rangeNeedsFullLogFetch({})).toBe(false);
+      expect(rangeNeedsFullLogFetch({ endByte: 100 })).toBe(false);
+    });
+  });
+
+  it('maps tail reads through endByte -1 to a suffix range', () => {
+    expect(buildLogRangeHeader({ startByte: -65536, endByte: -1 })).toBe('bytes=-65536');
+    expect(buildLogRangeHeader({ startByte: -50, endByte: -1 })).toBe('bytes=-50');
   });
 });

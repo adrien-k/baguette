@@ -1,6 +1,6 @@
 import { Loader2 } from 'lucide-react';
 import BuilderForm from '../../components/BuilderForm.jsx';
-import SessionCard from '../../components/SessionCard.jsx';
+import LoopOverviewPanel from './LoopOverviewPanel.jsx';
 import { useFilterRoutes } from '../../hooks/useFilterRoutes.js';
 import { NEUTRAL_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 
@@ -23,6 +23,8 @@ export default function LoopWorkspaceBody({
   runSessions,
   runsLoading,
   runsLoaded,
+  onRunLoop,
+  runningLoop,
 }) {
   const { showRepoDetails } = useFilterRoutes();
 
@@ -65,18 +67,17 @@ export default function LoopWorkspaceBody({
           />
         </div>
       )}
-      {!isNewLoopRoute && activeTab === 'runs' && loop && (
-        <div className="p-4 space-y-3 max-w-3xl mx-auto w-full">
-          {runsLoading && !runsLoaded && (
-            <p className="text-xs text-faint text-center py-8">Loading sessions…</p>
-          )}
-          {runsLoaded && !runSessions.length && (
-            <p className="text-xs text-faint text-center py-8">No runs yet.</p>
-          )}
-          {runSessions.map((s) => (
-            <SessionCard key={s.id} session={s} suppressRepoBadge={!showRepoDetails} />
-          ))}
-        </div>
+      {!isNewLoopRoute && activeTab === 'overview' && loop && (
+        <LoopOverviewPanel
+          loop={loop}
+          showRepoDetails={showRepoDetails}
+          runSessions={runSessions}
+          runsLoading={runsLoading}
+          runsLoaded={runsLoaded}
+          suppressRepoBadge={!showRepoDetails}
+          onRunLoop={onRunLoop}
+          runningLoop={runningLoop}
+        />
       )}
     </div>
   );

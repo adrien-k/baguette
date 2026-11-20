@@ -12,11 +12,16 @@ volumes:
   - /home/<%= ENV.fetch('DEPLOY_USER', 'ubuntu') %>/baguette_storage:/data
   - /var/run/docker.sock:/var/run/docker.sock
 
-# Deploy to these servers.
+# Deploy to these servers. DEPLOY_SERVER is optional: it defaults to DOMAIN
+# (the apex A record from your DNS setup must resolve there for SSH).
+<%
+  deploy_server = ENV['DEPLOY_SERVER'].to_s.strip
+  deploy_server = ENV.fetch('DOMAIN') if deploy_server.empty?
+%>
 servers:
   web:
     hosts:
-      - <%= ENV.fetch('DEPLOY_SERVER') %>
+      - <%= deploy_server %>
     options:
       cap-add: SYS_PTRACE
 
@@ -41,9 +46,13 @@ proxy:
   ssl:
     certificate_pem: CERTIFICATE_PEM
     private_key_pem: PRIVATE_KEY_PEM
+  # The wildcard serves both the UI (www.<DOMAIN>) and session preview subdomains.
+  # The apex is routed to Baguette so the app can 301 it to the www canonical host
+  # (kamal-proxy canonical_host would also redirect session preview subdomains).
   hosts:
-    - www.<%= ENV.fetch('DOMAIN') %>
     - "*.<%= ENV.fetch('DOMAIN') %>"
+    - <%= ENV.fetch('DOMAIN') %>
+
 
 <% if remote_registry %>
 # Push/pull via Docker Hub (or another registry) — set DOCKER_REGISTRY_USERNAME and DOCKER_REGISTRY_PASSWORD.
@@ -65,7 +74,7 @@ builder:
   arch:
     - amd64
 <% unless remote_registry %>
-  remote: ssh://<%= ENV.fetch('DEPLOY_USER', 'ubuntu') %>@<%= ENV.fetch('DEPLOY_SERVER') %>
+  remote: ssh://<%= ENV.fetch('DEPLOY_USER', 'ubuntu') %>@<%= deploy_server %>
 <% end %>
   args:
     GIT_SHA: <%= ENV.fetch('GITHUB_SHA', `git rev-parse HEAD`.strip) %>
@@ -86,6 +95,10 @@ env:
   clear:
     PUBLIC_HOST: https://www.<%= ENV.fetch('DOMAIN') %>
   secret:
+    # Legacy, kept for backward compatibility — existing deployments that set
+    # these keep working. New installs do not need them: the first-user wizard
+    # creates the GitHub App, and the first boot generates the encryption key
+    # into baguette_storage.
     - AUTH_GITHUB_CLIENT_ID
     - AUTH_GITHUB_CLIENT_SECRET
     - AUTH_GITHUB_APP_SLUG

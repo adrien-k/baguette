@@ -5,10 +5,14 @@ import { loadSessionForPublish } from './shared-access.js';
 
 const CRUD_EVENTS = ['created', 'updated', 'patched', 'removed'];
 
-const SESSION_USER_EVENTS = [
+/** Session events published to the owning (or sharing) user's channel. */
+export const SESSION_USER_EVENTS = [
   'app:error',
   'turn:start',
   'turn:complete',
+  // GitPush MCP tool → Push approval modal (payload keys: sessionId, branch,
+  // forceMode, reason, autoPushOff).
+  'push:request',
   'push:start',
   'push:complete',
 ];

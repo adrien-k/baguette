@@ -1,4 +1,5 @@
 import { normalizeLegacyUserContentBlocks } from './user-message-content.js';
+import { isMcpMessageSender } from './mcp-message-sender.js';
 
 /**
  * Normalize a user payload for storage.
@@ -13,8 +14,15 @@ import { normalizeLegacyUserContentBlocks } from './user-message-content.js';
  */
 export function normalizeUserPayloadForStorage(parsed) {
   if (parsed?.type === 'user' && (parsed.source === 'mcp' || parsed.subtype === 'mcp')) {
+    const mcpSender = isMcpMessageSender(parsed.mcp_sender) ? parsed.mcp_sender : undefined;
+    const withSender = (base) => (mcpSender ? { ...base, mcp_sender: mcpSender } : base);
     if (typeof parsed.content === 'string') {
-      return { type: 'user', source: 'mcp', content: parsed.content, subtype: 'mcp' };
+      return withSender({
+        type: 'user',
+        source: 'mcp',
+        content: parsed.content,
+        subtype: 'mcp',
+      });
     }
     const legacyContent = parsed.message?.content;
     let content = '';
@@ -25,7 +33,7 @@ export function normalizeUserPayloadForStorage(parsed) {
         .map((b) => b.text)
         .join('\n\n');
     }
-    return { type: 'user', source: 'mcp', content, subtype: 'mcp' };
+    return withSender({ type: 'user', source: 'mcp', content, subtype: 'mcp' });
   }
   if (parsed?.type === 'user' && typeof parsed.content === 'string') {
     if (parsed.source === 'loop' || parsed.subtype === 'loop') {

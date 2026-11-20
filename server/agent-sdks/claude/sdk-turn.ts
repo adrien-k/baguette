@@ -17,11 +17,21 @@
  * alive after a `result` message arrives; the loop drains until
  * `pendingBackgroundTaskIds` is empty and the SDK auto-continuation window
  * has closed.
+ *
+ * Model-less results are not verdicts. When a `--resume` picks up a session whose
+ * last turn died mid tool call, the CLI can flush a result with `num_turns === 0`
+ * and empty text right after `init`, before it processes the prompt the host
+ * pushed — while the stream keeps flowing (model request, tool calls). Treating
+ * that result as the turn's end used to close the resumed turn seconds after it
+ * started (its first tool permission then failed on the closed query), leaving
+ * restart prompts and queued messages forever unanswered. The loop ignores
+ * model-less results for turn completion; if the stream then ends without a real
+ * result, the post-loop fallback closes the turn out with the model-less one
+ * (the pre-fix behavior) instead of reporting a silent failure.
  */
 
 import type { Query, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { isClaudeHumanUserMessage, mapClaudeMessage } from './mapping.ts';
-import { SDK_QUERY_CLOSED_MESSAGE } from './claude-agent-sdk-constants.js';
 import type { MessageStreamWriter } from '../../../shared/message-stream-writer.ts';
 import type { MessageOp } from '../../../shared/message-types.ts';
 
@@ -44,22 +54,30 @@ export type ClaudeStreamCallbacks = {
    */
   onStreamError?: (err: Error) => Promise<void> | void;
   /**
-   * Persisted as a typed `system` row when the stream ends in failure.
-   */
-  persistStatus?: (text: string) => Promise<void>;
-  /**
    * Fallback persistence for the rare case where no writer is wired in
    * (e.g. replay/debug paths).
    */
   persistMessage?: (message: SDKMessage) => Promise<void>;
   /** Track background tasks and continue draining after the result message. */
   trackBackgroundTasks?: boolean;
-  /** Shown to the user when the SDK closes the query mid-turn. */
-  connectionClosedHint?: string;
 };
+
+/** A usage limit that must end the turn (see `ClaudeUsageLimitGuard`). */
+export type ClaudeUsageLimitHit = { reason: string; resetAtMs: number | null };
 
 export type ProcessClaudeQueryStreamOptions = {
   writer?: MessageStreamWriter | null;
+  /** Inspects each persisted message; a returned hit stops the stream. */
+  usageGuard?: {
+    observe(message: SDKMessage): ClaudeUsageLimitHit | null;
+    checkpointDue?(): boolean;
+  } | null;
+  /**
+   * Re-reads the plan's limits; a returned hit stops the turn. Run whenever the guard says a
+   * checkpoint is due (every 10 tool calls / ~$1), so a window that fills mid-turn cannot
+   * quietly roll into paid overage.
+   */
+  usageCheck?: (() => Promise<ClaudeUsageLimitHit | null>) | null;
   abortSignal?: AbortSignal;
 } & ClaudeStreamCallbacks;
 
@@ -69,6 +87,8 @@ export type ProcessClaudeQueryStreamResult = {
   outcome: ClaudeStreamTurnOutcome;
   /** Last `result` message seen in this consume pass (may follow background auto-resume). */
   lastResult: SDKMessage | null;
+  /** Set when the usage guard ended the stream early. */
+  usageLimit: ClaudeUsageLimitHit | null;
 };
 
 type TaskStartedMessage = SDKMessage & {
@@ -76,6 +96,25 @@ type TaskStartedMessage = SDKMessage & {
   task_id?: string;
   is_backgrounded?: boolean;
 };
+
+/**
+ * A result that carries no model output: `success`, not an error, zero model turns,
+ * empty text. Mirrors the CLI wrapper's own `modelLessTurnEnded` marker.
+ */
+function isModelLessResultMessage(message: SDKMessage): boolean {
+  const result = message as {
+    subtype?: string;
+    is_error?: boolean;
+    num_turns?: number;
+    result?: string;
+  };
+  return (
+    result.subtype === 'success' &&
+    !result.is_error &&
+    result.num_turns === 0 &&
+    (result.result ?? '') === ''
+  );
+}
 
 function shouldTrackTaskStarted(message: TaskStartedMessage): boolean {
   if (message.ambient) return false;
@@ -100,11 +139,12 @@ export async function processClaudeQueryStream(
     onInitSessionId,
     onResult,
     onStreamError,
-    persistStatus,
     persistMessage,
     trackBackgroundTasks = false,
-    connectionClosedHint = 'Agent connection closed before the response finished. Try sending your message again.',
+    usageGuard,
+    usageCheck,
   } = options;
+  let usageLimit: ClaudeUsageLimitHit | null = null;
 
   const pendingBackgroundTaskIds = new Set<string>();
   let awaitingStreamContinuation = false;
@@ -114,6 +154,8 @@ export async function processClaudeQueryStream(
   let outcome: ClaudeStreamTurnOutcome = 'failed';
   let lastResult: SDKMessage | null = null;
   let deferredTurnResultMessage: SDKMessage | null = null;
+  /** Last model-less result seen; becomes the fallback verdict if no real one arrives. */
+  let modelLessResult: SDKMessage | null = null;
 
   const flushDeferredTurnResult = async () => {
     if (!deferredTurnResultMessage) return;
@@ -128,6 +170,28 @@ export async function processClaudeQueryStream(
   };
 
   const persistSdkMessage = async (message: SDKMessage) => {
+    // A model-less result is not a verdict (see the module doc): hold the turn open and
+    // defer its turn_result row — a real result supersedes it, and if the stream ends
+    // without one, the post-loop fallback writes this row instead.
+    if (message.type === 'result' && isModelLessResultMessage(message)) {
+      modelLessResult = message;
+      lastResult = message;
+      if (!turnComplete) deferredTurnResultMessage = message;
+      if (writer) {
+        await writer.log(message);
+        await writer.apply(opsWithoutTurnResult(mapClaudeMessage(message)));
+      } else {
+        await persistMessage?.(message);
+      }
+      return;
+    }
+
+    if (message.type === 'result') {
+      // A real verdict supersedes any model-less result that may still be pending.
+      modelLessResult = null;
+      deferredTurnResultMessage = null;
+    }
+
     // Defer the turn_result row until the consume loop finishes so the chat "Completed"
     // banner does not appear while the agent is still running (background tasks, SDK
     // auto-continuation, or terminal status not yet patched in processMessages).
@@ -199,9 +263,22 @@ export async function processClaudeQueryStream(
         }
       }
 
-      await persistSdkMessage(message);
+      // The guard sees the message first: a tripping rate-limit event is replaced by the
+      // session's own limit notice (stop / waiting until reset) instead of the generic row.
+      usageLimit = usageGuard?.observe(message) ?? null;
+      if (!usageLimit && usageCheck && usageGuard?.checkpointDue?.()) {
+        usageLimit = await usageCheck().catch(() => null);
+      }
+      if (!(usageLimit && message.type === 'rate_limit_event')) {
+        await persistSdkMessage(message);
+      }
+      if (usageLimit) {
+        outcome = 'stopped';
+        if (message.type === 'result') lastResult = message;
+        break;
+      }
 
-      if (message.type === 'result') {
+      if (message.type === 'result' && !isModelLessResultMessage(message)) {
         turnComplete = true;
         awaitingStreamContinuation = false;
         continuationDeadline = null;
@@ -226,17 +303,37 @@ export async function processClaudeQueryStream(
           break;
         }
       }
+
+      // The auto-continuation window is idle-based, not absolute: stream
+      // activity after the task notification (a fresh init, thinking tokens,
+      // tool calls, assistant output) proves the CLI is producing the
+      // follow-up turn, so keep the turn open until that turn finishes.
+      // Without this, a long-thinking continuation was aborted mid-turn at
+      // the fixed deadline and its response never reached the user. The
+      // deadline above still closes a silent window: an event arriving more
+      // than POST_RESULT_CONTINUATION_MS after the previous one breaks first.
+      if (awaitingStreamContinuation && message.type !== 'result') {
+        continuationDeadline = Date.now() + POST_RESULT_CONTINUATION_MS;
+      }
+    }
+
+    // Clean stream end with only a model-less result seen: the CLI never produced a
+    // real verdict (e.g. it decided the pushed prompt needed no model turn). Close the
+    // turn out with the model-less result — the pre-fix behavior — instead of leaving
+    // the loop to report "ended without completing".
+    if (modelLessResult && !turnComplete && !usageLimit) {
+      turnComplete = true;
+      const resultMsg = modelLessResult as SDKMessage & {
+        subtype?: string;
+        is_error?: boolean;
+      };
+      const ok = resultMsg.subtype === 'success' && !resultMsg.is_error;
+      outcome = ok ? 'completed' : 'failed';
+      await onResult?.(modelLessResult);
     }
   } catch (err) {
     const error = err as Error;
     if (error.name !== 'AbortError') {
-      const userFacing =
-        error.message === SDK_QUERY_CLOSED_MESSAGE ? connectionClosedHint : error.message;
-      try {
-        await persistStatus?.(userFacing);
-      } catch {
-        // persistStatus is best-effort; the caller has already been notified via onStreamError.
-      }
       await onStreamError?.(error);
       streamFailed = true;
       outcome = 'failed';
@@ -247,5 +344,5 @@ export async function processClaudeQueryStream(
 
   await flushDeferredTurnResult();
 
-  return { turnComplete, streamFailed, outcome, lastResult };
+  return { turnComplete, streamFailed, outcome, lastResult, usageLimit };
 }

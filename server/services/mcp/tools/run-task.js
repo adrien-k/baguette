@@ -10,7 +10,7 @@ import { ok, fail } from '../lib/result.js';
 import { streamToLines } from '../lib/stream-to-lines.js';
 
 export function createRunTaskTool(ctx) {
-  const { app, session } = ctx;
+  const { app, session, absoluteSessionPath, callerAgent } = ctx;
   const waitMinutes = mcpAwaitTimeoutMinutes();
   return {
     name: 'RunTask',
@@ -45,7 +45,7 @@ export function createRunTaskTool(ctx) {
       }
       let tasks;
       try {
-        const cfg = await loadBaguetteConfig(session.session_path);
+        const cfg = await loadBaguetteConfig(absoluteSessionPath || session.session_path);
         if (cfg?.error) throw new Error(cfg.error);
         tasks = cfg ? getAvailableTasks(cfg) : null;
       } catch (err) {
@@ -60,6 +60,8 @@ export function createRunTaskTool(ctx) {
         task_key: label,
         args,
         extra_env: extraEnv,
+        ...(absoluteSessionPath ? { caller_cwd: absoluteSessionPath } : {}),
+        ...(callerAgent?.id != null ? { caller_agent_id: callerAgent.id } : {}),
       };
 
       if (detach) {

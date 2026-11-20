@@ -1,55 +1,37 @@
-import { useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { sortSessionTodosAsc } from '@baguette/shared/session-todo-sort.js';
 import { sessionTodosService } from '../feathers.js';
+import { sessionTodoKeys } from '../queries/keys.js';
 import { findAllPages } from '../utils/feathersFindAll.js';
-import { sameScopeId, scopeKeyOf } from '../utils/boundScope.js';
-import { useScopedResource } from './useScopedResource.js';
 
 const OPEN_TODO_STATUSES = new Set(['pending', 'in_progress']);
 const EMPTY_TODOS = [];
 
+/**
+ * Todo rows for one session (all pages), optionally filtered to open items.
+ * Todo SSE events invalidate the session's todo cache entries via the central
+ * `sseCacheBridge`.
+ */
 export function useGetSessionTodos(sessionId, { enabled = true, openOnly = true } = {}) {
-  const requestedKey = !enabled || sessionId == null ? '' : scopeKeyOf(sessionId, openOnly);
-  const {
-    data: todos,
-    loading,
-    reload,
-    isKeyCurrent,
-  } = useScopedResource(requestedKey, {
-    empty: EMPTY_TODOS,
-    enabled,
-    load: async () => {
-      try {
-        const rows = sortSessionTodosAsc(
-          await findAllPages(sessionTodosService, {
-            session_id: sessionId,
-            $sort: { sort_order: 1, ref: 1 },
-          })
-        );
-        return openOnly ? rows.filter((row) => OPEN_TODO_STATUSES.has(row.status)) : rows;
-      } catch {
-        return EMPTY_TODOS;
-      }
+  const active = enabled && sessionId != null;
+
+  const query = useQuery({
+    queryKey: sessionTodoKeys.session(sessionId, openOnly),
+    queryFn: async () => {
+      const rows = sortSessionTodosAsc(
+        await findAllPages(sessionTodosService, {
+          session_id: sessionId,
+          $sort: { sort_order: 1, ref: 1 },
+        })
+      );
+      return openOnly ? rows.filter((row) => OPEN_TODO_STATUSES.has(row.status)) : rows;
     },
+    enabled: active,
   });
 
-  useEffect(() => {
-    if (!enabled || sessionId == null) return undefined;
-    const key = requestedKey;
-    const onCreated = (row) => {
-      if (sameScopeId(row.session_id, sessionId) && isKeyCurrent(key)) reload();
-    };
-    const onPatched = onCreated;
-    const onRemoved = onCreated;
-    sessionTodosService.on('created', onCreated);
-    sessionTodosService.on('patched', onPatched);
-    sessionTodosService.on('removed', onRemoved);
-    return () => {
-      sessionTodosService.off('created', onCreated);
-      sessionTodosService.off('patched', onPatched);
-      sessionTodosService.off('removed', onRemoved);
-    };
-  }, [enabled, sessionId, reload, requestedKey, isKeyCurrent]);
-
-  return { todos, loading, reload };
+  return {
+    todos: active ? (query.data ?? EMPTY_TODOS) : EMPTY_TODOS,
+    loading: active && query.isPending,
+    reload: query.refetch,
+  };
 }

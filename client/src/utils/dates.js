@@ -58,6 +58,30 @@ export function formatMessageDateTimeTooltip(isoString) {
   });
 }
 
+/** Browser UTC offset as "UTC", "UTC+1", "UTC-5" or "UTC+5:30" for the given instant. */
+function formatUtcOffset(date) {
+  const minutes = -date.getTimezoneOffset();
+  if (minutes === 0) return 'UTC';
+  const sign = minutes > 0 ? '+' : '-';
+  const abs = Math.abs(minutes);
+  const hours = Math.floor(abs / 60);
+  const rest = abs % 60;
+  return `UTC${sign}${hours}${rest ? `:${String(rest).padStart(2, '0')}` : ''}`;
+}
+
+/** Absolute time in the browser's timezone with its offset: "Nov 18, 9:10 PM UTC+1". */
+export function formatDateTimeWithZone(isoString) {
+  const date = parseIsoDate(isoString);
+  if (!date) return '';
+  const local = date.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+  return `${local} ${formatUtcOffset(date)}`;
+}
+
 /** Month, day, and time without year (commits, scheduled messages). */
 export function formatMonthDayTime(isoString) {
   const date = parseIsoDate(isoString);
@@ -89,4 +113,18 @@ export function formatRelativeTime(isoString) {
 export function formatSessionActiveLabel(isoString) {
   const rel = formatRelativeTime(isoString);
   return rel ? `active ${rel}` : '';
+}
+
+/** Compact sidebar-row label: now, 49m, 3h, 2d, then "Mar 4". */
+export function formatCompactRelativeTime(isoString) {
+  const date = parseIsoDate(isoString);
+  if (!date) return '';
+  const mins = Math.floor((Date.now() - date.getTime()) / 60000);
+  if (mins < 1) return 'now';
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d`;
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }

@@ -11,15 +11,7 @@ import { toAbortableNodeHandler } from '../../lib/feathers-node-handler.js';
 const dbMock = vi.hoisted(() => ({ current: null }));
 vi.mock('../../db.js', () => ({ default: (table) => dbMock.current(table) }));
 
-import { registerFeathersRealtime } from '../feathers/realtime.js';
-
-const SESSION_USER_EVENTS = [
-  'app:error',
-  'turn:start',
-  'turn:complete',
-  'push:start',
-  'push:complete',
-];
+import { registerFeathersRealtime, SESSION_USER_EVENTS } from '../feathers/realtime.js';
 
 function makeCrudService(customEvents = []) {
   return {

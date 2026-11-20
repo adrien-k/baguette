@@ -20,6 +20,15 @@ import { isLocalRepo } from '../../../shared/repo-origin.js';
 import { resolveSessionPrStatus } from '../session-pr-status.js';
 import { parseMcpServersMap } from '../mcp-server-config.js';
 import { sessionMcpServersColumn } from '../mcp-server-snapshot.js';
+import {
+  applyUserDefaultAutoLoadSkillsOnCreate,
+  parseAutoLoadSkillLabels,
+  serializeAutoLoadSkillLabels,
+} from '../skill-resolution.js';
+import {
+  usageLimitFieldsError,
+  applyUserDefaultUsageLimitsOnCreate,
+} from '../../lib/usage-limit.js';
 
 /** Fields a client may set. Everything else (bookkeeping, user_id) is server-owned. */
 const WRITABLE_FIELDS = [
@@ -29,6 +38,8 @@ const WRITABLE_FIELDS = [
   'prompt',
   'create_new_branch',
   'auto_push',
+  'usage_limit_action',
+  'usage_limit',
   'single_session',
   'is_global',
   'agent_sdk',
@@ -37,6 +48,7 @@ const WRITABLE_FIELDS = [
   'model_params',
   'plugins',
   'mcp_servers',
+  'auto_load_skills',
   'schedule_type',
   'interval_minutes',
   'time_of_day',
@@ -88,6 +100,13 @@ class LoopsService extends KnexService {
    * Fire one loop: re-arm it, then create the session. Re-arming first means a loop whose
    * session creation fails waits for its next slot instead of retrying on every tick.
    */
+  /** Trigger one run on demand (owner only). The loop must be enabled. */
+  async runNow(id, params) {
+    const loop = await this.get(id, params);
+    if (!loop.enabled) throw new BadRequest('Enable the loop before running it');
+    return this.runLoop(loop);
+  }
+
   async runLoop(loop, nowMs = Date.now()) {
     const service = this.app.service('loops');
     const params = { user: { id: loop.user_id } };
@@ -261,6 +280,8 @@ function sessionDataFromLoop(loop) {
     initial_prompt: loop.prompt,
     create_new_branch: !!loop.create_new_branch,
     auto_push: !!loop.auto_push,
+    usage_limit_action: loop.usage_limit_action ?? 'stop',
+    usage_limit: loop.usage_limit ?? null,
   };
   if (loop.is_global) {
     data.is_global = true;
@@ -274,6 +295,8 @@ function sessionDataFromLoop(loop) {
   if (loop.model_params) data.model_params = loop.model_params;
   const plugins = parseJsonArray(loop.plugins);
   if (plugins?.length) data.plugins = plugins;
+  const autoLoadSkills = parseAutoLoadSkillLabels(loop.auto_load_skills);
+  if (autoLoadSkills.length) data.auto_load_skills = autoLoadSkills;
   if (loop.mcp_servers != null && loop.mcp_servers !== '') {
     data.mcp_servers = parseMcpServersMap(loop.mcp_servers);
     data.mcp_servers_locked = true;
@@ -326,6 +349,22 @@ function serializePlugins(context) {
   if (Array.isArray(plugins)) context.data.plugins = JSON.stringify(plugins);
   else if (plugins === null) context.data.plugins = null;
   else if (plugins === undefined) delete context.data.plugins;
+  return context;
+}
+
+function serializeAutoLoadSkills(context) {
+  const { auto_load_skills: labels } = context.data;
+  if (labels === null) {
+    context.data.auto_load_skills = null;
+    return context;
+  }
+  if (labels === undefined) {
+    delete context.data.auto_load_skills;
+    return context;
+  }
+  if (!Array.isArray(labels))
+    throw new BadRequest('auto_load_skills must be an array of skill labels');
+  context.data.auto_load_skills = serializeAutoLoadSkillLabels(labels);
   return context;
 }
 
@@ -403,6 +442,12 @@ async function normalizeAgentConfigOnLoopWrite(context) {
   return context;
 }
 
+/** `usage_limit_action` / `usage_limit` are optional but must be valid when sent. */
+function assertUsageLimitFields(data) {
+  const error = usageLimitFieldsError(data);
+  if (error) throw new BadRequest(error);
+}
+
 function normalizeCreate(context) {
   const data = context.data;
   data.is_global = !!data.is_global;
@@ -415,6 +460,7 @@ function normalizeCreate(context) {
     throw new BadRequest('base_branch is required');
   }
   if (!data.prompt?.trim()) throw new BadRequest('prompt is required');
+  assertUsageLimitFields(data);
 
   applySchedule(data, normalizeSchedulePayload(data));
   data.enabled = data.enabled === undefined ? true : !!data.enabled;
@@ -444,10 +490,15 @@ function normalizeCreate(context) {
  */
 async function requireOwnLoop(context) {
   const userId = context.params.user?.id;
-  if (context.id == null) throw new BadRequest('Loop id is required');
+  let loopId = context.id;
+  if (loopId == null && (typeof context.data === 'number' || typeof context.data === 'string')) {
+    loopId = context.data;
+    context.id = loopId;
+  }
+  if (loopId == null) throw new BadRequest('Loop id is required');
   const loop = await context.app
     .get('db')('loops')
-    .where(userId ? { id: context.id, user_id: userId } : { id: context.id })
+    .where(userId ? { id: loopId, user_id: userId } : { id: loopId })
     .first();
   if (!loop) throw new NotFound('Loop not found');
   context.params.existingLoop = loop;
@@ -480,6 +531,7 @@ function normalizePatch(context) {
   if (context.params.provider && 'session_id' in data) delete data.session_id;
 
   if ('prompt' in data && !data.prompt?.trim()) throw new BadRequest('prompt is required');
+  assertUsageLimitFields(data);
   for (const field of [
     'enabled',
     'create_new_branch',
@@ -538,6 +590,7 @@ function formatLoop(loop) {
     ...loop,
     days_of_week: parseDaysOfWeek(loop.days_of_week),
     plugins: parseJsonArray(loop.plugins) ?? [],
+    auto_load_skills: parseAutoLoadSkillLabels(loop.auto_load_skills),
     mcp_servers:
       loop.mcp_servers == null || loop.mcp_servers === ''
         ? null
@@ -646,19 +699,24 @@ const loopsHooks = {
       resolveTiedSession,
       resolveRepo,
       serializePlugins,
+      applyUserDefaultAutoLoadSkillsOnCreate,
+      serializeAutoLoadSkills,
       snapshotMcpServers,
       normalizeAgentConfigOnLoopWrite,
+      applyUserDefaultUsageLimitsOnCreate,
       normalizeCreate,
     ],
     patch: [
       requireOwnLoop,
       only(WRITABLE_FIELDS),
       serializePlugins,
+      serializeAutoLoadSkills,
       snapshotMcpServers,
       normalizeAgentConfigOnLoopWrite,
       normalizePatch,
     ],
     remove: [requireOwnLoop, clearSessionLoopReferences],
+    runNow: [requireOwnLoop],
   },
   after: {
     find: [formatResult, attachTiedSessions, attachOwners],
@@ -677,7 +735,7 @@ export function registerLoopsService(app, path = 'loops') {
     paginate: DEFAULT_PAGINATE,
   };
   app.use(path, new LoopsService(options), {
-    methods: ['find', 'get', 'create', 'patch', 'remove'],
+    methods: ['find', 'get', 'create', 'patch', 'remove', 'runNow'],
   });
   app.service(path).hooks(loopsHooks);
 }

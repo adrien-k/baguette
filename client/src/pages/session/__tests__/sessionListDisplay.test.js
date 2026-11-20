@@ -19,4 +19,12 @@ describe('sessionListPromptPreview', () => {
       })
     ).toBe('Original ask');
   });
+
+  it('drops image placeholders from the plain-text preview', () => {
+    const preview = sessionListPromptPreview({
+      pr_description: 'Dark/light parity\n\n{{image:abc-def}}',
+    });
+    expect(preview).toContain('Dark/light parity');
+    expect(preview).not.toContain('{{image:');
+  });
 });

@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { configureSsePauseAndReconnect } from '../sseClientLifecycle.js';
+import { subscribeSseStreamPaused } from '../sseReconnect.js';
 
-function createHarness({ visibility = 'visible', online = true } = {}) {
+function createHarness({ visibility = 'visible', online = true, reconnectDelayMs = 0 } = {}) {
   const listeners = {
     visibilitychange: [],
     online: [],
@@ -32,7 +33,9 @@ function createHarness({ visibility = 'visible', online = true } = {}) {
   let current = new AbortController();
   const app = {
     teardown: vi.fn().mockResolvedValue(undefined),
-    setup: vi.fn().mockResolvedValue(undefined),
+    setup: vi.fn().mockImplementation(async () => {
+      current = new AbortController();
+    }),
     service: () => ({
       on: (event, fn) => sseListeners[event]?.push(fn),
       removeListener: (event, fn) => {
@@ -48,7 +51,7 @@ function createHarness({ visibility = 'visible', online = true } = {}) {
       current = null;
     },
     shouldConnect: () => true,
-    reconnectDelayMs: 0,
+    reconnectDelayMs,
     getVisibility: () => state.visibility,
     getOnline: () => state.online,
   });
@@ -153,8 +156,158 @@ describe('configureSsePauseAndReconnect', () => {
       handler();
     }
 
+    await vi.waitFor(() => expect(harness.app.teardown).toHaveBeenCalledTimes(1));
+    expect(harness.app.setup).toHaveBeenCalledTimes(1);
+  });
+
+  it('notifies pause when the stream drops while the tab is hidden', () => {
+    const onPause = vi.fn();
+    const unsubscribe = subscribeSseStreamPaused(onPause);
+    const harness = createHarness({ visibility: 'hidden' });
+    harness.lifecycle.start();
+    for (const handler of harness.sseListeners.disconnected) {
+      handler(new Error('stream dropped'));
+    }
+    expect(onPause).toHaveBeenCalledTimes(1);
+    unsubscribe();
+  });
+
+  it('tears down and opens the stream when the tab becomes visible', async () => {
+    const order = [];
+    const harness = createHarness({ visibility: 'hidden' });
+    harness.app.teardown = vi.fn().mockImplementation(async () => {
+      order.push('teardown');
+    });
+    harness.app.setup = vi.fn().mockImplementation(async () => {
+      order.push('setup');
+      harness.setController(new AbortController());
+    });
+    harness.lifecycle.start();
+    harness.getController().abort();
+    for (const handler of harness.sseListeners.disconnected) {
+      handler(new Error('stream dropped'));
+    }
+    harness.state.visibility = 'visible';
+    for (const handler of harness.listeners.visibilitychange) {
+      handler();
+    }
+    await vi.waitFor(() => expect(order).toEqual(['teardown', 'setup']));
+  });
+
+  it('waits out the resume delay before opening the stream', async () => {
+    const order = [];
+    const harness = createHarness({ visibility: 'hidden', reconnectDelayMs: 500 });
+    harness.app.teardown = vi.fn().mockImplementation(async () => {
+      order.push('teardown');
+    });
+    harness.app.setup = vi.fn().mockImplementation(async () => {
+      order.push('setup');
+      harness.setController(new AbortController());
+    });
+    harness.lifecycle.start();
+    harness.getController().abort();
+    for (const handler of harness.sseListeners.disconnected) {
+      handler(new Error('stream dropped'));
+    }
+    harness.state.visibility = 'visible';
+    for (const handler of harness.listeners.visibilitychange) {
+      handler();
+    }
+    await vi.advanceTimersByTimeAsync(499);
+    expect(order).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    await vi.waitFor(() => expect(order).toEqual(['teardown', 'setup']));
+  });
+
+  it('can reconnect after the tab hides during the resume delay', async () => {
+    const harness = createHarness({ visibility: 'hidden', reconnectDelayMs: 500 });
+    harness.lifecycle.start();
+    harness.getController().abort();
+    for (const handler of harness.sseListeners.disconnected) {
+      handler(new Error('stream dropped'));
+    }
+    harness.state.visibility = 'visible';
+    for (const handler of harness.listeners.visibilitychange) {
+      handler();
+    }
+    await vi.advanceTimersByTimeAsync(200);
+    harness.state.visibility = 'hidden';
+    for (const handler of harness.listeners.visibilitychange) {
+      handler();
+    }
+    harness.state.visibility = 'visible';
+    for (const handler of harness.listeners.visibilitychange) {
+      handler();
+    }
+    await vi.advanceTimersByTimeAsync(500);
+    await vi.waitFor(() => expect(harness.app.setup).toHaveBeenCalledTimes(1));
+  });
+
+  it('reconnects when the tab is shown again after hiding during setup', async () => {
+    let releaseSetup;
+    const setupGate = new Promise((resolve) => {
+      releaseSetup = resolve;
+    });
+    const harness = createHarness({ visibility: 'hidden' });
+    harness.app.setup = vi.fn().mockImplementation(() => {
+      if (harness.app.setup.mock.calls.length === 1) return setupGate;
+      harness.setController(new AbortController());
+      return Promise.resolve();
+    });
+    harness.lifecycle.start();
+    harness.getController().abort();
+    for (const handler of harness.sseListeners.disconnected) {
+      handler(new Error('stream dropped'));
+    }
+
+    harness.state.visibility = 'visible';
+    for (const handler of harness.listeners.visibilitychange) {
+      handler();
+    }
+    await vi.waitFor(() => expect(harness.app.setup).toHaveBeenCalledTimes(1));
+
+    harness.state.visibility = 'hidden';
+    for (const handler of harness.listeners.visibilitychange) {
+      handler();
+    }
+    releaseSetup();
+    await setupGate;
     await Promise.resolve();
+
+    harness.state.visibility = 'visible';
+    for (const handler of harness.listeners.visibilitychange) {
+      handler();
+    }
+    await vi.waitFor(() => expect(harness.app.setup).toHaveBeenCalledTimes(2));
+  });
+
+  it('does not tear down a setup that has not emitted connected yet', async () => {
+    const harness = createHarness({ visibility: 'hidden', reconnectDelayMs: 500 });
+    harness.app.setup = vi.fn().mockResolvedValue(undefined);
+    harness.lifecycle.start();
+    harness.getController().abort();
+    for (const handler of harness.sseListeners.disconnected) {
+      handler(new Error('stream dropped'));
+    }
+
+    harness.state.visibility = 'visible';
+    for (const handler of harness.listeners.visibilitychange) {
+      handler();
+    }
+    await vi.advanceTimersByTimeAsync(500);
+    await vi.waitFor(() => expect(harness.app.setup).toHaveBeenCalledTimes(1));
+    expect(harness.app.teardown).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1000);
     expect(harness.app.teardown).toHaveBeenCalledTimes(1);
     expect(harness.app.setup).toHaveBeenCalledTimes(1);
+
+    const controller = new AbortController();
+    harness.setController(controller);
+    for (const handler of harness.sseListeners.connected) {
+      handler(controller);
+    }
+    expect(harness.app.teardown).toHaveBeenCalledTimes(1);
+    expect(controller.signal.aborted).toBe(false);
   });
 });

@@ -108,6 +108,14 @@ fly certs add "*.your-domain.com"
 
 Fly.io issues the certificate via Let's Encrypt using DNS validation. Follow the instructions printed by `fly certs add` to add the required DNS TXT records. Then update the `PUBLIC_HOST` secret to `https://www.your-domain.com`.
 
+**Optional — apex redirect:** the wildcard does not cover the bare domain, so add an `A` record for it if you also want `your-domain.com` (typed without `www`) to land on `www`:
+
+```
+your-domain.com      A / CNAME  →  (fly assigns IPs)
+```
+
+Also register the apex TLS certificate (`fly certs add "your-domain.com"`) — the wildcard cert does not validate the bare domain. When `PUBLIC_HOST` is `https://www.your-domain.com`, Baguette serves the apex and 301-redirects it to `www` automatically.
+
 > **Skip wildcard if not needed:** If you only need the main UI and don't need session preview subdomains, a single non-wildcard domain is sufficient. Set `PUBLIC_HOST` to that URL and session previews will show a "no subdomain routing" notice instead of a live preview.
 
 ## 7. Deploy

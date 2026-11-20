@@ -6,17 +6,23 @@ import { createListBranchesTool } from '../tools/list-branches.js';
 import { createListModelsTool } from '../tools/list-models.js';
 import { createListPresetModelsTool } from '../tools/list-preset-models.js';
 import { createStartSubagentTool } from '../tools/start-subagent.js';
-import { createListSubagentsTool } from '../tools/list-subagents.js';
-import { createAwaitSubagentTool } from '../tools/await-subagent.js';
+import { createListAgentsTool } from '../tools/list-agents.js';
+import { createAwaitAgentTool } from '../tools/await-agent.js';
 import { createStopSubagentTool } from '../tools/stop-subagent.js';
 import { createCreateSessionTool } from '../tools/create-session.js';
 import { createSearchSessionsTool } from '../tools/search-sessions.js';
 import { createGetSessionTool } from '../tools/get-session.js';
+import { createGetSessionStatusTool } from '../tools/get-session-status.js';
+import { createGetSessionUsageLimitsTool } from '../tools/get-session-usage-limits.js';
 import { createPrReadTool } from '../tools/pr-read.js';
 import { createListRunningTasksTool } from '../tools/list-running-tasks.js';
 import { createCreateSessionMessageTool } from '../tools/create-session-message.js';
-import { createGetSessionMessagesTool } from '../tools/get-session-messages.js';
+import { createGetAgentMessagesTool } from '../tools/get-agent-messages.js';
 import { createGetSessionMessageTool } from '../tools/get-session-message.js';
+import { createWatchSessionTool } from '../tools/watch-session.js';
+import { createUnwatchSessionTool } from '../tools/unwatch-session.js';
+import { createAwaitSessionTurnTool } from '../tools/await-session-turn.js';
+import { createStopSessionTool } from '../tools/stop-session.js';
 import { createListLoopsTool } from '../tools/list-loops.js';
 import { createGetLoopTool } from '../tools/get-loop.js';
 import { createCreateLoopTool } from '../tools/create-loop.js';
@@ -39,11 +45,17 @@ function sessionToolsFromContext(ctx) {
   return [
     createSearchSessionsTool(ctx),
     createGetSessionTool(ctx),
+    createGetSessionStatusTool(ctx),
+    createGetSessionUsageLimitsTool(ctx),
     createPrReadTool(ctx),
     createListRunningTasksTool(ctx),
     createCreateSessionMessageTool(ctx),
-    createGetSessionMessagesTool(ctx),
+    createGetAgentMessagesTool(ctx),
     createGetSessionMessageTool(ctx),
+    createWatchSessionTool(ctx),
+    createUnwatchSessionTool(ctx),
+    createAwaitSessionTurnTool(ctx),
+    createStopSessionTool(ctx),
   ];
 }
 
@@ -81,8 +93,8 @@ export function buildBaseAgentTools(user, app, { callerSession = null, callerAge
     createListModelsTool(ctx),
     createListPresetModelsTool(ctx),
     createStartSubagentTool(ctx),
-    createListSubagentsTool(ctx),
-    createAwaitSubagentTool(ctx),
+    createListAgentsTool(ctx),
+    createAwaitAgentTool(ctx),
     createStopSubagentTool(ctx),
     createCreateSessionTool(ctx),
     createListMissingModelPricesTool(ctx),
@@ -94,12 +106,11 @@ export function buildBaseAgentTools(user, app, { callerSession = null, callerAge
   ];
 }
 
-/** @deprecated Use buildBaseAgentTools */
-export function buildBaguetteAccountToolList(user, app, options) {
-  return buildBaseAgentTools(user, app, options);
-}
-
-export function buildBaguetteSessionMcpTools(user, app, { callerSession = null } = {}) {
-  const ctx = createAccountContext(user, app, { callerSession });
+export function buildBaguetteSessionMcpTools(
+  user,
+  app,
+  { callerSession = null, callerAgent = null } = {}
+) {
+  const ctx = createAccountContext(user, app, { callerSession, callerAgent });
   return sessionToolsFromContext(ctx);
 }

@@ -92,6 +92,9 @@ function canonicalizeClaudeToolName(name: string): string {
  */
 export function isClaudeHumanUserMessage(msg: SDKMessage): boolean {
   if (msg.type !== 'user') return false;
+  // Subagent-scoped user messages (parent_tool_use_id set) belong to the
+  // subagent's inner conversation — never a human prompt on the main thread.
+  if (isSubagentMessage(msg)) return false;
   const userMsg = msg as SDKUserMessage;
   const content = userMsg.message.content;
   if (typeof content === 'string') return true;
@@ -335,14 +338,34 @@ function turnResult(
 }
 
 /**
+ * Truthy when the SDK message belongs to a subagent's inner conversation
+ * (the Agent/Task tool streams those with `parent_tool_use_id` set; main-
+ * thread messages carry `null`). Read defensively: the field is absent on
+ * some SDK versions and message variants.
+ */
+function isSubagentMessage(msg: SDKMessage): boolean {
+  const parent = (msg as { parent_tool_use_id?: unknown }).parent_tool_use_id;
+  return typeof parent === 'string' && parent.length > 0;
+}
+
+/**
  * Map one Claude SDK message to canonical ops.
  *
  * Returns `null` for messages that carry no user-visible content (replays,
- * tool results for calls we never saw start, unknown types).
+ * subagent-scoped events, tool results for calls we never saw start, unknown
+ * types).
  */
 export function mapClaudeMessage(msg: SDKMessage): MessageOp[] | null {
   // Replays re-deliver already-persisted messages; re-writing them would duplicate rows.
   if ('isReplay' in msg && (msg as { isReplay?: boolean }).isReplay) return null;
+
+  // Subagent activity (the inner conversation of an Agent/Task tool call) is
+  // streamed on the same query with `parent_tool_use_id` set. It belongs to
+  // the subagent's transcript, not the main one — the subagent's outcome
+  // reaches the chat through the Agent tool_call row's result. Mapping these
+  // messages made the subagent's status texts and final report the last
+  // assistant rows in chat, reading as the agent's own reply to the user.
+  if (isSubagentMessage(msg)) return null;
 
   switch (msg.type) {
     case 'assistant':

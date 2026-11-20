@@ -18,6 +18,7 @@ import createImagesRoutes from './routes/images.js';
 import createSlackRoutes from './routes/slack.js';
 import { createSlackBot } from './services/slack-bot.js';
 import { createSlackSocketManager } from './services/slack-socket.js';
+import createSessionImageRoutes from './routes/session-images.js';
 import { createRequireAuth } from './middleware/auth.js';
 import { createFeathersApp, cookieAuthMiddleware } from './feathers.js';
 import { registerFeathersServices } from './services/feathers/index.js';
@@ -28,12 +29,14 @@ import {
 } from './lib/app-error-handler.js';
 import { createFeathersCookieAuth } from './lib/feathers-http-auth.js';
 import { unlessFeathersApiRoute } from './lib/unless-feathers-api-route.js';
+import { createApexRedirect } from './lib/apex-redirect.js';
 import { DevProxy } from './services/dev-proxy.js';
 import { CodeServerHandler } from './services/codeserver-handler.js';
 import { DevserverHandler } from './services/devserver-handler.js';
 import { LoopScheduler } from './services/loop-scheduler.js';
 import db from './db.js';
 import { seedInstanceSettings, getGithubAppConfig } from './lib/instance-settings.js';
+import { packageRoot } from './lib/package-root.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -54,6 +57,8 @@ expressApp.set('devProxy', devProxy);
 expressApp.get('/up', (req, res) => {
   res.send('OK');
 });
+
+expressApp.use(createApexRedirect());
 
 expressApp.use(cookieParser(ENCRYPTION_KEY));
 
@@ -100,6 +105,7 @@ expressApp.use(createSettingsRoutes(requireAuth));
 expressApp.use(createAuthRoutes(feathersApp));
 expressApp.use(createMcpOAuthRoutes(feathersApp));
 expressApp.use(createImagesRoutes());
+expressApp.use(createSessionImageRoutes(feathersApp, requireAuth));
 
 if (process.env.VITE_SERVER_ENABLED === 'true') {
   expressApp.get('/', (req, res) => {
@@ -108,7 +114,7 @@ if (process.env.VITE_SERVER_ENABLED === 'true') {
 }
 
 if (process.env.VITE_SERVER_ENABLED !== 'true') {
-  const clientDist = path.join(__dirname, '..', 'client', 'dist');
+  const clientDist = path.join(packageRoot(), 'client', 'dist');
   expressApp.use(express.static(clientDist));
   expressApp.get('*', (req, res, next) => {
     if (req.url.startsWith('/api/')) return next();
@@ -179,7 +185,10 @@ server.on('upgrade', (req, socket, head) => devProxy.handleUpgrade(req, socket, 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1';
 server.listen(PORT, HOST, () => {
-  logger.info({ port: PORT, host: HOST }, 'Server running');
+  logger.info({ port: PORT, host: HOST, url: PUBLIC_HOST }, 'Server running');
+  if (process.env.NODE_ENV !== 'test') {
+    logger.info('Open Baguette in your browser: %s', PUBLIC_HOST);
+  }
 });
 
 let shuttingDown = false;

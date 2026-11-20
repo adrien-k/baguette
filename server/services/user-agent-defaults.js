@@ -22,9 +22,17 @@ const DEFAULT_PATCH_KEYS = [
   'subagent_default_mode',
   'subagent_default_config_id',
   'subagent_default_model',
+  'utility_default_config_id',
+  'utility_default_model',
 ];
 
-async function normalizeModelPatch(raw, configId, user, app) {
+async function normalizeModelPatch(
+  raw,
+  configId,
+  user,
+  app,
+  { configField = 'agent_default_config_id', modelField = 'agent_default_model' } = {}
+) {
   if (raw === undefined) return undefined;
   if (raw === null || raw === '') return null;
   let parsed = raw;
@@ -36,11 +44,11 @@ async function normalizeModelPatch(raw, configId, user, app) {
       model_params: raw.model_params ?? null,
     };
   } else {
-    throw new BadRequest('agent_default_model must be an object or JSON string');
+    throw new BadRequest(`${modelField} must be an object or JSON string`);
   }
   if (!parsed.model && !parsed.model_params?.length) return null;
   if (!configId) {
-    throw new BadRequest('agent_default_config_id is required when setting a default model');
+    throw new BadRequest(`${configField} is required when setting a default model`);
   }
   const config = await loadOwnedAgentConfig(app.get('db'), configId, user.id);
   await validateAgentSessionDefaults(
@@ -138,6 +146,33 @@ async function normalizeAgentDefaultsPatch(context) {
       }
       data.subagent_default_mode = mode;
     }
+  }
+
+  let utilityConfigId =
+    data.utility_default_config_id !== undefined
+      ? data.utility_default_config_id == null
+        ? null
+        : Number(data.utility_default_config_id)
+      : existing.utility_default_config_id;
+
+  if (data.utility_default_config_id !== undefined && utilityConfigId != null) {
+    await loadOwnedAgentConfig(context.app.get('db'), utilityConfigId, user.id);
+  }
+
+  if (data.utility_default_config_id === null) {
+    data.utility_default_model = null;
+  }
+  if (data.utility_default_model !== undefined) {
+    data.utility_default_model = await normalizeModelPatch(
+      data.utility_default_model,
+      utilityConfigId,
+      user,
+      context.app,
+      { configField: 'utility_default_config_id', modelField: 'utility_default_model' }
+    );
+  }
+  if (data.utility_default_config_id !== undefined) {
+    data.utility_default_config_id = utilityConfigId;
   }
 
   let subagentConfigId =

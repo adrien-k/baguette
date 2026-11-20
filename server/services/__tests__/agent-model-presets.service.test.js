@@ -44,10 +44,84 @@ describe('agent-model-presets service', () => {
     );
     expect(created.description).toBe('Fast todos');
     expect(created.agent_sdk).toBe('mock');
+    expect(created.enabled).toBe(true);
+    expect(created.for_subagents).toBe(true);
+    expect(created.for_new_sessions).toBe(true);
 
     const { data } = await app.service('agent-model-presets').find(params({ id: userId }));
     expect(data).toHaveLength(1);
     expect(data[0].id).toBe(created.id);
+  });
+
+  it('creates presets with explicit flag values', async () => {
+    const created = await app.service('agent-model-presets').create(
+      {
+        description: 'Subagents only',
+        agent_config_id: configId,
+        model: 'mock-standard',
+        enabled: true,
+        for_subagents: true,
+        for_new_sessions: false,
+      },
+      params({ id: userId })
+    );
+    expect(created.for_new_sessions).toBe(false);
+    expect(created.for_subagents).toBe(true);
+  });
+
+  it('rejects invalid flag values on create and patch', async () => {
+    await expect(
+      app.service('agent-model-presets').create(
+        {
+          description: 'Bad flag',
+          agent_config_id: configId,
+          model: 'mock-standard',
+          enabled: 'yes',
+        },
+        params({ id: userId })
+      )
+    ).rejects.toThrow(/enabled must be a boolean/);
+
+    const created = await app.service('agent-model-presets').create(
+      {
+        description: 'Good flag',
+        agent_config_id: configId,
+        model: 'mock-standard',
+      },
+      params({ id: userId })
+    );
+    await expect(
+      app
+        .service('agent-model-presets')
+        .patch(created.id, { for_subagents: 'nope' }, params({ id: userId }))
+    ).rejects.toThrow(/for_subagents must be a boolean/);
+  });
+
+  it('toggles flags by patch', async () => {
+    const created = await app.service('agent-model-presets').create(
+      {
+        description: 'Toggle me',
+        agent_config_id: configId,
+        model: 'mock-standard',
+      },
+      params({ id: userId })
+    );
+    const turnedOff = await app
+      .service('agent-model-presets')
+      .patch(created.id, { enabled: false, for_subagents: false }, params({ id: userId }));
+    expect(turnedOff.enabled).toBe(false);
+    expect(turnedOff.for_subagents).toBe(false);
+    expect(turnedOff.for_new_sessions).toBe(true);
+
+    const filtered = await app
+      .service('agent-model-presets')
+      .find({ ...params({ id: userId }), query: { enabled: 1 } });
+    expect(filtered.data).toHaveLength(0);
+
+    const turnedOn = await app
+      .service('agent-model-presets')
+      .patch(created.id, { enabled: true }, params({ id: userId }));
+    expect(turnedOn.enabled).toBe(true);
   });
 
   it('does not list another user presets', async () => {
@@ -91,6 +165,7 @@ describe('agent-model-presets service', () => {
       .patch(created.id, { description: 'After' }, params({ id: userId }));
     expect(updated.description).toBe('After');
     expect(updated.model).toBe('mock-standard');
+    expect(updated.enabled).toBe(true);
   });
 
   it('does not patch another user preset', async () => {

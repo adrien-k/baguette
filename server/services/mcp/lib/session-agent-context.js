@@ -63,6 +63,39 @@ export function createSessionAgentContext(
     return db('repos').where({ id: s.repo_id }).first();
   };
 
+  /** Repo row for an explicit target session (null when it has no linked repo). */
+  const getRepoForSession = async (targetSession) => {
+    if (!targetSession?.repo_id) return null;
+    return db('repos').where({ id: targetSession.repo_id }).first();
+  };
+
+  /**
+   * Resolve the session a read-only PR / GitHub tool should inspect: the caller's own
+   * session by default, or another session owned by the same user when `sessionId`
+   * is passed. Global sessions carry no repo/PR state, so they are rejected as a
+   * target — and a global caller must pass a `session_id` explicitly.
+   */
+  const resolveReadTargetSession = async (sessionId) => {
+    if (sessionId == null) {
+      const own = await getSession();
+      if (own?.is_global) {
+        return {
+          session: null,
+          error: 'This is a global session — pass session_id of a repo session to inspect.',
+        };
+      }
+      return { session: own, error: null };
+    }
+    const target = await db('sessions').where({ id: sessionId }).first();
+    if (!target || String(target.user_id) !== String(sessionRef.user_id)) {
+      return { session: null, error: 'Session not found' };
+    }
+    if (target.is_global) {
+      return { session: null, error: 'Global sessions do not have pull requests.' };
+    }
+    return { session: target, error: null };
+  };
+
   const getGitAuth = async () => {
     const [repo, user] = await Promise.all([getRepo(), getUser()]);
     return gitAuthFromRepo(repo, {
@@ -87,6 +120,15 @@ export function createSessionAgentContext(
     );
   };
 
+  /** Same availability check, for the repo of an explicit target session. */
+  const requireGitHubApiForSession = async (targetSession) => {
+    const [repo, token] = await Promise.all([getRepoForSession(targetSession), getToken()]);
+    if (githubApiAvailable({ token, origin: repo?.origin })) return null;
+    return fail(
+      'GitHub API is not available for this repository. PR features require a GitHub token and a github.com remote.'
+    );
+  };
+
   const requireGitHubRepo = requireGitHubApi;
 
   const patchSession = async (data) => {
@@ -96,7 +138,12 @@ export function createSessionAgentContext(
     sessionRef = { ...sessionRef, ...updated };
   };
 
-  const absoluteSessionPath = resolveDataDirRelativePath(sessionRef.session_path) || '';
+  const parentAbsoluteSessionPath = resolveDataDirRelativePath(sessionRef.session_path) || '';
+  let absoluteSessionPath = parentAbsoluteSessionPath;
+  if (callerAgent?.worktree_path) {
+    const isolated = resolveDataDirRelativePath(callerAgent.worktree_path);
+    if (isolated) absoluteSessionPath = isolated;
+  }
   const baseBranch = sessionRef.base_branch;
 
   return {
@@ -116,11 +163,15 @@ export function createSessionAgentContext(
     describeAgent,
     withSessionHeader,
     getRepo,
+    getRepoForSession,
+    resolveReadTargetSession,
     requireRemoteRepo,
     requireGitHubApi,
+    requireGitHubApiForSession,
     requireGitHubRepo,
     patchSession,
     absoluteSessionPath,
+    parentAbsoluteSessionPath,
     baseBranch,
   };
 }

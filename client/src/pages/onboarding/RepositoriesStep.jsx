@@ -5,6 +5,7 @@ import { toastError } from '../../utils/toastError.jsx';
 import RepoSearchInput from '../../components/RepoSearchInput.jsx';
 import { GHOST_BUTTON_CLASS, PRIMARY_BUTTON_SIZED } from '../../utils/buttonStyles.js';
 import { showGithubRepoPicker } from '../../utils/onboardingSteps.js';
+import LinkedRepositoriesList from '../../components/LinkedRepositoriesList.jsx';
 
 export default function RepositoriesStep({
   user,
@@ -78,9 +79,11 @@ export default function RepositoriesStep({
       {addResult ? (
         <p className="mt-3 text-sm text-success">Added {addResult.full_name ?? 'repository'}.</p>
       ) : null}
-      {repos.length > 0 ? (
-        <p className="mt-4 text-xs text-faint">{repos.length} repositories linked.</p>
-      ) : null}
+
+      <div className="mt-6">
+        <h4 className="text-xs font-medium text-fg-muted mb-2">Linked repositories</h4>
+        <LinkedRepositoriesList repos={repos} />
+      </div>
 
       <div className={`mt-8 flex gap-2 ${showBack ? 'justify-between' : 'justify-end'}`}>
         {showBack ? (

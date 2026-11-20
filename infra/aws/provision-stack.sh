@@ -27,6 +27,8 @@ Environment:
   AWS_REGION        AWS region (default: us-east-1 or AWS_DEFAULT_REGION)
   PARAMETERS_FILE   JSON parameters file (default: infra/aws/parameters.json)
   TAGS_FILE         Optional stack tags JSON (default: infra/aws/tags.json if present)
+  DISABLE_ROLLBACK  Set to 1 with create to keep a failed bootstrap for
+                    inspection instead of rolling the stack back
 
 Copy parameters.example.json to parameters.json and edit before create.
 Optional extra tags: copy tags.example.json to tags.json (propagated to taggable resources).
@@ -88,13 +90,17 @@ cmd_create() {
   if [[ -f "${TAGS_FILE}" ]]; then
     extra+=(--tags "file://${TAGS_FILE}")
   fi
+  # Rollback stays enabled by default so replacement updates (e.g. subnet
+  # changes) work; DISABLE_ROLLBACK=1 keeps a failed bootstrap for inspection.
+  if [[ "${DISABLE_ROLLBACK:-0}" == "1" ]]; then
+    extra+=(--disable-rollback)
+  fi
   aws cloudformation create-stack \
     --region "${AWS_REGION}" \
     --stack-name "${STACK_NAME}" \
     --template-body "file://${template}" \
     --parameters "file://${PARAMETERS_FILE}" \
     --capabilities CAPABILITY_IAM \
-    --disable-rollback \
     "${extra[@]}"
   rm -f "${template}"
   echo "Waiting for stack CREATE_COMPLETE (bootstrap + certs, up to 25 minutes)..."
@@ -143,8 +149,7 @@ wait_stack() {
   echo >&2
   echo "Trying to fetch instance bootstrap log via SSM..." >&2
   cmd_bootstrap_logs || true
-  echo "Create uses --disable-rollback so a failed instance is kept for inspection." >&2
-  echo "After debugging: ./infra/aws/provision-stack.sh delete" >&2
+  echo "The stack rolled back; the events above show the failing resource. Fix it and re-run." >&2
   exit 1
 }
 
@@ -155,6 +160,7 @@ stack_output() {
     --query "Stacks[0].Outputs[?OutputKey=='${1}'].OutputValue" \
     --output text
 }
+
 
 # Outputs are empty until the stack is complete. The instance id is on the
 # resource as soon as EC2 allocates it (including CREATE_FAILED / wait timeout).
@@ -206,8 +212,7 @@ cmd_bootstrap_logs() {
 }
 
 cmd_outputs() {
-  local deploy_server domain instance_id www_url elastic_ip
-  deploy_server="$(stack_output DeployServer)"
+  local domain instance_id www_url elastic_ip
   domain="$(stack_output Domain)"
   instance_id="$(stack_output InstanceId)"
   www_url="$(stack_output WwwUrl)"
@@ -218,17 +223,11 @@ cmd_outputs() {
   echo "  Settings → Secrets and variables → Actions"
   echo
   echo "Variables"
-  echo "  DEPLOY_SERVER=${deploy_server}"
   echo "  DOMAIN=${domain}"
   echo
   echo "Secrets"
-  echo "  SSH_PRIVATE_KEY            contents of /home/ubuntu/.ssh/id_ed25519 (command below)"
-  echo "  AUTH_GITHUB_CLIENT_ID      GitHub App client ID"
-  echo "  AUTH_GITHUB_CLIENT_SECRET  GitHub App client secret"
-  echo "  AUTH_GITHUB_APP_SLUG       GitHub App slug (the <slug> in github.com/apps/<slug>)"
-  echo "  ENCRYPTION_KEY             openssl rand -hex 32"
-  echo
-  echo "Fetch SSH_PRIVATE_KEY (paste the full key, including BEGIN/END lines)"
+  echo "  SSH_PRIVATE_KEY            contents of /home/ubuntu/.ssh/id_ed25519 (paste the full key,"
+  echo "                             including BEGIN/END lines; commands below)"
   echo "  CMD_ID=\$(aws ssm send-command --region ${AWS_REGION} --instance-ids ${instance_id} \\"
   echo "    --document-name AWS-RunShellScript \\"
   echo "    --parameters 'commands=[\"cat /home/ubuntu/.ssh/id_ed25519\"]' \\"

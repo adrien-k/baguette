@@ -13,6 +13,7 @@ import AskUserQuestionBlock from './AskUserQuestionBlock.tsx';
 import SubagentMcpToolBlock from './SubagentMcpToolBlock.tsx';
 import TaskMcpToolBlock from './TaskMcpToolBlock.tsx';
 import ConfigureMcpServerBlock from './ConfigureMcpServerBlock.tsx';
+import GitPushToolBlock from './GitPushToolBlock.tsx';
 import { parseMcpJsonResult, type McpResultData } from '../../utils/parseMcpJsonResult.ts';
 
 const ISSUE_SEVERITY_CLASS: Record<string, string> = {
@@ -425,7 +426,6 @@ export default function BaguetteMcpToolBlock({
         errorMessage={planErrorMessage}
         sessionId={sessionId != null ? Number(sessionId) : null}
         agentId={agentId}
-        userReplied={userReplied}
         interactive={interactive}
       />
     );
@@ -437,6 +437,10 @@ export default function BaguetteMcpToolBlock({
 
   if (toolShortName === 'ConfigureMcpServer') {
     return <ConfigureMcpServerBlock args={args} result={result} isError={isError} />;
+  }
+
+  if (toolShortName === 'GitPush') {
+    return <GitPushToolBlock args={args} result={result} isError={isError} sessionId={sessionId} />;
   }
 
   if (toolShortName === 'PrUpsert') {
@@ -465,7 +469,11 @@ export default function BaguetteMcpToolBlock({
     );
   }
 
-  if (toolShortName === 'StartSubagent' || toolShortName === 'AwaitSubagent') {
+  if (
+    toolShortName === 'StartSubagent' ||
+    toolShortName === 'AwaitAgent' ||
+    toolShortName === 'AwaitSubagent'
+  ) {
     return (
       <SubagentMcpToolBlock
         toolName={toolShortName}
@@ -492,6 +500,20 @@ export default function BaguetteMcpToolBlock({
         icon="⚙"
         label={path && line ? 'PrComment (inline)' : 'PrComment'}
         detail={detail}
+        isError={isError}
+        result={result}
+        input={args}
+      />
+    );
+  }
+
+  if (toolShortName === 'EditPrComment') {
+    const body = (args.body as string | undefined) ?? '';
+    return (
+      <QuietToolBlock
+        icon="⚙"
+        label="EditPrComment"
+        detail={body.length > 60 ? body.slice(0, 57) + '…' : body}
         isError={isError}
         result={result}
         input={args}

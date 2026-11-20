@@ -12,8 +12,8 @@ function startSubagentBaseDescription() {
   const waitMinutes = mcpAwaitTimeoutMinutes();
   return (
     'Create a subagent (`agent_type` subagent) in a session and run its initial prompt. ' +
-    `Default attach: true waits until the turn finishes (up to ${waitMinutes} minutes per wait). On timeout the subagent is NOT cancelled — the wait is virtually detached and the turn keeps running: read its last message (GetSessionMessages) to check progress, then call AwaitSubagent again to continue waiting, or StopSubagent only if it looks stuck for no good reason. ` +
-    'attach: false returns immediately — then AwaitSubagent if you stay in this turn, or pass notify_parent: true if you will end your turn while it still runs (Baguette posts the result back as a new message when it finishes). ' +
+    `Default attach: true waits until the turn finishes (up to ${waitMinutes} minutes per wait). On timeout the subagent is NOT cancelled — the wait is virtually detached and the turn keeps running: read its last message (GetAgentMessages) to check progress, then call AwaitAgent again to continue waiting, or StopSubagent only if it looks stuck for no good reason. ` +
+    'attach: false returns immediately — then AwaitAgent if you stay in this turn, or pass notify_parent: true if you will end your turn while it still runs (Baguette posts the result back as a new message when it finishes). ' +
     'Chat in the Baguette UI is disabled for this agent; send follow-ups via CreateSessionMessage with agent_ref. '
   );
 }
@@ -31,13 +31,19 @@ function startSubagentSchema(mode) {
       .boolean()
       .optional()
       .describe(
-        `If true (default), wait until the initial turn finishes (up to ${mcpAwaitTimeoutMinutes()} minutes; on timeout the subagent keeps running — check progress and AwaitSubagent again). If false, return agent_id/ref immediately.`
+        `If true (default), wait until the initial turn finishes (up to ${mcpAwaitTimeoutMinutes()} minutes; on timeout the subagent keeps running — check progress and AwaitAgent again). If false, return agent_id/ref immediately.`
       ),
     notify_parent: z
       .boolean()
       .optional()
       .describe(
-        'When true, Baguette posts this subagent’s result back to you as a new user message when its turn finishes. Use with attach: false if you will end your turn before the subagent finishes; skip it if you will AwaitSubagent yourself.'
+        'When true, Baguette posts this subagent’s result back to you as a new user message when its turn finishes. Use with attach: false if you will end your turn before the subagent finishes; skip it if you will AwaitAgent yourself.'
+      ),
+    isolated_worktree: z
+      .boolean()
+      .optional()
+      .describe(
+        'When true, create an isolated git worktree on a throwaway branch at the session worktree HEAD commit. Default false (shared session cwd). Not supported for global sessions or sessions without a worktree.'
       ),
     ...agentCreatedModelSchemaFields(mode),
   };
@@ -62,6 +68,7 @@ export function createStartSubagentTool(ctx) {
         model_params,
         attach,
         notify_parent,
+        isolated_worktree,
       } = args;
       const waitForCompletion = attach !== false;
       const { error } = await requireOwnedSessionById(app, session_id, userId);
@@ -80,6 +87,7 @@ export function createStartSubagentTool(ctx) {
             ...(model != null ? { model } : {}),
             ...(model_params != null ? { model_params } : {}),
             ...(notify_parent === true ? { notify_parent: true } : {}),
+            ...(isolated_worktree === true ? { isolated_worktree: true } : {}),
             wait_for_completion: waitForCompletion,
           },
           userParams

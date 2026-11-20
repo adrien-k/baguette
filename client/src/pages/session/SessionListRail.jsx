@@ -28,6 +28,9 @@ export default function SessionListRail({
   onDeleteLoop,
   sidebarSessions,
   routeSessionId,
+  routeAgentId,
+  autoExpandId = null,
+  isMobileList = false,
   isNewSessionRoute,
   hideSessionListRepo,
   suppressOpenSessionUnread,
@@ -39,6 +42,7 @@ export default function SessionListRail({
   return (
     <div
       ref={sessionsSidebarElRef}
+      data-testid="session-list-rail"
       className={`${mobilePreferList ? 'flex w-full flex-1 md:w-auto md:flex-none' : 'hidden'} md:block relative shrink-0 min-h-0 overflow-hidden border-r border-line bg-nav ${
         sessionsSidebarResizing ? '' : 'transition-[width] duration-300 ease-in-out'
       } ${showSidebar === false ? 'md:w-0 md:border-r-0' : ''}`}
@@ -160,6 +164,9 @@ export default function SessionListRail({
                     String(s.id) === String(routeSessionId) && suppressOpenSessionUnread
                   }
                   listScope={listScope}
+                  routeAgentId={routeAgentId}
+                  autoExpandId={autoExpandId}
+                  isMobileList={isMobileList}
                 />
               ))}
               {hasMoreSessions && sessionsLength > 0 && (

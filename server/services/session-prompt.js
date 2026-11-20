@@ -4,6 +4,7 @@ import { combinePromptExtensions } from '../../shared/agent-prompts.js';
 import { repoAccessMode } from '../../shared/repo-origin.js';
 import { loadBaguetteAgentPrompt } from './baguette-config.js';
 import { sessionMcpPromptServers } from './user-mcp-runtime.js';
+import { buildPreloadedSkillsPrompt, parseAutoLoadSkillLabels } from './skill-resolution.js';
 
 const PR_METADATA_HINT_GITHUB =
   'Use **`UpdateSession`** to change label and description; for pull request title, URL, and description on GitHub, call **`PrRead`**.';
@@ -68,17 +69,28 @@ async function renderBasePromptForSession(sessionPath, role, { prMetadataHint } 
   return base + extra;
 }
 
-async function loadRoleAndEndOfTurn(role, snippets) {
+async function loadSubagentWorktreeSection(agent) {
+  const promptName = agent?.worktree_path
+    ? 'subagent-role-isolated-worktree'
+    : 'subagent-role-shared-worktree';
+  return loadPrompt(promptName, {});
+}
+
+async function loadRoleAndEndOfTurn(role, snippets, { agent = null } = {}) {
   const gitRemotePrompt = await loadPrompt(snippets.gitRemote, {});
   const rolePromptName = role === 'subagent' ? 'subagent-role-prompt' : 'builder-role-prompt';
+  const subagentWorktreeSection =
+    role === 'subagent' ? await loadSubagentWorktreeSection(agent) : '';
   const builderRolePrompt = await loadPrompt(rolePromptName, {
     git_remote_prompt: gitRemotePrompt,
     subagent_session_tools: snippets.subagentSessionTools,
+    subagent_worktree_section: subagentWorktreeSection,
   });
   const repoConfigPrompt =
     role === 'builder' ? await loadPrompt('build-prompt-repo-config-prompt', {}) : '';
   const builderEndOfTurnPrompt = role === 'builder' ? await loadPrompt(snippets.endOfTurn, {}) : '';
-  return { builderRolePrompt, repoConfigPrompt, builderEndOfTurnPrompt };
+  const runningCommandsPrompt = await loadPrompt('running-commands-prompt', {});
+  return { builderRolePrompt, repoConfigPrompt, builderEndOfTurnPrompt, runningCommandsPrompt };
 }
 
 /**
@@ -107,12 +119,23 @@ async function userMcpSection(sessionRow, { db = null, agentSdk = null } = {}) {
 
 export async function buildSystemPromptAppend(
   sessionRow,
-  { agent = null, repo = null, db = null, agentSdk = null } = {}
+  { agent = null, repo = null, db = null, agentSdk = null, app = null } = {}
 ) {
   const mcpSection = await userMcpSection(sessionRow, { db, agentSdk });
+
+  async function finishPrompt(basePrompt) {
+    let out = basePrompt;
+    const autoLabels = parseAutoLoadSkillLabels(sessionRow?.auto_load_skills);
+    if (autoLabels.length && app) {
+      const skillsSection = await buildPreloadedSkillsPrompt(app, sessionRow, autoLabels);
+      if (skillsSection) out = `${out}\n\n${skillsSection}`;
+    }
+    return mcpSection ? `${out}\n\n${mcpSection}` : out;
+  }
+
   if (isGlobalSession(sessionRow)) {
     const prompt = await loadPrompt('global-prompt', {});
-    return mcpSection ? `${prompt}\n\n${mcpSection}` : prompt;
+    return finishPrompt(prompt);
   }
 
   const repoRow = await resolveRepoRow(sessionRow, { repo, db });
@@ -120,8 +143,8 @@ export async function buildSystemPromptAppend(
 
   const sessionPath = sessionRow?.session_path ?? null;
   const role = buildPromptRole(agent);
-  const { builderRolePrompt, repoConfigPrompt, builderEndOfTurnPrompt } =
-    await loadRoleAndEndOfTurn(role, snippets);
+  const { builderRolePrompt, repoConfigPrompt, builderEndOfTurnPrompt, runningCommandsPrompt } =
+    await loadRoleAndEndOfTurn(role, snippets, { agent });
   const buildTemplate = role === 'subagent' ? 'subagent-build-prompt' : 'build-prompt';
   const templateVars = {
     base_prompt: await renderBasePromptForSession(sessionPath, role, {
@@ -129,13 +152,14 @@ export async function buildSystemPromptAppend(
     }),
     builder_role_prompt: builderRolePrompt,
     subagent_session_tools: snippets.subagentSessionTools,
+    running_commands_prompt: runningCommandsPrompt,
   };
   if (buildTemplate === 'build-prompt') {
     templateVars.repo_config_prompt = repoConfigPrompt;
     templateVars.builder_end_of_turn_prompt = builderEndOfTurnPrompt;
   }
   const prompt = await loadPrompt(buildTemplate, templateVars);
-  return mcpSection ? `${prompt}\n\n${mcpSection}` : prompt;
+  return finishPrompt(prompt);
 }
 
 /** Uninterpolated base-prompt.md for Settings (readonly base) — github/default text. */
@@ -147,13 +171,14 @@ async function loadBaseSessionPromptTemplate() {
 export async function loadFullSessionPromptTemplate() {
   const snippets = promptSnippetsForAccess('github');
   const basePrompt = await loadBaseSessionPromptTemplate();
-  const { builderRolePrompt, repoConfigPrompt, builderEndOfTurnPrompt } =
+  const { builderRolePrompt, repoConfigPrompt, builderEndOfTurnPrompt, runningCommandsPrompt } =
     await loadRoleAndEndOfTurn('builder', snippets);
   return loadPrompt('build-prompt', {
     base_prompt: basePrompt,
     builder_role_prompt: builderRolePrompt,
     repo_config_prompt: repoConfigPrompt,
     builder_end_of_turn_prompt: builderEndOfTurnPrompt,
+    running_commands_prompt: runningCommandsPrompt,
   });
 }
 
@@ -161,14 +186,17 @@ export async function loadFullSessionPromptTemplate() {
 export async function loadFullSubagentPromptTemplate() {
   const snippets = promptSnippetsForAccess('github');
   const basePrompt = await loadBaseSessionPromptTemplate();
+  const sharedWorktreeSection = await loadPrompt('subagent-role-shared-worktree', {});
   const builderRolePrompt = await loadPrompt('subagent-role-prompt', {
     git_remote_prompt: await loadPrompt(snippets.gitRemote, {}),
     subagent_session_tools: snippets.subagentSessionTools,
+    subagent_worktree_section: sharedWorktreeSection,
   });
   return loadPrompt('subagent-build-prompt', {
     base_prompt: basePrompt,
     builder_role_prompt: builderRolePrompt,
     subagent_session_tools: snippets.subagentSessionTools,
+    running_commands_prompt: await loadPrompt('running-commands-prompt', {}),
   });
 }
 

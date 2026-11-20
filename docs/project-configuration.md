@@ -1,12 +1,14 @@
 # Project Configuration
 
-Baguette uses **`.baguette.yaml`** at the repository root to configure per-session environments, tasks, and the dev server preview.
+Baguette uses **`.baguette.yaml`** at the repository root to configure per-session environments, tasks, the dev server preview, and optional chat **recipes**.
 
-> **Tip:** The easiest way to configure your project is to ask Baguette directly. It has full context about your repo and can generate **`.baguette.yaml`** for you (including `type: docker` tasks for databases and caches) and optional **`.baguette/`** helper files when needed.
+Top-level keys under `config` are **`env`**, **`init`**, **`cleanup`**, **`tasks`**, plus **`services`** and **`recipes`**.
+
+> **Tip:** The easiest way to configure your project is to open a Baguette session on the repository and ask it to **configure the repo for Baguette**. It has full context about your codebase and can generate **`.baguette.yaml`** for you (including `type: docker` tasks for databases and caches) and optional **`.baguette/`** helper files when needed.
 
 ## Docker services (PostgreSQL, Redis, etc.)
 
-Define databases and other dependencies as **docker tasks** in `session.tasks`. Baguette provisions a per-session Docker volume `baguette_session_<short_id>`, starts the container on the `baguette_default` Docker network, waits for a health check (if configured), and on archive removes session containers, **images built for that session** (`container.build`), and the data volume. Pulled images such as `postgres:16` are not removed.
+Define databases and other dependencies as **docker tasks** in `tasks`. Baguette provisions a per-session Docker volume `baguette_session_<short_id>`, starts the container on the `baguette_default` Docker network, waits for a health check (if configured), and on archive removes session containers, **images built for that session** (`container.build`), and the data volume. Pulled images such as `postgres:16` are not removed.
 
 Docker tasks **do not use `ports:`**. They are not published to random host ports. Other tasks (your app, migrations, tests) reach them on the Docker network at `${{ baguette.tasks.<task-key>.container_hostname }}` using the **normal port the image listens on inside the container** (e.g. `5432` for Postgres, `6379` for Redis). Reserve dynamic `ports:` for **command** tasks that must listen on the session host (dev servers, APIs proxied to the browser).
 
@@ -29,60 +31,59 @@ Optional extra [`docker run`](https://docs.docker.com/reference/cli/docker/conta
 
 `volumes`, `mount`, `security_opt`, `cap_add`, `cap_drop`, `entrypoint`, `env_file`, `privileged`, `shm_size`, `user`, `memory`
 
-Put connection URLs (e.g. `DATABASE_URL`) in **task `env`** on each command task that uses the database, with **`depends-on: [<docker-task-key>]`** so the container is running first. Use `${{ baguette.tasks.<task-key>.container_hostname }}` and the image’s **container** port (e.g. `:5432` for Postgres) — not `${{ baguette.tasks.<task-key>.PG_PORT }}` or other dynamic host port placeholders. Do not put docker-backed URLs in `session.env` — they belong on tasks that depend on the service. With `persist`, the database name does not need `short_id` — each session has its own data directory (e.g. database `app`).
+Put connection URLs (e.g. `DATABASE_URL`) in **task `env`** on each command task that uses the database, with **`depends-on: [<docker-task-key>]`** so the container is running first. Use `${{ baguette.tasks.<task-key>.container_hostname }}` and the image’s **container** port (e.g. `:5432` for Postgres) — not `${{ baguette.tasks.<task-key>.PG_PORT }}` or other dynamic host port placeholders. Do not put docker-backed URLs in config `env` — they belong on tasks that depend on the service. With `persist`, the database name does not need `short_id` — each session has its own data directory (e.g. database `app`).
 
 ## Quick start
 
 ```yaml
 config:
-  session:
-    env:
-      PUBLIC_HOST: '${{ baguette.services.app.public_uri }}'
-    init: |
-      pnpm install
-    tasks:
-      postgres:
-        type: docker
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-        container:
-          image: postgres:16
-          persist: ['/var/lib/postgresql/data']
-          healthcheck:
-            test: ['CMD-SHELL', 'pg_isready -U postgres']
-            interval: 5s
-            timeout: 3s
-            retries: 10
-      run-tests:
-        run: pnpm run db:migrate && pnpm test
-        depends-on: [postgres]
-        env:
-          DATABASE_URL: 'postgres://postgres:postgres@${{ baguette.tasks.postgres.container_hostname }}:5432/app'
-      reset-db:
-        run: pnpm run db:reset
-        depends-on: [postgres]
-        env:
-          DATABASE_URL: 'postgres://postgres:postgres@${{ baguette.tasks.postgres.container_hostname }}:5432/app'
-      dev-server:
-        run: pnpm run db:migrate && pnpm run dev --port $VITE_PORT --host 127.0.0.1
-        ports: [VITE_PORT]
-        depends-on: [postgres]
-        env:
-          DATABASE_URL: 'postgres://postgres:postgres@${{ baguette.tasks.postgres.container_hostname }}:5432/app'
+  env:
+    PUBLIC_HOST: '${{ baguette.services.app.public_uri }}'
+  init: |
+    pnpm install
+  tasks:
+    postgres:
+      type: docker
+      env:
+        POSTGRES_USER: postgres
+        POSTGRES_PASSWORD: postgres
+      container:
+        image: postgres:16
+        persist: ['/var/lib/postgresql/data']
+        healthcheck:
+          test: ['CMD-SHELL', 'pg_isready -U postgres']
+          interval: 5s
+          timeout: 3s
+          retries: 10
+    run-tests:
+      run: pnpm run db:migrate && pnpm test
+      depends-on: [postgres]
+      env:
+        DATABASE_URL: 'postgres://postgres:postgres@${{ baguette.tasks.postgres.container_hostname }}:5432/app'
+    reset-db:
+      run: pnpm run db:reset
+      depends-on: [postgres]
+      env:
+        DATABASE_URL: 'postgres://postgres:postgres@${{ baguette.tasks.postgres.container_hostname }}:5432/app'
+    dev-server:
+      run: pnpm run db:migrate && pnpm run dev --port $VITE_PORT --host 127.0.0.1
+      ports: [VITE_PORT]
+      depends-on: [postgres]
+      env:
+        DATABASE_URL: 'postgres://postgres:postgres@${{ baguette.tasks.postgres.container_hostname }}:5432/app'
   services:
     app:
       task: dev-server
       expose: VITE_PORT
 ```
 
-## `session` block
+## Session settings (`env`, `init`, `cleanup`, `tasks`)
 
 ### `env`
 
 Environment variables injected into all session tasks (init, cleanup, commands, preview services) and the coding agent's shell.
 
-**`session.env` must not use `${{ baguette.tasks.* }}` placeholders** — starting a task will fail with an explicit error. Put docker URLs, host ports, and other task-specific values in each task’s own `env` block with `depends-on`.
+**`env` must not use `${{ baguette.tasks.* }}` placeholders** — starting a task will fail with an explicit error. Put docker URLs, host ports, and other task-specific values in each task’s own `env` block with `depends-on`.
 
 Session-level placeholders (resolved when the task is created):
 
@@ -92,7 +93,7 @@ Session-level placeholders (resolved when the task is created):
 | `${{ baguette.session.short_id }}`           | Unique 4-character hex identifier for this session |
 | `${{ baguette.services.<name>.public_uri }}` | Public URL of a named entry in `services`          |
 
-**Task `env`** (per task under `session.tasks`) also supports the session placeholders above, plus task-specific placeholders resolved **after `depends-on` tasks are ready**:
+**Task `env`** (per task under `tasks`) also supports the session placeholders above, plus task-specific placeholders resolved **after `depends-on` tasks are ready**:
 
 | Placeholder                                           | Description                                                                                                                 |
 | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
@@ -104,9 +105,16 @@ Other config strings (`run`, docker `container`, `services`, etc.) use the same 
 
 ### `init`
 
-Shell commands run **once on the first task start** (after worktree creation). The block runs as a shell script under `set -e`, so the first failing command aborts it and the task fails to start.
+Shell commands run **once per checkout on the first task start** in that checkout (after worktree creation). The block runs as a shell script under `set -e`, so the first failing command aborts it and the task fails to start.
 
-On that first start, Baguette runs `session.init`, then the requested task's `depends-on` chain (e.g. docker Postgres), then the task itself. Use **`init` for install-only steps** (e.g. `pnpm install`, `bundle install`). Do **not** run database create, migrate, prepare, or reset in `init` — put those on tasks that list `depends-on: [postgres]` (or your DB task) so Postgres is running before they connect.
+On that first start, Baguette runs `init`, then the requested task's `depends-on` chain (e.g. docker Postgres), then the task itself. Use **`init` for install-only steps** (e.g. `pnpm install`, `bundle install`). Do **not** run database create, migrate, prepare, or reset in `init` — put those on tasks that list `depends-on: [postgres]` (or your DB task) so Postgres is running before they connect.
+
+| Checkout                         | Initialized flag                      | When `init` runs again                                                              |
+| -------------------------------- | ------------------------------------- | ----------------------------------------------------------------------------------- |
+| Session worktree (shared agents) | `sessions.initialized`                | First `RunTask` / panel start for that session                                      |
+| Isolated subagent worktree       | `agents.initialized` on that subagent | First task started **by that subagent**, even if the session is already initialized |
+
+An isolated subagent's checkout does not share `node_modules` or other install artifacts from the session worktree, so **`baguette:init` runs again in the sub-worktree** when needed. A successful init sets only **`agents.initialized`** for that subagent — it does not flip `sessions.initialized`.
 
 ```yaml
 init: |
@@ -117,7 +125,7 @@ init: |
 
 Shell commands run when a session is closed, before the worktree is removed. Errors are logged but do not prevent cleanup.
 
-Cleanup runs as a one-off shell task: it does **not** start docker `depends-on` tasks and does **not** resolve `${{ baguette.tasks.* }}` placeholders in `session.env`. Do not rely on `cleanup` to drop a database that lives in a **docker** task with `persist` — Baguette removes the session volume `baguette_session_<short_id>` when the session is archived. Use `cleanup` for worktree-local files, shared external databases (with a connection string that does not need task port placeholders), or other resources outside docker volumes.
+Cleanup runs as a one-off shell task: it does **not** start docker `depends-on` tasks and does **not** resolve `${{ baguette.tasks.* }}` placeholders in `env`. Do not rely on `cleanup` to drop a database that lives in a **docker** task with `persist` — Baguette removes the session volume `baguette_session_<short_id>` when the session is archived. Use `cleanup` for worktree-local files, shared external databases (with a connection string that does not need task port placeholders), or other resources outside docker volumes.
 
 ### `tasks`
 
@@ -143,11 +151,11 @@ tasks:
 | `type`       | string   | `docker` to run a container instead of `run`                                                                                     |
 | `ports`      | string[] | For **command** tasks only: env var names that Baguette assigns free **host** ports to before launching (omit on `type: docker`) |
 | `depends-on` | string[] | Task keys that must be running and listening before this task starts                                                             |
-| `env`        | object   | Per-task env vars merged over `session.env` (use for `DATABASE_URL` with docker `depends-on`)                                    |
+| `env`        | object   | Per-task env vars merged over config `env` (use for `DATABASE_URL` with docker `depends-on`)                                     |
 | `internal`   | boolean  | When `true`, omit from session task buttons (task remains runnable via `task_key`, `depends-on`, `services`, etc.)               |
 | `container`  | object   | Docker image, persist paths, healthcheck (when `type: docker`)                                                                   |
 
-For **`type: docker`** tasks, Baguette passes the same merged environment as command tasks (`session.env`, then task `env`, then any `extra_env`) into the container as `docker run -e` flags.
+For **`type: docker`** tasks, Baguette passes the same merged environment as command tasks (config `env`, then task `env`, then any `extra_env`) into the container as `docker run -e` flags.
 
 #### Multi-line tasks
 
@@ -194,6 +202,15 @@ Docker tasks follow the same rules based on how they were started, not on whethe
 
 When a task declares `depends-on`, Baguette starts each dependency if needed and waits until it is ready before starting the dependent task. If a dependency isn't running, Baguette starts it automatically.
 
+**Caller cwd.** Command tasks (`run:`) execute in the **caller's cwd** — the session worktree for the builder, or an isolated subagent's `sub-worktrees/<agent_id>/` checkout when that subagent runs `RunTask`. **Docker tasks** always use the **session worktree** as their spawn context: one `baguette_session_<short_id>` volume and container set per session, shared by every agent in that session.
+
+**Reusing running dependencies.** A already-running dependency is reused only when its scope matches:
+
+| Dependency type  | Reused when…                                                            |
+| ---------------- | ----------------------------------------------------------------------- |
+| Command (`run:`) | Same `task_key` **and** the running task's cwd matches the caller's cwd |
+| Docker           | Same `task_key` anywhere in the session (session-wide)                  |
+
 - **Docker dependency** — ready when the container has started (and, if `container.healthcheck` is set in YAML, when Docker reports healthy). No host port polling.
 - **Command dependency with `ports`** — ready when every allocated host port is listening on `127.0.0.1`.
 
@@ -209,28 +226,27 @@ Circular dependencies are detected and rejected with an error.
 
 ## `services` block (preview)
 
-The **`services`** block defines which tasks Baguette proxies for live preview. Each entry maps a service name to a `session.tasks` key and the port env var users reach in the browser.
+The **`services`** block defines which tasks Baguette proxies for live preview. Each entry maps a service name to a `tasks` key and the port env var users reach in the browser.
 
 | Field         | Description                                                                                                                                                |
 | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `task`        | Key of a task in `session.tasks` (that task’s `run` and `ports` start the preview process)                                                                 |
+| `task`        | Key of a task in `tasks` (that task’s `run` and `ports` start the preview process)                                                                         |
 | `expose`      | Which port env var from the task’s `ports` list is proxied to the public URL (required)                                                                    |
 | `description` | Optional short text on the session Preview tab                                                                                                             |
 | `scheme`      | Optional custom URL scheme for deep links (e.g. `exp://` for Expo). Open preview and QR codes use this scheme with the service host instead of `https://`. |
 
 Service names must be lowercase alphanumeric + hyphens (e.g. `app`, `api`, `expo`). The name `vscode` is reserved.
 
-Each service is proxied at `session-<id>-<name>.<domain>`. Use `${{ baguette.services.<name>.public_uri }}` when a task or `session.env` value needs that URL (for example `PUBLIC_HOST` for allowed-host checks).
+Each service is proxied at `session-<id>-<name>.<domain>`. Use `${{ baguette.services.<name>.public_uri }}` when a task or config `env` value needs that URL (for example `PUBLIC_HOST` for allowed-host checks).
 
 ```yaml
 config:
-  session:
-    env:
-      PUBLIC_HOST: '${{ baguette.services.app.public_uri }}'
-    tasks:
-      dev-server:
-        run: pnpm dev --port $PORT --host 127.0.0.1
-        ports: [PORT]
+  env:
+    PUBLIC_HOST: '${{ baguette.services.app.public_uri }}'
+  tasks:
+    dev-server:
+      run: pnpm dev --port $PORT --host 127.0.0.1
+      ports: [PORT]
   services:
     app:
       task: dev-server
@@ -240,17 +256,16 @@ config:
 
 ```yaml
 config:
-  session:
-    env:
-      EXPO_PUBLIC_API_URL: '${{ baguette.services.api.public_uri }}'
-      PUBLIC_HOST: '${{ baguette.services.api.public_uri }}'
-    tasks:
-      frontend:
-        run: pnpm dev --port $PORT --host 127.0.0.1
-        ports: [PORT]
-      api:
-        run: node server.js --port $API_PORT
-        ports: [API_PORT]
+  env:
+    EXPO_PUBLIC_API_URL: '${{ baguette.services.api.public_uri }}'
+    PUBLIC_HOST: '${{ baguette.services.api.public_uri }}'
+  tasks:
+    frontend:
+      run: pnpm dev --port $PORT --host 127.0.0.1
+      ports: [PORT]
+    api:
+      run: node server.js --port $API_PORT
+      ports: [API_PORT]
   services:
     frontend:
       task: frontend
@@ -269,7 +284,7 @@ Baguette polls all allocated ports until they are listening on `127.0.0.1` befor
 ### Best practices
 
 - **Bind to `127.0.0.1`** — configure the dev server to listen on 127.0.0.1 explicitly, not just `localhost`.
-- **Allowed hosts** — set `PUBLIC_HOST` from `${{ baguette.services.<name>.public_uri }}` in `session.env` and configure your framework to accept it.
+- **Allowed hosts** — set `PUBLIC_HOST` from `${{ baguette.services.<name>.public_uri }}` in config `env` and configure your framework to accept it.
 - See the [session management docs](session-management.md#web-server-preview) for DNS and production setup.
 
 ### Expo + API backend example
@@ -278,36 +293,35 @@ Expo needs to call an API backend. The Expo metro bundler bakes the API URL into
 
 ```yaml
 config:
-  session:
-    env:
-      EXPO_PUBLIC_API_URL: '${{ baguette.services.api.public_uri }}'
-      PUBLIC_HOST: '${{ baguette.services.api.public_uri }}'
-    init: |
-      pnpm install
-    tasks:
-      postgres:
-        type: docker
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-        container:
-          image: postgres:16
-          persist: ['/var/lib/postgresql/data']
-          healthcheck:
-            test: ['CMD-SHELL', 'pg_isready -U postgres']
-            interval: 5s
-            timeout: 3s
-            retries: 10
-      api:
-        run: pnpm --filter api run db:migrate && pnpm --filter api run dev --port $API_PORT --host 127.0.0.1
-        ports: [API_PORT]
-        depends-on: [postgres]
-        env:
-          DATABASE_URL: 'postgres://postgres:postgres@${{ baguette.tasks.postgres.container_hostname }}:5432/app'
-      expo:
-        run: pnpm --filter expo run start --port $EXPO_PORT --host 127.0.0.1
-        ports: [EXPO_PORT]
-        depends-on: [api]
+  env:
+    EXPO_PUBLIC_API_URL: '${{ baguette.services.api.public_uri }}'
+    PUBLIC_HOST: '${{ baguette.services.api.public_uri }}'
+  init: |
+    pnpm install
+  tasks:
+    postgres:
+      type: docker
+      env:
+        POSTGRES_USER: postgres
+        POSTGRES_PASSWORD: postgres
+      container:
+        image: postgres:16
+        persist: ['/var/lib/postgresql/data']
+        healthcheck:
+          test: ['CMD-SHELL', 'pg_isready -U postgres']
+          interval: 5s
+          timeout: 3s
+          retries: 10
+    api:
+      run: pnpm --filter api run db:migrate && pnpm --filter api run dev --port $API_PORT --host 127.0.0.1
+      ports: [API_PORT]
+      depends-on: [postgres]
+      env:
+        DATABASE_URL: 'postgres://postgres:postgres@${{ baguette.tasks.postgres.container_hostname }}:5432/app'
+    expo:
+      run: pnpm --filter expo run start --port $EXPO_PORT --host 127.0.0.1
+      ports: [EXPO_PORT]
+      depends-on: [api]
   services:
     api:
       task: api
@@ -320,42 +334,65 @@ config:
 
 - `depends-on: [api]` ensures the API is listening before Expo starts.
 
+## `recipes` block (chat)
+
+Optional one-click prompts at the bottom of the session **Chat** tab, in a **Recipes** row below actions such as Merge and Push. Clicking a recipe sends its `prompt` to the active agent (same as typing that message yourself).
+
+Baguette always shows built-in recipes (**Git sync**, **Check CI**, **Check comments**). Add repo-specific recipes under `recipes` at the top level of `config`.
+
+| Field         | Description                                                          |
+| ------------- | -------------------------------------------------------------------- |
+| `label`       | Button text in the chat footer (required)                            |
+| `prompt`      | User message sent to the agent when the button is clicked (required) |
+| `description` | Short tooltip on hover; falls back to `label` when omitted           |
+
+Built-in buttons use the default action style; custom recipes use a dashed border and sparkle icon so you can tell them apart at a glance.
+
+```yaml
+config:
+  recipes:
+    - label: Dependency audit
+      description: Scan and fix vulnerable packages
+      prompt: Run the dependency audit and fix any high-severity issues.
+```
+
+Recipe labels must be unique within the file (case-insensitive).
+
 ## Examples
 
 ### Rails + Vite
 
 ```yaml
 config:
-  session:
-    env:
-      PUBLIC_HOST: '${{ baguette.services.app.public_uri }}'
-    init: |
-      bundle install
-      pnpm install
-    tasks:
-      postgres:
-        type: docker
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: '${{ baguette.secrets.PG_PASSWORD }}'
-        container:
-          image: postgres:16
-          persist: ['/var/lib/postgresql/data']
-      run-tests:
-        run: bundle exec rails db:reset && bundle exec rspec
-        depends-on: [postgres]
-        env:
-          DATABASE_URL: 'postgres://postgres:${{ baguette.secrets.PG_PASSWORD }}@${{ baguette.tasks.postgres.container_hostname }}:5432/app'
-      rails-server:
-        run: bundle exec rails db:prepare && rails server -b 127.0.0.1 -p $RAILS_PORT
-        ports: [RAILS_PORT]
-        depends-on: [postgres]
-        env:
-          DATABASE_URL: 'postgres://postgres:${{ baguette.secrets.PG_PASSWORD }}@${{ baguette.tasks.postgres.container_hostname }}:5432/app'
-      vite-dev:
-        run: VITE_API_URL=http://127.0.0.1:${{ baguette.tasks.rails-server.RAILS_PORT }} pnpm run dev --port $VITE_PORT --host 127.0.0.1
-        ports: [VITE_PORT]
-        depends-on: [rails-server]
+  env:
+    PUBLIC_HOST: '${{ baguette.services.app.public_uri }}'
+  init: |
+    bundle install
+    pnpm install
+  tasks:
+    postgres:
+      type: docker
+      env:
+        POSTGRES_USER: postgres
+        POSTGRES_PASSWORD: '${{ baguette.secrets.PG_PASSWORD }}'
+      container:
+        image: postgres:16
+        persist: ['/var/lib/postgresql/data']
+    run-tests:
+      run: bundle exec rails db:reset && bundle exec rspec
+      depends-on: [postgres]
+      env:
+        DATABASE_URL: 'postgres://postgres:${{ baguette.secrets.PG_PASSWORD }}@${{ baguette.tasks.postgres.container_hostname }}:5432/app'
+    rails-server:
+      run: bundle exec rails db:prepare && rails server -b 127.0.0.1 -p $RAILS_PORT
+      ports: [RAILS_PORT]
+      depends-on: [postgres]
+      env:
+        DATABASE_URL: 'postgres://postgres:${{ baguette.secrets.PG_PASSWORD }}@${{ baguette.tasks.postgres.container_hostname }}:5432/app'
+    vite-dev:
+      run: VITE_API_URL=http://127.0.0.1:${{ baguette.tasks.rails-server.RAILS_PORT }} pnpm run dev --port $VITE_PORT --host 127.0.0.1
+      ports: [VITE_PORT]
+      depends-on: [rails-server]
   services:
     app:
       task: vite-dev
@@ -366,31 +403,30 @@ config:
 
 ```yaml
 config:
-  session:
-    env:
-      PUBLIC_HOST: '${{ baguette.services.app.public_uri }}'
-    init: |
-      pip install -r requirements.txt
-    tasks:
-      postgres:
-        type: docker
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: '${{ baguette.secrets.PG_PASSWORD }}'
-        container:
-          image: postgres:16
-          persist: ['/var/lib/postgresql/data']
-      run-tests:
-        run: python manage.py migrate && python manage.py test
-        depends-on: [postgres]
-        env:
-          DATABASE_URL: 'postgres://postgres:${{ baguette.secrets.PG_PASSWORD }}@${{ baguette.tasks.postgres.container_hostname }}:5432/app'
-      dev-server:
-        run: python manage.py migrate && python manage.py runserver 127.0.0.1:$PORT
-        ports: [PORT]
-        depends-on: [postgres]
-        env:
-          DATABASE_URL: 'postgres://postgres:${{ baguette.secrets.PG_PASSWORD }}@${{ baguette.tasks.postgres.container_hostname }}:5432/app'
+  env:
+    PUBLIC_HOST: '${{ baguette.services.app.public_uri }}'
+  init: |
+    pip install -r requirements.txt
+  tasks:
+    postgres:
+      type: docker
+      env:
+        POSTGRES_USER: postgres
+        POSTGRES_PASSWORD: '${{ baguette.secrets.PG_PASSWORD }}'
+      container:
+        image: postgres:16
+        persist: ['/var/lib/postgresql/data']
+    run-tests:
+      run: python manage.py migrate && python manage.py test
+      depends-on: [postgres]
+      env:
+        DATABASE_URL: 'postgres://postgres:${{ baguette.secrets.PG_PASSWORD }}@${{ baguette.tasks.postgres.container_hostname }}:5432/app'
+    dev-server:
+      run: python manage.py migrate && python manage.py runserver 127.0.0.1:$PORT
+      ports: [PORT]
+      depends-on: [postgres]
+      env:
+        DATABASE_URL: 'postgres://postgres:${{ baguette.secrets.PG_PASSWORD }}@${{ baguette.tasks.postgres.container_hostname }}:5432/app'
   services:
     app:
       task: dev-server

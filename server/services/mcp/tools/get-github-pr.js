@@ -3,21 +3,23 @@ import { getOpenPRByNumber } from '../../github.js';
 import { ok, fail } from '../lib/result.js';
 
 export function createGetGithubPrTool(ctx) {
-  const { getRepo, getToken, requireGitHubApi } = ctx;
+  const { resolveReadTargetSession, requireGitHubApiForSession, getToken } = ctx;
   return {
     name: 'GetGithubPr',
     description:
-      'Get full details for a single pull request by number, including head/base branch names, body, labels, draft status, and timestamps.',
+      'Get full details for a single pull request by number, including head/base branch names, body, labels, draft status, and timestamps. ' +
+      'When running inside a repo session, omit session_id to use its repo. From a global session or when triaging another session, pass session_id (from GetSession or SearchSessions).',
     schema: {
+      session_id: z.number().int().optional().describe('Target repo session id'),
       pr_number: z.number().int().describe('Pull request number'),
     },
-    handler: async ({ pr_number } = {}) => {
-      const localErr = await requireGitHubApi();
+    handler: async ({ session_id, pr_number } = {}) => {
+      const { session, error } = await resolveReadTargetSession(session_id);
+      if (error) return fail(error);
+      const localErr = await requireGitHubApiForSession(session);
       if (localErr) return localErr;
-      const repo = await getRepo();
-      if (!repo?.full_name) return fail('No repo linked to this session.');
       try {
-        const pr = await getOpenPRByNumber(await getToken(), repo.full_name, pr_number);
+        const pr = await getOpenPRByNumber(await getToken(), session.repo_full_name, pr_number);
         return ok({ pr });
       } catch (err) {
         return fail(err.message);

@@ -1,6 +1,7 @@
 import { createSessionAgentContext } from '../lib/session-agent-context.js';
 import { createGitPullTool } from '../tools/git-pull.js';
 import { createGitFetchTool } from '../tools/git-fetch.js';
+import { createGitPushTool } from '../tools/git-push.js';
 import { createCurrentSessionInfoMcpTool } from '../tools/current-session-info.js';
 import { createUpdateSessionTool } from '../tools/update-session.js';
 import { createArchiveSessionTool } from '../tools/archive-session.js';
@@ -9,6 +10,7 @@ import { createSystemStatsTool } from '../tools/system-stats.js';
 import { createPrCommentsTool } from '../tools/pr-comments.js';
 import { createPrMarkCommentViewedTool } from '../tools/pr-mark-comment-viewed.js';
 import { createPrCommentTool } from '../tools/pr-comment.js';
+import { createEditPrCommentTool } from '../tools/edit-pr-comment.js';
 import { createPrReviewTool } from '../tools/pr-review.js';
 import { createPrWorkflowsTool } from '../tools/pr-workflows.js';
 import { createPrWorkflowLogsTool } from '../tools/pr-workflow-logs.js';
@@ -29,6 +31,9 @@ import { createSlackReadThreadTool } from '../tools/slack-read-thread.js';
 import { createSlackEditMessageTool } from '../tools/slack-edit-message.js';
 import { createSlackReadChannelTool } from '../tools/slack-read-channel.js';
 import { createSlackDownloadFileTool } from '../tools/slack-download-file.js';
+import { createIssueHandlers } from '../lib/issue-handlers.js';
+import { createCreateIssueTool } from '../tools/create-issue.js';
+import { createUpdateIssueTool } from '../tools/update-issue.js';
 import { createUpdateIssueStatusTool } from '../tools/update-issue-status.js';
 import { createTodoHandlers } from '../lib/todo-handlers.js';
 import { createCreateTodoTool } from '../tools/create-todo.js';
@@ -44,9 +49,16 @@ import { createEditPlanTool } from '../tools/edit-plan.js';
 import { createReadPlanTool } from '../tools/read-plan.js';
 import { createCompletePlanTool } from '../tools/complete-plan.js';
 import { createConfigureMcpServerTool } from '../tools/configure-mcp-server.js';
+import { createStartReviewTool } from '../tools/start-review.js';
+import { createContinueReviewTool } from '../tools/continue-review.js';
 
-function buildBuilderIssueTools(ctx) {
-  return [createUpdateIssueStatusTool(ctx)];
+function buildBuilderIssueTools(ctx, session, app, agent) {
+  const handlers = createIssueHandlers(session, app, agent ?? {});
+  return [
+    createCreateIssueTool(handlers),
+    createUpdateIssueTool(ctx, { allowStatus: false }),
+    createUpdateIssueStatusTool(ctx),
+  ];
 }
 
 /** Repo session builder MCP tools (git, PR, tasks, issues for the coding agent). */
@@ -55,7 +67,7 @@ export function buildBuilderAgentTools(session, app, { slackApps = [], agent = n
   const todoHandlers = createTodoHandlers(session, app, { callerAgent: agent });
   const planHandlers = createPlanHandlers(session, app, { callerAgent: agent });
   const tools = [
-    ...buildBuilderIssueTools(ctx),
+    ...buildBuilderIssueTools(ctx, session, app, agent),
     createAskUserQuestionsTool(),
     createCreatePlanTool(planHandlers),
     createStartPlanTool(planHandlers),
@@ -69,6 +81,7 @@ export function buildBuilderAgentTools(session, app, { slackApps = [], agent = n
     createListTodosTool(ctx),
     createGitPullTool(ctx),
     createGitFetchTool(ctx),
+    createGitPushTool(ctx),
     createCurrentSessionInfoMcpTool(ctx),
     createUpdateSessionTool(ctx),
     createArchiveSessionTool(ctx),
@@ -77,6 +90,7 @@ export function buildBuilderAgentTools(session, app, { slackApps = [], agent = n
     createPrCommentsTool(ctx),
     createPrMarkCommentViewedTool(ctx),
     createPrCommentTool(ctx),
+    createEditPrCommentTool(ctx),
     createPrReviewTool(ctx),
     createPrWorkflowsTool(ctx),
     createPrWorkflowLogsTool(ctx),
@@ -93,6 +107,8 @@ export function buildBuilderAgentTools(session, app, { slackApps = [], agent = n
     createConfigRepoPromptTool(ctx),
     createUploadImageTool(ctx),
     createConfigureMcpServerTool(ctx),
+    createStartReviewTool(ctx),
+    createContinueReviewTool(ctx),
   ];
   if (slackApps.length) {
     tools.push(
@@ -107,7 +123,7 @@ export function buildBuilderAgentTools(session, app, { slackApps = [], agent = n
 }
 
 /** @deprecated Use buildBuilderAgentTools */
-export function buildSessionAgentIssueMcpTools(session, app) {
-  const ctx = createSessionAgentContext(session, app);
-  return buildBuilderIssueTools(ctx);
+export function buildSessionAgentIssueMcpTools(session, app, agent = null) {
+  const ctx = createSessionAgentContext(session, app, { callerAgent: agent });
+  return buildBuilderIssueTools(ctx, session, app, agent);
 }

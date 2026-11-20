@@ -1,3 +1,4 @@
+import path from 'path';
 import { NotFound, BadRequest } from 'feathers/errors';
 import { Task, DEFAULT_TTL_MS, DEPENDS_ON_TTL_MS, BASE_TASK_TIMEOUT_MS } from '../task.js';
 import { requireUser, only, disableExternal } from './hooks.js';
@@ -7,6 +8,7 @@ import {
   loadBaguetteConfig,
   getAvailableTasks,
   appendTaskArgs,
+  resolveConfigSessionBlock,
   BaguetteConfigError,
   TaskEnvInterpolationError,
   assertTaskEnvReferencesValid,
@@ -25,8 +27,27 @@ export class TasksService {
   constructor() {
     this._tasks = new Map();
     this._nextId = 1;
-    /** @type {Map<number, Promise<Task>>} */
+    /** @type {Map<number|string, Promise<Task>>} session id or `agent:${id}` for isolated inits */
     this._sessionInitCreation = new Map();
+  }
+
+  _resolveCwd(cwd) {
+    if (cwd == null || cwd === '') return null;
+    return path.resolve(cwd);
+  }
+
+  _cwdsMatch(a, b) {
+    const left = this._resolveCwd(a);
+    const right = this._resolveCwd(b);
+    if (!left || !right) return true;
+    return left === right;
+  }
+
+  _initScopeKey({ isIsolatedCaller, callerAgentId, session_id }) {
+    if (isIsolatedCaller && callerAgentId != null) {
+      return `agent:${callerAgentId}`;
+    }
+    return session_id;
   }
 
   setup(app) {
@@ -216,11 +237,16 @@ export class TasksService {
     return this.findLatestTaskByKey(sessionId, label);
   }
 
-  /** Find a running task by config task key, or by label when the task has no task_key. */
-  _findRunningTask(sessionId, key) {
+  /**
+   * Find a running task by config task key, or by label when the task has no task_key.
+   * @param {{ cwd?: string | null, matchCwd?: boolean }} [opts]
+   */
+  _findRunningTask(sessionId, key, { cwd = null, matchCwd = false } = {}) {
     for (const task of this._tasks.values()) {
       if (task.session_id !== sessionId || !isTaskActive(task.status)) continue;
-      if (this._taskMatchesLookupKey(task, key)) return task;
+      if (!this._taskMatchesLookupKey(task, key)) continue;
+      if (matchCwd && !this._cwdsMatch(task._cwd, cwd)) continue;
+      return task;
     }
     return null;
   }
@@ -231,18 +257,26 @@ export class TasksService {
   }
 
   /**
-   * Return an active `baguette:init` task for the session, or create one.
+   * Return an active `baguette:init` task for the session or isolated agent, or create one.
    * Concurrent task creates await the same in-flight init creation promise.
    */
-  async _getOrCreateSessionInitTask({ session_id, session, initDef, cwd, interpolateOpts }) {
-    const running = this._findRunningTask(session_id, 'baguette:init');
+  async _getOrCreateSessionInitTask({
+    session_id,
+    session,
+    initDef,
+    cwd,
+    interpolateOpts,
+    initScopeKey,
+    onInitSuccess,
+  }) {
+    const running = this._findRunningTask(session_id, 'baguette:init', { cwd, matchCwd: true });
     if (running) return running;
 
-    const pending = this._sessionInitCreation.get(session_id);
+    const pending = this._sessionInitCreation.get(initScopeKey);
     if (pending) return await pending;
 
     const createPromise = (async () => {
-      const again = this._findRunningTask(session_id, 'baguette:init');
+      const again = this._findRunningTask(session_id, 'baguette:init', { cwd, matchCwd: true });
       if (again) return again;
 
       const initCommand = await this.app
@@ -265,23 +299,20 @@ export class TasksService {
       initTask.onExit(async (_id, code) => {
         if (code !== 0) return;
         try {
-          await this.app
-            .get('db')('sessions')
-            .where({ id: session_id })
-            .update({ initialized: true });
+          await onInitSuccess();
         } catch (err) {
-          logger.error(err, 'failed to mark session initialized after baguette:init');
+          logger.error(err, 'failed to mark initialized after baguette:init');
         }
       });
       return initTask;
     })();
 
-    this._sessionInitCreation.set(session_id, createPromise);
+    this._sessionInitCreation.set(initScopeKey, createPromise);
     try {
       return await createPromise;
     } finally {
-      if (this._sessionInitCreation.get(session_id) === createPromise) {
-        this._sessionInitCreation.delete(session_id);
+      if (this._sessionInitCreation.get(initScopeKey) === createPromise) {
+        this._sessionInitCreation.delete(initScopeKey);
       }
     }
   }
@@ -351,6 +382,8 @@ export class TasksService {
       _depChain,
       autoStart = true,
       ttl_ms: ttlMs,
+      caller_cwd: callerCwdRaw,
+      caller_agent_id: callerAgentIdRaw,
     } = data;
     const isDependencyCreate = (_depChain?.length ?? 0) > 0;
     const effectiveTtl =
@@ -362,10 +395,21 @@ export class TasksService {
     const session = await this.app.service('sessions').get(session_id, { user: params.user });
     if (session.archived_at) throw new BadRequest('Cannot start task on an archived session');
 
-    // Load config once for command resolution, init and deps lookups
-    const baguetteConfig = session.session_path
-      ? await loadBaguetteConfig(session.session_path)
-      : null;
+    const sessionCwd =
+      session.absolute_session_path ?? resolveDataDirRelativePath(session.session_path);
+    let callerAgent = null;
+    if (callerAgentIdRaw != null) {
+      callerAgent = await this.app
+        .get('db')('agents')
+        .where({ id: callerAgentIdRaw, session_id })
+        .first();
+    }
+    const isIsolatedCaller = Boolean(callerAgent?.worktree_path);
+    const commandCwd = callerCwdRaw ? this._resolveCwd(callerCwdRaw) : this._resolveCwd(sessionCwd);
+
+    // Load config once for command resolution, init and deps lookups (same commit in isolated worktrees)
+    const configPath = commandCwd ?? session.session_path;
+    const baguetteConfig = configPath ? await loadBaguetteConfig(configPath) : null;
     if (baguetteConfig?.error) throw new BadRequest(baguetteConfig.error);
     let taskDefs;
     try {
@@ -418,7 +462,7 @@ export class TasksService {
     const interpolatedCommand = await this.app
       .service('sessions')
       .getInterpolatedCommand(session.id, appendTaskArgs(resolvedCommand, args));
-    const cwd = session.absolute_session_path ?? resolveDataDirRelativePath(session.session_path);
+    const spawnCwd = isDockerTask ? this._resolveCwd(sessionCwd) : commandCwd;
 
     const dependsOn = [];
 
@@ -432,17 +476,33 @@ export class TasksService {
             `Circular dependency detected: ${depKey} is already in the dependency chain`
           );
         if (!taskDefs[depKey])
-          throw new BadRequest(`Dependency task "${depKey}" not found in session.tasks`);
-        let depTask = this._findRunningTask(session_id, depKey);
+          throw new BadRequest(`Dependency task "${depKey}" not found in tasks`);
+        const depDef = taskDefs[depKey];
+        const depIsDocker = depDef?.type === 'docker';
+        let depTask = null;
+        if (depIsDocker) {
+          depTask = this._findRunningTask(session_id, depKey);
+        } else {
+          depTask = this._findRunningTask(session_id, depKey, {
+            cwd: commandCwd,
+            matchCwd: true,
+          });
+        }
         if (!depTask) {
+          const depCwd = depIsDocker ? sessionCwd : commandCwd;
+          const depCreate = {
+            session_id,
+            task_key: depKey,
+            skipInit: true,
+            _depChain: [...depChain],
+            autoStart: false,
+          };
+          if (depCwd) depCreate.caller_cwd = depCwd;
+          if (!depIsDocker && isIsolatedCaller && callerAgent?.id != null) {
+            depCreate.caller_agent_id = callerAgent.id;
+          }
           const depPub = await this.create(
-            {
-              session_id,
-              task_key: depKey,
-              skipInit: true,
-              _depChain: [...depChain],
-              autoStart: false,
-            },
+            depCreate,
             // Internal: omit provider so `only()` does not strip `_depChain`.
             { user: params.user }
           );
@@ -452,33 +512,69 @@ export class TasksService {
       }
     };
 
+    const initScopeKey = this._initScopeKey({
+      isIsolatedCaller,
+      callerAgentId: callerAgent?.id,
+      session_id,
+    });
+
     // Run session.init before yaml depends-on (install-only; DB setup belongs on tasks with depends-on).
-    if (!skipInit && !session.initialized && session.session_path && task_key !== 'baguette:init') {
-      const initDef = taskDefs['baguette:init'];
-      if (initDef) {
-        const initTask = await this._getOrCreateSessionInitTask({
-          session_id,
-          session,
-          initDef,
-          cwd,
-          interpolateOpts,
-        });
-        dependsOn.push(initTask);
+    const needsInit =
+      !skipInit && session.session_path && task_key !== 'baguette:init' && !isDockerTask;
+    if (needsInit) {
+      let alreadyInitialized = false;
+      if (isIsolatedCaller) {
+        alreadyInitialized = Boolean(callerAgent?.initialized);
       } else {
-        await this.app
-          .get('db')('sessions')
-          .where({ id: session_id })
-          .update({ initialized: true });
+        alreadyInitialized = Boolean(session.initialized);
+      }
+      if (!alreadyInitialized) {
+        const initDef = taskDefs['baguette:init'];
+        if (initDef) {
+          const initCwd = isIsolatedCaller ? commandCwd : this._resolveCwd(sessionCwd);
+          const onInitSuccess = async () => {
+            if (isIsolatedCaller && callerAgent?.id != null) {
+              await this.app
+                .get('db')('agents')
+                .where({ id: callerAgent.id })
+                .update({ initialized: 1 });
+            } else {
+              await this.app
+                .get('db')('sessions')
+                .where({ id: session_id })
+                .update({ initialized: true });
+            }
+          };
+          const initTask = await this._getOrCreateSessionInitTask({
+            session_id,
+            session,
+            initDef,
+            cwd: initCwd,
+            interpolateOpts,
+            initScopeKey,
+            onInitSuccess,
+          });
+          dependsOn.push(initTask);
+        } else if (!isIsolatedCaller) {
+          await this.app
+            .get('db')('sessions')
+            .where({ id: session_id })
+            .update({ initialized: true });
+        } else if (callerAgent?.id != null) {
+          await this.app
+            .get('db')('agents')
+            .where({ id: callerAgent.id })
+            .update({ initialized: 1 });
+        }
       }
     }
 
     await attachYamlDependsOn();
 
+    const configEnv = resolveConfigSessionBlock(baguetteConfig).env;
     const sessionEnvKeys =
-      baguetteConfig?.session?.env &&
-      typeof baguetteConfig.session.env === 'object' &&
-      !Array.isArray(baguetteConfig.session.env)
-        ? Object.keys(baguetteConfig.session.env)
+      configEnv && typeof configEnv === 'object' && !Array.isArray(configEnv)
+        ? Object.keys(configEnv)
         : [];
     const dockerEnvKeys = [
       ...new Set([...sessionEnvKeys, ...(taskEnvRaw ? Object.keys(taskEnvRaw) : [])]),
@@ -492,7 +588,7 @@ export class TasksService {
       taskKey: task_key ?? null,
       ports: effectivePorts,
       env,
-      cwd,
+      cwd: spawnCwd,
       dependsOn,
       isRoot: !isDependencyCreate,
       ttl: effectiveTtl,

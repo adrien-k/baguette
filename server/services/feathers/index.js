@@ -1,4 +1,5 @@
 import { registerAgentsService } from './agents.service.js';
+import { registerAgentObserversService } from './agent-observers.service.js';
 import { registerMessagesService } from './messages.service.js';
 import { registerSessionsService } from './sessions.service.js';
 import { registerTasksService } from './tasks.service.js';
@@ -20,6 +21,7 @@ import { registerLoopsService } from './loops.service.js';
 import { registerSessionIssuesService } from './session-issues.service.js';
 import { registerSessionTodosService } from './session-todos.service.js';
 import { registerSessionPlansService } from './session-plans.service.js';
+import { registerSessionImagesService } from './session-images.service.js';
 import { registerReviewAgentTurn } from '../review-agent-turn.js';
 import { registerUsageModelPricingService } from './usage-model-pricing.service.js';
 import { registerUsageService } from './usage.service.js';
@@ -35,6 +37,7 @@ import { registerFeathersRealtime } from './realtime.js';
 export function registerFeathersServices(app, { realtime = true } = {}) {
   registerMessagesService(app);
   registerAgentsService(app);
+  registerAgentObserversService(app);
   registerSessionsService(app);
   registerQueuedMessagesService(app);
   registerAgentConfigsService(app);
@@ -55,6 +58,7 @@ export function registerFeathersServices(app, { realtime = true } = {}) {
   registerSessionIssuesService(app);
   registerSessionTodosService(app);
   registerSessionPlansService(app);
+  registerSessionImagesService(app);
   registerReviewAgentTurn(app);
   registerUsageModelPricingService(app);
   registerUsageService(app);

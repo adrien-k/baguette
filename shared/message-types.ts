@@ -162,6 +162,25 @@ export type FileReferenceBlock = {
 
 export type UserContentBlock = { type: 'text'; text: string } | FileReferenceBlock;
 
+export type SessionMcpMessageSender = {
+  kind: 'session';
+  session_id: number;
+  session_label: string;
+  is_global?: boolean;
+  repo_id?: number | null;
+  agent_id?: number;
+  agent_ref?: number;
+  agent_name?: string;
+};
+
+export type ExternalMcpMessageSender = {
+  kind: 'external';
+  label: string;
+  settings_tab?: 'integrations';
+};
+
+export type McpMessageSender = SessionMcpMessageSender | ExternalMcpMessageSender;
+
 export type UserMessagePayload = {
   type: 'user';
   content: string | UserContentBlock[];
@@ -172,6 +191,8 @@ export type UserMessagePayload = {
   subtype?: string | null;
   /** Populated for `subtype: ask_user_answer` (AskUserQuestions replies). */
   answers?: { question?: string; value?: string }[];
+  /** Source session/agent or external MCP when `source` is `mcp`. */
+  mcp_sender?: McpMessageSender;
 };
 
 export type AssistantBlock =
@@ -180,6 +201,8 @@ export type AssistantBlock =
 export type AssistantMessagePayload = {
   type: 'assistant';
   blocks: AssistantBlock[];
+  /** Set on the last assistant row flushed immediately before `turn_result`. */
+  turn_reply?: boolean;
 };
 
 /**
@@ -193,6 +216,8 @@ export type SystemMessagePayload = {
   content?: string;
   text?: string;
   task_status?: string;
+  /** ISO time a usage-limit wait ends (status rows from `onUsageLimit`). */
+  usage_limit_resume_at?: string;
   estimated_tokens?: number | null;
   estimated_tokens_delta?: number | null;
   tool_use_id?: string;

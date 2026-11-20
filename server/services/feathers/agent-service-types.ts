@@ -28,6 +28,7 @@ type QueryBuilderMethods = {
   first(): Promise<Record<string, unknown> | undefined>;
   insert(row: Record<string, unknown>): Promise<unknown>;
   update(patch: Record<string, unknown>): Promise<unknown>;
+  increment(column: string, amount: number): Promise<unknown>;
   delete(): Promise<unknown>;
   distinct(column: string): Promise<Array<Record<string, unknown>>>;
 };
@@ -47,6 +48,7 @@ export type AgentRow = {
   agent_type: string;
   is_primary: number;
   status: string;
+  error_message?: string | null;
   agent_config_id?: number | null;
   agent_sdk?: string | null;
   model?: string | null;

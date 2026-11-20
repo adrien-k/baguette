@@ -26,9 +26,12 @@ vi.mock('../github.js', async (importOriginal) => {
     upsertPR: vi.fn(),
     getOpenPR: vi.fn().mockResolvedValue(null),
     getOpenPRByNumber: vi.fn().mockResolvedValue({ title: 'PR title', body: 'PR body' }),
+    listRepoPRs: vi.fn(),
+    listRepoTags: vi.fn(),
     getPRComments: vi.fn(),
     createPRComment: vi.fn(),
     createPRLineComment: vi.fn(),
+    editPRComment: vi.fn(),
     createPRReview: vi.fn(),
     getPRWorkflows: vi.fn(),
     getPRWorkflowLogs: vi.fn(),
@@ -58,10 +61,13 @@ import {
   gitPull,
   gitPush,
   gitFetch,
+  listRepoPRs,
+  listRepoTags,
   getOpenPRByNumber,
   getPRComments,
   createPRComment,
   createPRLineComment,
+  editPRComment,
   createPRReview,
   getPRWorkflows,
   getPRWorkflowLogs,
@@ -164,6 +170,8 @@ function makeApp(
     tasksFindLatestTaskByTaskKey,
     usageRows = [],
     repoOverrides = {},
+    sessionsById = {},
+    reposById = {},
     userRow = { id: 1, access_token: 'tok' },
   } = {}
 ) {
@@ -181,6 +189,7 @@ function makeApp(
   const mockGetTask = tasksGetTask ?? vi.fn().mockReturnValue(null);
   const mockFilterTasks = tasksFilterTasks ?? vi.fn().mockReturnValue([]);
   const mockFindLatestTaskByTaskKey = tasksFindLatestTaskByTaskKey ?? vi.fn().mockReturnValue(null);
+  const mockEmit = vi.fn();
   const emptyUsageQuery = () => {
     const chain = {
       where: () => chain,
@@ -197,12 +206,21 @@ function makeApp(
   };
   const db = (table) => {
     if (table === 'sessions')
-      return { where: () => ({ first: async () => ({ ...sessionSnapshot }) }) };
+      return {
+        where: (clause) => ({
+          first: async () => {
+            const target = clause?.id != null ? sessionsById[clause.id] : null;
+            return target ? { ...target } : { ...sessionSnapshot };
+          },
+        }),
+      };
     if (table === 'users') return { where: () => ({ first: async () => ({ ...userRow }) }) };
     if (table === 'repos')
       return {
-        where: () => ({
+        where: (clause) => ({
           first: async () => {
+            const target = clause?.id != null ? reposById[clause.id] : null;
+            if (target) return { ...target };
             const fullName = sessionSnapshot.repo_full_name ?? 'owner/repo';
             return {
               id: sessionSnapshot.repo_id ?? 7,
@@ -226,6 +244,7 @@ function makeApp(
     getInterpolatedConfigValue: async (_id, value) => value,
     getTaskEnv: mockGetTaskEnv,
     create: mockCreate,
+    emit: mockEmit,
   };
   const app = {
     get: (key) => (key === 'db' ? db : null),
@@ -243,7 +262,15 @@ function makeApp(
       return { patch: mockPatch, getTaskEnv: mockGetTaskEnv, create: mockCreate };
     },
   };
-  return { app, mockPatch, mockGetTaskEnv, mockCreate, mockGetTask, mockFilterTasks };
+  return {
+    app,
+    mockPatch,
+    mockGetTaskEnv,
+    mockCreate,
+    mockGetTask,
+    mockFilterTasks,
+    mockEmit,
+  };
 }
 
 async function buildServer(sessionOverrides = {}, appOpts = {}, { agent = null } = {}) {
@@ -262,13 +289,11 @@ async function buildServer(sessionOverrides = {}, appOpts = {}, { agent = null }
 
 function buildStandaloneGitPrTools(sessionOverrides = {}, appOpts = {}) {
   const sessionRow = { ...DEFAULT_SESSION, ...sessionOverrides };
-  const { app, mockPatch, mockGetTaskEnv, mockCreate, mockGetTask, mockFilterTasks } = makeApp(
-    sessionRow,
-    appOpts
-  );
+  const { app, mockPatch, mockGetTaskEnv, mockCreate, mockGetTask, mockFilterTasks, mockEmit } =
+    makeApp(sessionRow, appOpts);
   const ctx = createSessionAgentContext(sessionRow, app);
   const tools = [createGitPushTool(ctx)];
-  return { tools, mockPatch, mockGetTaskEnv, mockCreate, mockGetTask, mockFilterTasks };
+  return { tools, mockPatch, mockGetTaskEnv, mockCreate, mockGetTask, mockFilterTasks, mockEmit };
 }
 
 function callTool(tools, name, args = {}) {
@@ -288,13 +313,20 @@ beforeEach(() => {
 });
 
 describe('builder MCP tool registry', () => {
-  it('omits GitPush for repo sessions', async () => {
+  it('includes GitPush for repo sessions without force options', async () => {
     const { tools } = await buildServer();
     const names = tools.map((t) => t.name);
-    expect(names).not.toContain('GitPush');
+    expect(names).toContain('GitPush');
     expect(names).not.toContain('PrUpsert');
     expect(names).toContain('UpdateSession');
     expect(names).toContain('ConfigureMcpServer');
+    expect(names).toContain('StartReview');
+    expect(names).toContain('ContinueReview');
+    const push = tools.find((t) => t.name === 'GitPush');
+    expect(push.description).toMatch(/not for regular turn work/i);
+    expect(push.description).toMatch(/approval/i);
+    expect(push.description).toMatch(/isolated subagent/i);
+    expect(push.description).toMatch(/no need to merge/i);
   });
 
   it('keeps GitHub PR tools for github remotes with a token', async () => {
@@ -357,18 +389,34 @@ describe('builder MCP tool registry', () => {
     const names = tools.map((t) => t.name);
     expect(names).not.toContain('UpdateSession');
     expect(names).not.toContain('StartSubagent');
+    // Session shipping stays with the parent builder: pushes can retarget
+    // remote_branch and open the Push modal, which is the parent's decision.
+    expect(names).not.toContain('GitPush');
+    // Fleet orchestration stays with the parent: subagents must not stop sessions
+    // (including their own parent's turn), arm wake-ups, or inspect/await other sessions.
+    expect(names).not.toContain('StopSession');
+    expect(names).not.toContain('WatchSession');
+    expect(names).not.toContain('UnwatchSession');
+    expect(names).not.toContain('AwaitSessionTurn');
+    expect(names).not.toContain('GetSessionStatus');
     expect(names).toContain('CreatePlan');
     expect(names).toContain('StartPlan');
     expect(names).toContain('ListPlans');
     expect(names).toContain('EditPlan');
     expect(names).toContain('CompletePlan');
-    expect(names).toContain('ListSubagents');
-    expect(names).toContain('AwaitSubagent');
+    expect(names).toContain('ListAgents');
+    expect(names).toContain('AwaitAgent');
     expect(names).toContain('StopSubagent');
     expect(names).toContain('CurrentSessionInfo');
     expect(names).toContain('PrRead');
     expect(names).toContain('RunTask');
     expect(names).toContain('ConfigureMcpServer');
+    expect(names).toContain('CreateIssue');
+    expect(names).toContain('UpdateIssue');
+    expect(names).not.toContain('UpdateIssueStatus');
+    expect(names).not.toContain('CloseIssue');
+    expect(names).not.toContain('StartReview');
+    expect(names).not.toContain('ContinueReview');
   });
 
   it('plan and todo tool descriptions tell agents CreatePlan does not attach and to complete todos', async () => {
@@ -383,14 +431,26 @@ describe('builder MCP tool registry', () => {
 });
 
 describe('global sessions', () => {
-  it('omits git and PR tools', async () => {
+  it('omits git and PR write tools, keeps read-only PR inspection', async () => {
     const { tools } = await buildServer({ is_global: true, repo_full_name: '', repo_id: null });
     const names = tools.map((t) => t.name);
     expect(names).not.toContain('GitPull');
     expect(names).not.toContain('GitFetch');
     expect(names).not.toContain('GitPush');
     expect(names).not.toContain('PrUpsert');
+    // Read-only PR tools stay available for orchestrating child repo sessions.
     expect(names).toContain('PrRead');
+    expect(names).toContain('PrComments');
+    expect(names).toContain('PrWorkflows');
+    expect(names).toContain('PrWorkflowLogs');
+    expect(names).toContain('ListGithubPrs');
+    expect(names).toContain('GetGithubPr');
+    expect(names).toContain('ListGithubTags');
+    // Write tools stay excluded.
+    expect(names).not.toContain('PrComment');
+    expect(names).not.toContain('PrReview');
+    expect(names).not.toContain('AddGithubLabel');
+    expect(names).not.toContain('PrMarkCommentViewed');
     expect(names).toContain('ListRunningTasks');
     expect(names).not.toContain('ConfigRepoPrompt');
     expect(names).not.toContain('ListProjectCommands');
@@ -404,7 +464,103 @@ describe('global sessions', () => {
     expect(names).toContain('ListIssues');
     expect(names).toContain('ReadIssue');
     expect(names).toContain('UpdateIssueStatus');
-    expect(names).not.toContain('CreateIssue');
+    expect(names).toContain('CreateIssue');
+    expect(names).toContain('UpdateIssue');
+    expect(names).not.toContain('CloseIssue');
+  });
+
+  it('global session inspects a child repo session PR via session_id', async () => {
+    const child = {
+      ...DEFAULT_SESSION,
+      id: 5,
+      pr_number: 7,
+      remote_branch: 'feat/child',
+      repo_full_name: 'owner/repo',
+      repo_id: 7,
+    };
+    const { tools } = await buildServer(
+      { is_global: true, repo_full_name: '', repo_id: null },
+      {
+        sessionsById: { 5: child },
+        reposById: {
+          7: {
+            id: 7,
+            full_name: 'owner/repo',
+            origin: gitHubOriginFromFullName('owner/repo'),
+            access_mode: 'github',
+          },
+        },
+      }
+    );
+
+    getPRComments.mockResolvedValueOnce({ issueComments: [], reviewComments: [] });
+    const comments = parseResult(await callTool(tools, 'PrComments', { session_id: 5 }));
+    expect(comments.ok).toBe(true);
+    expect(getPRComments).toHaveBeenCalledWith('ghtoken', 'owner/repo', 7);
+
+    listRepoPRs.mockResolvedValueOnce([]);
+    const prs = parseResult(await callTool(tools, 'ListGithubPrs', { session_id: 5 }));
+    expect(prs.ok).toBe(true);
+    expect(listRepoPRs).toHaveBeenCalledWith('ghtoken', 'owner/repo', {
+      state: 'open',
+      author: undefined,
+      label: undefined,
+      base: undefined,
+      text: undefined,
+    });
+
+    getPRWorkflows.mockResolvedValueOnce({ runs: [], checks: [] });
+    const checks = parseResult(await callTool(tools, 'PrWorkflows', { session_id: 5 }));
+    expect(checks.ok).toBe(true);
+    expect(getPRWorkflows).toHaveBeenCalledWith(
+      'ghtoken',
+      'owner/repo',
+      'feat/child',
+      expect.objectContaining({ prNumber: 7 })
+    );
+
+    listRepoTags.mockResolvedValueOnce([]);
+    const tags = parseResult(await callTool(tools, 'ListGithubTags', { session_id: 5 }));
+    expect(tags.ok).toBe(true);
+    expect(listRepoTags).toHaveBeenCalledWith('ghtoken', 'owner/repo');
+  });
+
+  it('global session without session_id gets a clear targeting error', async () => {
+    const { tools } = await buildServer({ is_global: true, repo_full_name: '', repo_id: null });
+    const result = parseResult(await callTool(tools, 'PrComments'));
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/pass session_id of a repo session/i);
+  });
+
+  it('cross-session PR inspection rejects a session owned by another user', async () => {
+    const child = { ...DEFAULT_SESSION, id: 5, user_id: 999, pr_number: 7 };
+    const { tools } = await buildServer(
+      { is_global: true, repo_full_name: '', repo_id: null },
+      { sessionsById: { 5: child } }
+    );
+    const result = parseResult(await callTool(tools, 'PrComments', { session_id: 5 }));
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe('Session not found');
+  });
+
+  it('repo session triages another owned session via session_id', async () => {
+    const other = {
+      ...DEFAULT_SESSION,
+      id: 6,
+      pr_number: null,
+      remote_branch: 'feat/other',
+      repo_full_name: 'owner/repo',
+    };
+    const { tools } = await buildServer({}, { sessionsById: { 6: other } });
+    getPRWorkflows.mockResolvedValueOnce({ runs: [], checks: [] });
+    const result = parseResult(await callTool(tools, 'PrWorkflows', { session_id: 6 }));
+    expect(result.ok).toBe(true);
+    expect(getPRWorkflows).toHaveBeenCalledWith(
+      'ghtoken',
+      'owner/repo',
+      'feat/other',
+      expect.objectContaining({ prNumber: undefined })
+    );
   });
 });
 
@@ -501,13 +657,14 @@ describe('CurrentSessionInfo', () => {
 });
 
 describe('PrRead', () => {
-  it('includes ListIssues, ReadIssue and UpdateIssueStatus but not reviewer CRUD', async () => {
+  it('includes builder issue tools but not CloseIssue', async () => {
     const { tools } = await buildServer();
     const names = tools.map((t) => t.name);
     expect(names).toContain('ListIssues');
     expect(names).toContain('ReadIssue');
+    expect(names).toContain('CreateIssue');
+    expect(names).toContain('UpdateIssue');
     expect(names).toContain('UpdateIssueStatus');
-    expect(names).not.toContain('CreateIssue');
     expect(names).not.toContain('CloseIssue');
   });
   it('returns pr_url: null and a message when no PR exists', async () => {
@@ -611,6 +768,14 @@ describe('GitFetch', () => {
 });
 
 describe('GitPush', () => {
+  it('exposes force and reason options in its schema', async () => {
+    const { tools } = buildStandaloneGitPrTools();
+    const push = tools.find((t) => t.name === 'GitPush');
+    expect(push.schema).toHaveProperty('force');
+    expect(push.schema).toHaveProperty('reason');
+    expect(push.schema).toHaveProperty('source_branch');
+  });
+
   it('returns ok: false when push is rejected', async () => {
     const err = Object.assign(new Error('push rejected: run git-pull to resolve conflict'), {
       rejected: true,
@@ -635,7 +800,6 @@ describe('GitPush', () => {
       '/tmp/wt',
       expect.objectContaining({ mode: 'github', token: 'ghtoken', userId: 1 }),
       {
-        force: false,
         branch: 'feature-branch',
       }
     );
@@ -648,13 +812,125 @@ describe('GitPush', () => {
     );
   });
 
-  it('skips push and returns ok message when auto_push is disabled', async () => {
-    const { tools, mockPatch } = buildStandaloneGitPrTools({ auto_push: 0 });
-    const result = parseResult(await callTool(tools, 'GitPush'));
+  it('opens the push approval (no direct push) when auto_push is disabled', async () => {
+    const { tools, mockPatch, mockEmit } = buildStandaloneGitPrTools({ auto_push: 0 });
+    const result = parseResult(
+      await callTool(tools, 'GitPush', { reason: 'user asked to push now' })
+    );
     expect(result.ok).toBe(true);
-    expect(typeof result.message).toBe('string');
+    expect(result.approval_requested).toBe(true);
+    expect(typeof result.request_id).toBe('string');
+    expect(result.request_id.length).toBeGreaterThan(0);
+    expect(result.auto_push_off).toBe(true);
+    expect(result.reason).toBe('user asked to push now');
+    expect(mockEmit).toHaveBeenCalledWith(
+      'push:request',
+      expect.objectContaining({
+        sessionId: 1,
+        request_id: result.request_id,
+        forceMode: null,
+        reason: 'user asked to push now',
+        autoPushOff: true,
+        agentRequest: true,
+      })
+    );
     expect(gitPush).not.toHaveBeenCalled();
     expect(mockPatch).not.toHaveBeenCalled();
+  });
+
+  it('opens the push approval (no direct push) for a non-session branch', async () => {
+    const { tools, mockPatch, mockEmit } = buildStandaloneGitPrTools({
+      remote_branch: 'feature-branch',
+      local_branch: 'feature-branch-test',
+    });
+    const result = parseResult(
+      await callTool(tools, 'GitPush', {
+        branch: 'development',
+        reason: 'fast-forward development with the finished work',
+      })
+    );
+    expect(result.ok).toBe(true);
+    expect(result.approval_requested).toBe(true);
+    expect(result.local_branch).toBe('feature-branch');
+    expect(result.target_branch).toBe('development');
+    expect(mockEmit).toHaveBeenCalledWith(
+      'push:request',
+      expect.objectContaining({
+        sessionId: 1,
+        branch: 'development',
+        forceMode: null,
+        reason: 'fast-forward development with the finished work',
+        autoPushOff: false,
+        agentRequest: true,
+      })
+    );
+    expect(gitPush).not.toHaveBeenCalled();
+    expect(mockPatch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['lease', 'lease'],
+    ['force', 'force'],
+  ])('opens the push approval (no direct push) for force: %s', async (forceMode) => {
+    const { tools, mockPatch, mockEmit } = buildStandaloneGitPrTools();
+    const result = parseResult(
+      await callTool(tools, 'GitPush', {
+        force: forceMode,
+        reason: 'align with the rebased history the user requested',
+      })
+    );
+    expect(result.ok).toBe(true);
+    expect(result.approval_requested).toBe(true);
+    expect(result.force).toBe(forceMode);
+    expect(mockEmit).toHaveBeenCalledWith(
+      'push:request',
+      expect.objectContaining({
+        sessionId: 1,
+        forceMode,
+        reason: 'align with the rebased history the user requested',
+        autoPushOff: false,
+        agentRequest: true,
+      })
+    );
+    expect(gitPush).not.toHaveBeenCalled();
+    expect(mockPatch).not.toHaveBeenCalled();
+  });
+
+  it('pushes directly (no approval) for a plain session-branch push with auto-push on', async () => {
+    gitPush.mockResolvedValue({ ok: true, branch: 'feature-branch' });
+    const { tools, mockEmit } = buildStandaloneGitPrTools({
+      remote_branch: 'feature-branch',
+      local_branch: 'feature-branch-test',
+    });
+    const result = parseResult(await callTool(tools, 'GitPush'));
+    expect(result.ok).toBe(true);
+    expect(result.approval_requested).toBeUndefined();
+    expect(mockEmit).not.toHaveBeenCalled();
+  });
+
+  it('includes source_branch on the push:request emit payload', async () => {
+    const { tools, mockEmit } = buildStandaloneGitPrTools({
+      remote_branch: 'feature-branch',
+      local_branch: 'feature-branch-test',
+    });
+    const result = parseResult(
+      await callTool(tools, 'GitPush', {
+        source_branch: 'topic/subagent-work',
+        reason: 'publish the subagent branch to the session remote',
+      })
+    );
+    expect(result.ok).toBe(true);
+    expect(result.approval_requested).toBe(true);
+    expect(result.source_branch).toBe('topic/subagent-work');
+    expect(mockEmit).toHaveBeenCalledWith(
+      'push:request',
+      expect.objectContaining({
+        source_branch: 'topic/subagent-work',
+        branch: 'feature-branch',
+        agentRequest: true,
+      })
+    );
+    expect(gitPush).not.toHaveBeenCalled();
   });
 });
 
@@ -1042,6 +1318,80 @@ describe('PrComments', () => {
     const result = parseResult(await callTool(tools, 'PrComments'));
     expect(result.ok).toBe(true);
     expect(getPRComments).toHaveBeenCalledWith('ghtoken', 'owner/repo', 42);
+  });
+});
+
+describe('EditPrComment', () => {
+  describe('availability', () => {
+    const toolNames = async (...args) => (await buildServer(...args)).tools.map((t) => t.name);
+
+    it('is offered for GitHub repos with a token', async () => {
+      expect(await toolNames()).toContain('EditPrComment');
+    });
+
+    it('is omitted without a GitHub token', async () => {
+      getGithubToken.mockReturnValue(null);
+      const names = await toolNames(
+        {},
+        {
+          userRow: { id: 1 },
+          repoOverrides: { access_mode: 'github', origin: 'https://github.com/acme/app.git' },
+        }
+      );
+      getGithubToken.mockReturnValue('ghtoken');
+      expect(names).not.toContain('EditPrComment');
+    });
+
+    it('is omitted for local repos', async () => {
+      const names = await toolNames({}, { repoOverrides: { access_mode: 'local', origin: null } });
+      expect(names).not.toContain('EditPrComment');
+    });
+
+    it('is omitted for global sessions', async () => {
+      const names = await toolNames({ is_global: true, repo_full_name: '', repo_id: null });
+      expect(names).not.toContain('EditPrComment');
+    });
+
+    it('is omitted for subagent turns', async () => {
+      const names = await toolNames({}, {}, { agent: { agent_type: 'subagent' } });
+      expect(names).not.toContain('EditPrComment');
+    });
+  });
+
+  it('returns ok: false when no PR', async () => {
+    const { tools } = await buildServer({ pr_number: null });
+    const result = parseResult(
+      await callTool(tools, 'EditPrComment', { commentId: 5, commentType: 'issue', body: 'x' })
+    );
+    expect(result.ok).toBe(false);
+    expect(editPRComment).not.toHaveBeenCalled();
+  });
+
+  it('edits the comment with the session header', async () => {
+    editPRComment.mockResolvedValue({ id: 5, url: 'u', body: 'b' });
+    const { tools } = await buildServer({ pr_number: 42 });
+    const result = parseResult(
+      await callTool(tools, 'EditPrComment', { commentId: 5, commentType: 'review', body: 'Fixed' })
+    );
+    expect(result.ok).toBe(true);
+    expect(editPRComment).toHaveBeenCalledWith(
+      'ghtoken',
+      'owner/repo',
+      5,
+      'review',
+      `${SESSION_HEADER}Fixed`
+    );
+  });
+
+  it('returns the error when GitHub or the guard rejects the edit', async () => {
+    editPRComment.mockRejectedValue(
+      new Error('Only comments posted by the authenticated user can be edited.')
+    );
+    const { tools } = await buildServer({ pr_number: 42 });
+    const result = parseResult(
+      await callTool(tools, 'EditPrComment', { commentId: 5, commentType: 'issue', body: 'x' })
+    );
+    expect(result.ok).toBe(false);
   });
 });
 

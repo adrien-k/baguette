@@ -13,7 +13,7 @@ export function createCloseIssueTool(ctx) {
   return {
     name: 'CloseIssue',
     description:
-      'Close an issue after review (archived; hidden from ListIssues). Required after reviewing each resolved issue (whether fixed or not). If still broken, CreateIssue a new opened finding after closing. session_id is required.',
+      'Close an issue after review (archived; hidden from ListIssues). Required after reviewing each resolved issue (whether fixed or not). If still broken, CreateIssue a new opened finding after closing. Also archives a needs_decision issue (duplicate or invalid). session_id is required.',
     schema: {
       session_id: z.number().int().describe('Session id'),
       ref: issueRefSchema,

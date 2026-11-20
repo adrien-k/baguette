@@ -10,7 +10,7 @@ import {
 } from '../utils/queuedMessagePayload.js';
 import UserMessageContent from './chat/UserMessageContent.tsx';
 import ComposerTextarea from './ComposerTextarea.jsx';
-import { formatMonthDayTime } from '../utils/dates.js';
+import { formatDateTimeWithZone } from '../utils/dates.js';
 
 function QueuedItem({ item, session, onDelete, onSendNow, onEdit }) {
   const [editing, setEditing] = useState(false);
@@ -21,7 +21,7 @@ function QueuedItem({ item, session, onDelete, onSendNow, onEdit }) {
   const hasFiles = queuedMessageHasAttachments(item.message_json);
   const showBlockPreview = blocks.some((b) => b?.type === 'file_reference');
   const isScheduled = item.kind === 'scheduled';
-  const sendAtLabel = isScheduled ? formatMonthDayTime(item.send_at) || null : null;
+  const sendAtLabel = isScheduled ? formatDateTimeWithZone(item.send_at) || null : null;
   const { model, modelParams } = resolveTurnModel(item, session);
   const agentConfigId = item.agent_config_id ?? null;
 

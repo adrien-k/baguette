@@ -20,16 +20,11 @@ export default function AgentSettingsTab({ settings, onSave }) {
           <AgentConfigsList />
         </SettingsSection>
 
-        <SettingsSection
-          title="Session defaults"
-          description="Default models for the dashboard builder and the Issues reviewer, and which models an agent may use when it creates a session, loop, or subagent."
-        >
-          <AgentDefaultsSection settings={settings} onSave={onSave} />
-        </SettingsSection>
+        <AgentDefaultsSection settings={settings} onSave={onSave} />
 
         <SettingsSection
           title="Preset models"
-          description="Favorite agent configuration, model, and parameters with a short description. Agents pass these by id when Agent-created sessions and subagents allows presets."
+          description="Favorite agent configuration, model, and parameters with a short description. Agents pass these by id when Agent-created sessions and subagents allows presets. Toggle a preset on or off and choose whether agents may use it for subagents and/or new sessions."
         >
           <AgentPresetModelsSection />
         </SettingsSection>

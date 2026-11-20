@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { resolveDataDirRelativePath } from '../../config.js';
+import { agentWorktreeCwd } from '../../services/subagent-worktree.js';
 import {
   mockAgentFullTurnClosingMessage,
   MOCK_E2E_QUICK_TURN_PROMPT,
@@ -11,6 +12,10 @@ import {
   MOCK_E2E_SUBAGENT_SUMMARY,
   MOCK_E2E_ASK_ANSWER_SUMMARY,
   MOCK_E2E_ASK_QUESTION_TEXT,
+  MOCK_E2E_GITPUSH_REASON,
+  MOCK_E2E_GITPUSH_SESSION_SUMMARY,
+  MOCK_E2E_GITPUSH_SUMMARY,
+  MOCK_E2E_GITPUSH_TARGET_BRANCH,
   MOCK_E2E_PLAN_MARKDOWN,
   MOCK_E2E_PLAN_NON_INTERACTIVE_MARKDOWN,
   MOCK_E2E_PLAN_NON_INTERACTIVE_SUMMARY,
@@ -19,11 +24,14 @@ import {
   MOCK_REVIEWER_SUMMARY_TEXT,
   mockAgentScenarioForPrompt,
 } from '../../../shared/mock-agent-sdk.js';
+import { createGitPushTool } from '../../services/mcp/tools/git-push.js';
+import { createSessionAgentContext } from '../../services/mcp/lib/session-agent-context.js';
 import {
   SUBAGENT_DEFAULT_PRESET,
   normalizeSubagentDefaultMode,
 } from '../../../shared/subagent-default-mode.js';
 import { resolveEffectiveSubagentDefaultSettings } from '../../services/agent-config-resolver.js';
+import { MOCK_TURN_COST_USD } from './record-turn-usage.js';
 
 function parseNonNegativeMs(raw, fallback) {
   if (raw != null && raw !== '') {
@@ -118,6 +126,18 @@ async function runMockTool(writer, abortSignal, { callId, name, args, rawResult,
   await delay(mockStepDelayMs(), abortSignal);
 }
 
+/** Persist a successful mock turn result, charging the fake per-turn cost. */
+async function persistMockTurnResult(
+  /** @type {import('../../shared/message-stream-writer.ts').MessageStreamWriter} */ writer
+) {
+  await writer.persistTurnResult({
+    type: 'turn_result',
+    status: 'ok',
+    error_message: null,
+    total_cost_usd: MOCK_TURN_COST_USD,
+  });
+}
+
 /**
  * @param {import('../../shared/message-stream-writer.ts').MessageStreamWriter} writer
  */
@@ -126,12 +146,7 @@ async function runMockQuickTurn({ writer, abortSignal }) {
   await delay(mockStepDelayMs(), abortSignal);
   await writer.appendAssistantText(MOCK_E2E_QUICK_TURN_SUMMARY);
   await writer.flushAssistant();
-  await writer.persistTurnResult({
-    type: 'turn_result',
-    status: 'ok',
-    error_message: null,
-    total_cost_usd: 0,
-  });
+  await persistMockTurnResult(writer);
   return {};
 }
 
@@ -150,12 +165,7 @@ async function runMockPlanCreateTurn({ writer, abortSignal }) {
     args: { markdown: MOCK_E2E_PLAN_MARKDOWN, interactive: true },
     rawResult: JSON.stringify({ ok: true, markdown: MOCK_E2E_PLAN_MARKDOWN }),
   });
-  await writer.persistTurnResult({
-    type: 'turn_result',
-    status: 'ok',
-    error_message: null,
-    total_cost_usd: 0,
-  });
+  await persistMockTurnResult(writer);
   return { awaitingUser: true };
 }
 
@@ -189,12 +199,7 @@ async function runMockPlanCreateNonInteractiveTurn({ writer, abortSignal }) {
   });
   await writer.appendAssistantText(MOCK_E2E_PLAN_NON_INTERACTIVE_SUMMARY);
   await writer.flushAssistant();
-  await writer.persistTurnResult({
-    type: 'turn_result',
-    status: 'ok',
-    error_message: null,
-    total_cost_usd: 0,
-  });
+  await persistMockTurnResult(writer);
   return {};
 }
 
@@ -205,12 +210,7 @@ async function runMockPlanRunTurn({ writer }) {
   // Run the plan is a user message only — do not call StartPlan here.
   await writer.appendAssistantText(MOCK_E2E_PLAN_RUN_SUMMARY);
   await writer.flushAssistant();
-  await writer.persistTurnResult({
-    type: 'turn_result',
-    status: 'ok',
-    error_message: null,
-    total_cost_usd: 0,
-  });
+  await persistMockTurnResult(writer);
   return {};
 }
 
@@ -230,12 +230,7 @@ async function runMockAskQuestionTurn({ writer, abortSignal }) {
     args: { questions },
     rawResult: JSON.stringify({ ok: true, questions }),
   });
-  await writer.persistTurnResult({
-    type: 'turn_result',
-    status: 'ok',
-    error_message: null,
-    total_cost_usd: 0,
-  });
+  await persistMockTurnResult(writer);
   return { awaitingUser: true };
 }
 
@@ -245,12 +240,60 @@ async function runMockAskQuestionTurn({ writer, abortSignal }) {
 async function runMockAskAnswerTurn({ writer }) {
   await writer.appendAssistantText(MOCK_E2E_ASK_ANSWER_SUMMARY);
   await writer.flushAssistant();
-  await writer.persistTurnResult({
-    type: 'turn_result',
-    status: 'ok',
-    error_message: null,
-    total_cost_usd: 0,
+  await persistMockTurnResult(writer);
+  return {};
+}
+
+/**
+ * Real GitPush MCP tool call for e2e: commits a scratch file, then calls the
+ * actual tool handler so the Push approval modal opens in the UI. Needs a
+ * session whose repo has an origin (seeded by the e2e spec).
+ */
+async function runMockGitPushE2eTurn({
+  session,
+  app,
+  writer,
+  abortSignal,
+  branch,
+  source_branch: sourceBranch,
+  force,
+  summary = MOCK_E2E_GITPUSH_SUMMARY,
+}) {
+  const cwd = resolveDataDirRelativePath(session.session_path);
+  if (!cwd) {
+    throw new Error('Session worktree is not ready');
+  }
+
+  await writer.appendThinking('Committing e2e work, then requesting a push approval…');
+  await delay(mockStepDelayMs(), abortSignal);
+
+  const scratchRel = '.baguette-mock/gitpush-note.txt';
+  await mkdir(join(cwd, '.baguette-mock'), { recursive: true });
+  await writeFile(join(cwd, scratchRel), 'e2e gitpush work\n', 'utf8');
+  await runShell(
+    cwd,
+    `git add ${scratchRel} && git -c user.name=E2E -c user.email=e2e@baguette.dev commit -m "e2e: gitpush work"`,
+    abortSignal
+  );
+
+  const toolArgs = {
+    ...(branch ? { branch } : {}),
+    ...(sourceBranch ? { source_branch: sourceBranch } : {}),
+    ...(force ? { force } : {}),
+    reason: MOCK_E2E_GITPUSH_REASON,
+  };
+  const ctx = createSessionAgentContext(session, app);
+  const tool = createGitPushTool(ctx);
+  await runMockTool(writer, abortSignal, {
+    callId: 'mock-gitpush',
+    name: 'mcp__baguette__GitPush',
+    args: toolArgs,
+    rawResult: await tool.handler(toolArgs),
   });
+
+  await writer.appendAssistantText(summary);
+  await writer.flushAssistant();
+  await persistMockTurnResult(writer);
   return {};
 }
 
@@ -323,12 +366,7 @@ async function runMockSubagentE2eTurn({ app, session, userId, writer, abortSigna
 
   await writer.appendAssistantText(MOCK_E2E_SUBAGENT_SUMMARY);
   await writer.flushAssistant();
-  await writer.persistTurnResult({
-    type: 'turn_result',
-    status: 'ok',
-    error_message: null,
-    total_cost_usd: 0,
-  });
+  await persistMockTurnResult(writer);
   return {};
 }
 
@@ -345,6 +383,7 @@ export async function runMockAgentTurn({
   app,
   userId,
   turnId = null,
+  agent = null,
 }) {
   const scenario = mockAgentScenarioForPrompt(userPrompt);
   if (scenario === 'quick') {
@@ -371,8 +410,36 @@ export async function runMockAgentTurn({
   if (scenario === 'ask-answer') {
     return runMockAskAnswerTurn({ writer, abortSignal });
   }
+  if (scenario === 'gitpush-session-e2e') {
+    return runMockGitPushE2eTurn({
+      session,
+      app,
+      writer,
+      abortSignal,
+      summary: MOCK_E2E_GITPUSH_SESSION_SUMMARY,
+    });
+  }
+  if (scenario === 'gitpush-e2e') {
+    return runMockGitPushE2eTurn({
+      session,
+      app,
+      writer,
+      abortSignal,
+      branch: MOCK_E2E_GITPUSH_TARGET_BRANCH,
+    });
+  }
+  if (scenario === 'gitpush-force-e2e') {
+    return runMockGitPushE2eTurn({
+      session,
+      app,
+      writer,
+      abortSignal,
+      branch: MOCK_E2E_GITPUSH_TARGET_BRANCH,
+      force: 'force',
+    });
+  }
 
-  const cwd = resolveDataDirRelativePath(session.session_path);
+  const cwd = agentWorktreeCwd(session, agent);
   if (!cwd) {
     throw new Error('Session worktree is not ready');
   }
@@ -534,12 +601,7 @@ export async function runMockAgentTurn({
   await delay(mockStepDelayMs(), abortSignal);
   await writer.appendAssistantText(mockAgentFullTurnClosingMessage());
   await writer.flushAssistant();
-  await writer.persistTurnResult({
-    type: 'turn_result',
-    status: 'ok',
-    error_message: null,
-    total_cost_usd: 0,
-  });
+  await persistMockTurnResult(writer);
   return {};
 }
 
@@ -574,10 +636,5 @@ export async function runMockReviewerTurn({ writer, abortSignal, createIssue }) 
   await delay(mockStepDelayMs(), abortSignal);
   await writer.appendAssistantText(MOCK_REVIEWER_SUMMARY_TEXT);
   await writer.flushAssistant();
-  await writer.persistTurnResult({
-    type: 'turn_result',
-    status: 'ok',
-    error_message: null,
-    total_cost_usd: 0,
-  });
+  await persistMockTurnResult(writer);
 }

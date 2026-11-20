@@ -12,8 +12,11 @@ export function findByRouteId(list, routeId) {
  */
 export function resolveWorkspaceEntity({ routeId, isNewRoute, fetched, list }) {
   if (isNewRoute || routeId == null || routeId === '') return null;
-  if (fetched && String(fetched.id) === String(routeId)) return fetched;
-  return findByRouteId(list, routeId) ?? null;
+  const fromList = findByRouteId(list, routeId);
+  if (fetched && String(fetched.id) === String(routeId)) {
+    return fromList ? { ...fetched, ...fromList } : fetched;
+  }
+  return fromList ?? null;
 }
 
 /**

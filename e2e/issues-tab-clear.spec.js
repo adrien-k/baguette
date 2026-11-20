@@ -5,9 +5,9 @@ import {
   createLocalRepo,
   devLogin,
   expectIssuesTabReviewerControls,
-  openSessionAgentsPanel,
   saveE2eScreenshotPath,
   screenshotIssuesTabReviewerControls,
+  sessionAgentTreeRow,
   startMockBuilderSession,
 } from './helpers.js';
 
@@ -51,11 +51,16 @@ test.describe('Issues tab reset reviewer', () => {
     await page.getByRole('button', { name: 'Reset', exact: true }).click();
     await confirmClearReviewerChatModal(page);
 
+    await expect(page.getByRole('button', { name: 'Start review' })).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page).toHaveURL(/[?&]view=review(?:&|$)/);
+
     for (const issue of MOCK_REVIEW_ISSUES) {
       await expect(page.getByText(issue.title)).toBeVisible();
     }
 
-    await openSessionAgentsPanel(page);
-    await expect(page.locator('li').filter({ hasText: 'Reviewer' })).toHaveCount(0);
+    // The reviewer row disappears from the sidebar agent tree after the reset.
+    await expect(sessionAgentTreeRow(page, 'Reviewer')).toHaveCount(0);
   });
 });

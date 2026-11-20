@@ -71,13 +71,16 @@ Replace `dns_aws` with your provider's hook name and `your-domain.com` with your
 
 ## 3. DNS configuration
 
-Add a wildcard A record pointing to your server IP:
+Add A records for the apex and the wildcard, pointing to your server IP:
 
 ```
-*.your-domain.com  →  <server IP>
+your-domain.com     →  <server IP>   # apex — 301-redirected to www
+*.your-domain.com   →  <server IP>   # wildcard
 ```
 
-This routes both `www.your-domain.com` (Baguette UI) and `session-<id>.your-domain.com` (preview subdomains) to your server.
+The wildcard routes both `www.your-domain.com` (Baguette UI) and `session-<id>.your-domain.com` (preview subdomains) to your server.
+
+The apex record makes the bare domain resolve: when `PUBLIC_HOST` is on the `www.` subdomain (the default in `config/deploy.yml`), Baguette 301-redirects any apex request to `www` automatically — kamal-proxy routes the apex host to the app, which issues the redirect. The acme.sh certificate in section 2 already covers the apex (`-d your-domain.com`), so it needs no changes. If you keep `PUBLIC_HOST` on a non-www host, no redirect happens — skip the apex record if you prefer the bare domain to stay unreachable.
 
 ## 4. GitHub App (optional)
 
@@ -98,9 +101,9 @@ All configuration is driven by the following variables:
 
 | Variable             | Description                                                                                                                                                                                                                                                                              |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DEPLOY_SERVER`      | Your server hostname or IP address                                                                                                                                                                                                                                                       |
+| `DEPLOY_SERVER`      | Optional. Server hostname or IP to deploy over SSH — defaults to `DOMAIN` (the apex record from step 3 must resolve); set `www.<DOMAIN>` or a raw IP as overridden choice                                                                                                                |
 | `DEPLOY_USER`        | SSH user on the server (default: `ubuntu`)                                                                                                                                                                                                                                               |
-| `DOMAIN`             | Your domain (e.g. `baguette.example.com`) — used for `www.<DOMAIN>`, `*.<DOMAIN>`, and cert paths                                                                                                                                                                                        |
+| `DOMAIN`             | Your domain (e.g. `baguette.example.com`) — used for `www.<DOMAIN>`, `*.<DOMAIN>`, and cert paths (also the default SSH target)                                                                                                                                                          |
 | `SSH_PRIVATE_KEY`    | Private key for SSH access to the server (contents of `/home/ubuntu/.ssh/id_ed25519`)                                                                                                                                                                                                    |
 | `BOOTSTRAP_PASSWORD` | Optional. One-time first-visitor gate (env-only; never copied to disk). Set this on public hosts.                                                                                                                                                                                        |
 | `TRUST_PROXY_HOPS`   | Optional. Reverse-proxy hops trusted to set `X-Forwarded-For` (default: `1` — kamal-proxy is the one trusted hop). Set `0` only when exposing Baguette directly with no proxy in front                                                                                                   |
@@ -145,11 +148,11 @@ The included workflow (`.github/workflows/deploy.yml`) runs only on manual **wor
 
    **Variables** (plain text, "Variables" tab):
 
-   | Variable        | Value                                                |
-   | --------------- | ---------------------------------------------------- |
-   | `DEPLOY_SERVER` | Your server hostname or IP                           |
-   | `DOMAIN`        | Your domain (e.g. `baguette.example.com`)            |
-   | `DEPLOY_USER`   | SSH user on the server (optional, default: `ubuntu`) |
+   | Variable        | Value                                                                                               |
+   | --------------- | --------------------------------------------------------------------------------------------------- |
+   | `DEPLOY_SERVER` | Optional — defaults to `DOMAIN` (SSH deploys via the apex record); set an IP or `www.…` to override |
+   | `DOMAIN`        | Your domain (e.g. `baguette.example.com`)                                                           |
+   | `DEPLOY_USER`   | SSH user on the server (optional, default: `ubuntu`)                                                |
 
    Optional for Docker Hub / remote registry (see table above): `DOCKER_IMAGE`, `DOCKER_REGISTRY_USERNAME`, `DOCKER_REGISTRY_SERVER`.
 

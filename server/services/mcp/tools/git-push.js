@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { gitPush } from '../../github.js';
 import { ok, fail } from '../lib/result.js';
@@ -15,67 +16,92 @@ export function createGitPushTool(ctx) {
   return {
     name: 'GitPush',
     description:
-      'Push a branch to origin and set upstream. Call only after any `git commit` in this turn has finished (do not invoke in parallel with commit). For normal pushes, omit all parameters. Use force: "lease" after a rebase (--force-with-lease). Use force: "force" or a non-session branch to open the Push modal for user confirmation before pushing.',
+      'Push the session work to origin. NOT for regular turn work: Baguette pushes and syncs the PR automatically after each turn — calling this for a plain session-branch push with auto-push on only duplicates that. A plain session-branch push with auto-push on goes through immediately (no Push modal). Auto-push off, a different target branch, source_branch, or force opens the Push approval modal for the user to confirm. Valid pattern: after an isolated subagent finishes on its own branch, call GitPush with source_branch set to that branch (no need to merge into the session worktree first); use branch to publish onto a shared integration branch (e.g. development) or the session remote. Always pass reason with a short explanation of why the push is needed; it is shown to the user in the approval. While the approval is open, do not retry and do not push via shell git — the push runs once the user confirms.',
     schema: {
       branch: z
         .string()
         .optional()
         .describe(
-          'Branch to push (defaults to current session branch). Specifying a different branch opens the Push modal for user confirmation.'
+          'Target branch on origin (defaults to the session remote branch). A different branch — e.g. a shared development branch — requires user approval via the Push modal.'
+        ),
+      source_branch: z
+        .string()
+        .optional()
+        .describe(
+          'Local git ref to push from instead of the session worktree HEAD (branch name, tag, or commit). You do not need to merge that ref into the session branch first — typical use: publish an isolated subagent branch (set to subagent_local_branch) or any other local branch; refspec is source_branch:target. User approval is always required.'
         ),
       force: z
         .enum(['lease', 'force'])
         .optional()
         .describe(
-          '"lease" = --force-with-lease (safe, use after rebase); "force" = --force (destructive, opens the Push modal for user confirmation)'
+          '"lease" = --force-with-lease (safe after a rebase); "force" = --force (overwrites remote history). Both require user approval via the Push modal.'
+        ),
+      reason: z
+        .string()
+        .optional()
+        .describe(
+          'Short explanation of why this push is needed, shown to the user in the approval (e.g. "fast-forward development with the finished feature work").'
         ),
     },
-    handler: async ({ branch, force } = {}) => {
+    handler: async ({ branch, source_branch: sourceBranch, force, reason } = {}) => {
       const localErr = await requireRemoteRepo();
       if (localErr) return localErr;
-      if (!session.auto_push) {
-        return ok({
-          message:
-            'Auto-push is disabled. Changes have been committed locally. The user can push manually or enable auto-push using the controls at the bottom of the chat. Call UpdateSession with an appropriate title and description — it saves them to the session even when auto-push is off.',
-        });
-      }
 
       const freshSession = await getSession();
       const sessionBranch = freshSession.remote_branch || freshSession.local_branch;
-      const isPureForce = force === 'force';
+      const isForcePush = force === 'lease' || force === 'force';
       const isNonSessionBranch =
         branch && branch !== sessionBranch && branch !== freshSession.local_branch;
+      const cleanedSourceBranch =
+        typeof sourceBranch === 'string' && sourceBranch.trim() ? sourceBranch.trim() : null;
+      const hasSourceBranch = !!cleanedSourceBranch;
+      const autoPushOff = !freshSession.auto_push;
+      const cleanedReason = typeof reason === 'string' && reason.trim() ? reason.trim() : null;
 
-      if (isPureForce || isNonSessionBranch) {
-        app.service('sessions').emit('push:request', {
-          sessionId: session.id,
-          branch: branch || sessionBranch,
-          forceMode: force || null,
-        });
-        return ok({
-          message:
-            'The Push modal has been opened with your settings. Please review and confirm the push in the UI.',
-        });
+      if (!isForcePush && !isNonSessionBranch && !hasSourceBranch && !autoPushOff) {
+        let result;
+        try {
+          result = await gitPush(absoluteSessionPath, await getGitAuth(), {
+            ...(sessionBranch ? { branch: sessionBranch } : {}),
+          });
+        } catch (err) {
+          if (err.rejected) return fail(err.message);
+          throw err;
+        }
+        await patchSession({ remote_branch: result.branch });
+        if (freshSession?.pr_status === 'merged') {
+          return ok({
+            ...result,
+            hint: 'The previous PR for this session has been merged. You should: 1) call GitPull to sync with the latest changes from the remote branch and merge the base branch — resolve any conflicts, commit, and push again if needed, then 2) call UpdateSession with a title and description; Baguette will open a new pull request after the turn.',
+          });
+        }
+        return ok(result);
       }
 
-      let result;
-      try {
-        result = await gitPush(absoluteSessionPath, await getGitAuth(), {
-          force: force === 'lease',
-          ...(sessionBranch ? { branch: sessionBranch } : {}),
-        });
-      } catch (err) {
-        if (err.rejected) return fail(err.message);
-        throw err;
-      }
-      await patchSession({ remote_branch: result.branch });
-      if (freshSession?.pr_status === 'merged') {
-        return ok({
-          ...result,
-          hint: 'The previous PR for this session has been merged. You should: 1) call GitPull to sync with the latest changes from the remote branch and merge the base branch — resolve any conflicts, commit, and push again if needed, then 2) call UpdateSession with a title and description; Baguette will open a new pull request after the turn.',
-        });
-      }
-      return ok(result);
+      const requestId = randomUUID();
+      const targetBranch = branch || sessionBranch;
+      app.service('sessions').emit('push:request', {
+        sessionId: session.id,
+        request_id: requestId,
+        branch: targetBranch,
+        source_branch: cleanedSourceBranch,
+        forceMode: force || null,
+        reason: cleanedReason,
+        autoPushOff,
+        agentRequest: true,
+      });
+      return ok({
+        message:
+          'The Push approval has been opened in the UI. Do not retry and do not push with shell git — the push runs once the user confirms it.',
+        approval_requested: true,
+        request_id: requestId,
+        local_branch: sessionBranch || null,
+        source_branch: cleanedSourceBranch,
+        target_branch: targetBranch || null,
+        force: force || null,
+        reason: cleanedReason,
+        auto_push_off: autoPushOff,
+      });
     },
   };
 }

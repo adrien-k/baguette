@@ -52,19 +52,18 @@ export function createIssueHandlers(session, app, turnAgent = {}) {
   };
 
   return {
-    async createIssue({ severity, title, description }) {
+    async createIssue({ severity, title, description, options }) {
       try {
-        const created = await app.service('session-issues').create(
-          {
-            session_id: sessionId,
-            severity,
-            title,
-            description: description ?? '',
-            status: 'opened',
-            ...issueTurnAgent,
-          },
-          userParams
-        );
+        const payload = {
+          session_id: sessionId,
+          severity,
+          title,
+          description: description ?? '',
+          status: 'opened',
+          ...issueTurnAgent,
+        };
+        if (options !== undefined) payload.options = options;
+        const created = await app.service('session-issues').create(payload, userParams);
         return ok({ issue: serializeIssue(created) });
       } catch (err) {
         return serviceError(err);
@@ -85,16 +84,34 @@ export function createIssueHandlers(session, app, turnAgent = {}) {
       return ok({ issue: serializeIssue(issue) });
     },
 
-    async updateIssue({ ref, severity, title, description, status }) {
+    async updateIssue({ ref, severity, title, description, status, options, selected_option_id }) {
       const issueRef = parseRef(ref);
       if (issueRef == null) return fail('Invalid issue ref');
       const issue = await findIssueByRef(app, sessionId, issueRef, userId);
       if (!issue) return fail('Issue not found');
+
+      if (selected_option_id != null) {
+        const optionId = String(selected_option_id).trim();
+        if (!optionId) return fail('selected_option_id is required');
+        try {
+          const updated = await app
+            .service('session-issues')
+            .selectOption({ id: issue.id, option_id: optionId }, userParams);
+          return ok({ issue: serializeIssue(updated) });
+        } catch (err) {
+          return serviceError(err);
+        }
+      }
+
       const patch = {};
       if (severity != null) patch.severity = severity;
       if (status != null) patch.status = status;
       if (title != null) patch.title = title;
       if (description != null) patch.description = description;
+      if (options !== undefined) patch.options = options;
+      if (status == null && Array.isArray(options) && options.length > 0) {
+        patch.status = 'needs_decision';
+      }
       if (!Object.keys(patch).length) return fail('No fields to update');
       try {
         const updated = await app
@@ -111,6 +128,11 @@ export function createIssueHandlers(session, app, turnAgent = {}) {
       if (issueRef == null) return fail('Invalid issue ref');
       const issue = await findIssueByRef(app, sessionId, issueRef, userId);
       if (!issue) return fail('Issue not found');
+      if (issue.status === 'needs_decision') {
+        return fail(
+          'Issues that need a decision cannot be ignored or resolved until the user chooses an option'
+        );
+      }
       try {
         const updated = await app
           .service('session-issues')
@@ -130,6 +152,9 @@ export function createIssueHandlers(session, app, turnAgent = {}) {
         const updated = await app
           .service('session-issues')
           .patch(issue.id, { status: 'closed' }, { provider: undefined, user: { id: userId } });
+        if (updated.status !== 'closed') {
+          return fail('Issue was not closed');
+        }
         return ok({ closed: serializeIssue(updated) });
       } catch (err) {
         return serviceError(err);

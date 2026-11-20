@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  countsTowardReviewTab,
   issueFixAgentPrompt,
   issuesFixAllAgentPrompt,
   sortIssuesBySeverity,
@@ -18,12 +19,48 @@ describe('issue fix agent prompts', () => {
     expect(text).not.toContain('Secret body');
   });
 
+  it('mentions a selected approach without embedding option text', () => {
+    const text = issueFixAgentPrompt(
+      {
+        id: 7,
+        ref: 3,
+        severity: 'high',
+        title: 'Leaky title',
+        description: 'Secret body',
+        selected_option_id: 'rewrite-schema',
+        options: [
+          { id: 'rewrite-schema', title: 'Secret option title', description: 'Secret impact' },
+        ],
+      },
+      99
+    );
+    expect(text).toContain('already selected an approach');
+    expect(text).toContain('ReadIssue');
+    expect(text).not.toContain('Leaky title');
+    expect(text).not.toContain('Secret body');
+    expect(text).not.toContain('Secret option title');
+    expect(text).not.toContain('Secret impact');
+    expect(text).not.toContain('rewrite-schema');
+  });
+
   it('references ListIssues for fix-all', () => {
     const text = issuesFixAllAgentPrompt(42);
     expect(text).toContain('ListIssues with status "submitted"');
     expect(text).toContain('session_id 42');
     expect(text).toContain('one separate git commit per issue');
     expect(text).toContain('fixed together easily');
+    expect(text).toContain('needs_decision');
+    expect(text).toContain('waiting for the user');
+  });
+});
+
+describe('countsTowardReviewTab', () => {
+  it('includes opened and needs_decision only', () => {
+    expect(countsTowardReviewTab({ status: 'opened' })).toBe(true);
+    expect(countsTowardReviewTab({ status: 'needs_decision' })).toBe(true);
+    expect(countsTowardReviewTab({ status: 'submitted' })).toBe(false);
+    expect(countsTowardReviewTab({ status: 'resolved' })).toBe(false);
+    expect(countsTowardReviewTab({ status: 'ignored' })).toBe(false);
   });
 });
 
@@ -36,6 +73,15 @@ describe('sortIssuesBySeverity', () => {
       { id: 4, severity: 'high' },
     ]);
     expect(sorted.map((i) => i.severity)).toEqual(['critical', 'high', 'medium', 'low']);
+  });
+
+  it('puts needs_decision before opened', () => {
+    const sorted = sortIssuesBySeverity([
+      { id: 1, severity: 'critical', status: 'opened' },
+      { id: 2, severity: 'low', status: 'needs_decision' },
+      { id: 3, severity: 'high', status: 'submitted' },
+    ]);
+    expect(sorted.map((i) => i.id)).toEqual([2, 1, 3]);
   });
 
   it('puts opened before submitted and resolved, then ignored', () => {

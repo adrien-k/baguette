@@ -12,6 +12,8 @@ primary_region = 'iad'
 
 [env]
   NODE_ENV = "production"
+  # Fly serves your-app.fly.dev (no www). Use PUBLIC_HOST; reserve DOMAIN for custom apex + www.
+  PUBLIC_HOST = "https://your-app.fly.dev"
   PORT = "3000"
   DATA_DIR = "/data"
 

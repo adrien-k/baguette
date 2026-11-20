@@ -1,6 +1,9 @@
 import { test, expect } from './fixtures.js';
+import { MOCK_STANDARD_MODEL_ID } from '../shared/mock-agent-sdk.js';
 import {
+  createMockAgentConfig,
   devLogin,
+  localRepoName,
   saveE2eScreenshot,
   seedE2ePasskey,
   setE2eUserApproved,
@@ -84,6 +87,13 @@ test.describe('bootstrap onboarding without GitHub', () => {
     await expect(page.getByRole('heading', { name: 'SSH key' })).toHaveCount(0);
     await saveE2eScreenshot(page, 'settings-repos.png', { fullPage: true });
 
+    const onboardingRepoName = localRepoName();
+    await page.getByPlaceholder('Repository name (e.g. my-project)').fill(onboardingRepoName);
+    await page.getByRole('button', { name: 'Create', exact: true }).click();
+    await expect(page.locator('code').filter({ hasText: onboardingRepoName })).toBeVisible({
+      timeout: 60_000,
+    });
+
     const me = await page.request.get('/auth/me').then((r) => r.json());
     const userId = me.user?.id;
     expect(userId).toBeTruthy();
@@ -135,6 +145,8 @@ test.describe('bootstrap onboarding without GitHub', () => {
       timeout: 15_000,
     });
     await expect(page.getByText('SSH remote', { exact: true })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Linked repositories' })).toBeVisible();
+    await expect(page.locator('code').filter({ hasText: onboardingRepoName })).toBeVisible();
     await saveE2eScreenshot(page, 'onboarding-repositories.png');
 
     await page.getByRole('button', { name: 'Continue' }).click();
@@ -143,6 +155,14 @@ test.describe('bootstrap onboarding without GitHub', () => {
     });
     await expect(page.getByRole('button', { name: 'Finish setup' })).toBeVisible();
     await saveE2eScreenshot(page, 'onboarding-agents.png');
+
+    await createMockAgentConfig(page, {
+      label: 'Onboarding e2e config',
+      defaultModel: MOCK_STANDARD_MODEL_ID,
+    });
+    await page.getByRole('button', { name: 'Finish setup' }).click();
+    await expect(page).toHaveURL('/', { timeout: 15_000 });
+    await expect(page.getByText(/Add an agent configuration/i)).toHaveCount(0);
   });
 
   test('logged-out login after a passkey exists offers passkey sign-in, not create-account', async ({
@@ -150,7 +170,8 @@ test.describe('bootstrap onboarding without GitHub', () => {
   }) => {
     await page.setViewportSize(WIDE_VIEWPORT);
     await devLogin(page);
-    await page.getByRole('button', { name: /dev/ }).click();
+    // exact: the TanStack devtools floating button's name also contains "dev"
+    await page.getByRole('button', { name: 'dev', exact: true }).click();
     await page.getByRole('button', { name: 'Sign out' }).click();
     await expect(page.getByRole('heading', { name: 'Baguette' })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByRole('button', { name: 'Sign in with passkey' })).toBeVisible();

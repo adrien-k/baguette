@@ -1,46 +1,38 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { loopsService } from '../feathers.js';
+import { loopKeys } from '../queries/keys.js';
+import { feathersFind } from '../queries/feathersFinders.js';
 import { toastError } from '../utils/toastError.jsx';
 
 /**
  * Loops for the current picker scope (`query` from Dashboard/Session sidebar).
- * Subscribes to loops SSE so schedule fields stay fresh.
+ * Loop created/patched/removed SSE events invalidate the loops cache via the
+ * central bridge, so schedule fields stay fresh.
  */
 export function useGetLoops(query) {
-  const [loops, setLoops] = useState([]);
-  const [loaded, setLoaded] = useState(false);
+  const enabled = Boolean(query);
 
-  const load = useCallback(() => {
-    if (!query) {
-      setLoops([]);
-      setLoaded(true);
-      return;
-    }
-    setLoaded(false);
-    loopsService
-      .find({ query: { ...query, $limit: 100 } })
-      .then((d) => {
-        setLoops(d.data ?? d);
-        setLoaded(true);
-      })
-      .catch((err) => toastError('Failed to load loops', err));
-  }, [query]);
+  const q = useQuery({
+    queryKey: loopKeys.list(query ?? {}),
+    queryFn: () => feathersFind(loopsService, { ...query, $limit: 100 }),
+    enabled,
+  });
+
+  const { refetch } = q;
 
   useEffect(() => {
-    load();
-  }, [load]);
+    if (q.error) toastError('Failed to load loops', q.error);
+  }, [q.error]);
 
-  useEffect(() => {
-    const refresh = () => load();
-    loopsService.on('created', refresh);
-    loopsService.on('patched', refresh);
-    loopsService.on('removed', refresh);
-    return () => {
-      loopsService.off('created', refresh);
-      loopsService.off('patched', refresh);
-      loopsService.off('removed', refresh);
-    };
-  }, [load]);
+  const reload = useCallback(() => {
+    if (!enabled) return;
+    void refetch();
+  }, [enabled, refetch]);
 
-  return { loops, loaded, reload: load };
+  return {
+    loops: enabled ? (q.data ?? []) : [],
+    loaded: !enabled || !q.isPending,
+    reload,
+  };
 }

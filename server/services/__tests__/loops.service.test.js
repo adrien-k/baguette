@@ -165,6 +165,74 @@ describe('Loops service', () => {
       expect(loop.auto_push).toBe(false);
     });
 
+    it('defaults create_new_branch to true for repository loops', async () => {
+      const loop = await app.service('loops').create(loopData(), params(aliceId));
+      expect(loop.create_new_branch).toBe(true);
+    });
+
+    it('defaults usage_limit_action to stop, stores wait/continue, and rejects unknown actions', async () => {
+      const plain = await app.service('loops').create(loopData(), params(aliceId));
+      expect(plain.usage_limit_action).toBe('stop');
+      const waiter = await app
+        .service('loops')
+        .create(loopData({ usage_limit_action: 'wait' }), params(aliceId));
+      expect(waiter.usage_limit_action).toBe('wait');
+      await expect(
+        app.service('loops').create(loopData({ usage_limit_action: 'pause' }), params(aliceId))
+      ).rejects.toThrow(/usage_limit_action/);
+      const patched = await app
+        .service('loops')
+        .patch(plain.id, { usage_limit_action: 'wait' }, params(aliceId));
+      expect(patched.usage_limit_action).toBe('wait');
+    });
+
+    it('stores usage_limit (null = unlimited) and passes it to started sessions', async () => {
+      const unlimited = await app.service('loops').create(loopData(), params(aliceId));
+      expect(unlimited.usage_limit).toBeNull();
+      const capped = await app
+        .service('loops')
+        .create(loopData({ usage_limit_action: 'continue', usage_limit: 0.5 }), params(aliceId));
+      expect(capped.usage_limit).toBe(0.5);
+      await expect(
+        app.service('loops').create(loopData({ usage_limit: -1 }), params(aliceId))
+      ).rejects.toThrow(/usage_limit/);
+    });
+
+    it('stores create_new_branch false for a repository loop', async () => {
+      const loop = await app
+        .service('loops')
+        .create(loopData({ create_new_branch: false }), params(aliceId));
+      expect(loop.create_new_branch).toBe(false);
+    });
+
+    it('stores user default_auto_load_skills when auto_load_skills is omitted', async () => {
+      await db('users')
+        .where({ id: aliceId })
+        .update({ default_auto_load_skills: JSON.stringify(['Delegation and orchestration']) });
+      const loop = await app.service('loops').create(loopData(), params(aliceId));
+      expect(loop.auto_load_skills).toEqual(['Delegation and orchestration']);
+    });
+
+    it('stores user default usage limits when usage limit fields are omitted', async () => {
+      await db('users').where({ id: aliceId }).update({
+        default_usage_limit_action: 'continue',
+        default_usage_limit: 0.75,
+      });
+      const loop = await app.service('loops').create(loopData(), params(aliceId));
+      expect(loop.usage_limit_action).toBe('continue');
+      expect(loop.usage_limit).toBe(0.75);
+    });
+
+    it('stores an explicit empty auto_load_skills list without filling defaults', async () => {
+      await db('users')
+        .where({ id: aliceId })
+        .update({ default_auto_load_skills: JSON.stringify(['Delegation and orchestration']) });
+      const loop = await app
+        .service('loops')
+        .create(loopData({ auto_load_skills: [] }), params(aliceId));
+      expect(loop.auto_load_skills).toEqual([]);
+    });
+
     it('forces auto_push off for local repository loops', async () => {
       await db('repos').insert({ full_name: 'local-loop', repo_path: '/tmp/local-loop' });
       const loop = await app
@@ -252,6 +320,36 @@ describe('Loops service', () => {
       const loop = await app.service('loops').create(loopData({ enabled: false }), params(aliceId));
       expect(loop.enabled).toBe(false);
       expect(loop.next_run_at).toBeNull();
+    });
+
+    it('creates a manual loop with no next_run_at', async () => {
+      const loop = await app
+        .service('loops')
+        .create(loopData({ schedule_type: 'manual' }), params(aliceId));
+      expect(loop.schedule_type).toBe('manual');
+      expect(loop.next_run_at).toBeNull();
+      expect(loop.interval_minutes).toBeNull();
+    });
+  });
+
+  describe('runNow', () => {
+    it('runs an enabled loop on demand', async () => {
+      const loop = await app
+        .service('loops')
+        .create(loopData({ schedule_type: 'manual' }), params(aliceId));
+      sessionsCreate.mockClear();
+      const result = await app.service('loops').runNow(loop.id, params(aliceId));
+      expect(result.session_id).toBe(77);
+      expect(sessionsCreate).toHaveBeenCalled();
+    });
+
+    it('rejects when the loop is paused', async () => {
+      const loop = await app
+        .service('loops')
+        .create(loopData({ schedule_type: 'manual', enabled: false }), params(aliceId));
+      await expect(app.service('loops').runNow(loop.id, params(aliceId))).rejects.toBeInstanceOf(
+        BadRequest
+      );
     });
   });
 
@@ -437,6 +535,19 @@ describe('Loops service', () => {
       expect(new Date(enabled.next_run_at).getTime()).toBeGreaterThan(Date.now());
     });
 
+    it('toggles create_new_branch without touching other fields', async () => {
+      const loop = await app.service('loops').create(loopData(), params(aliceId));
+      const off = await app
+        .service('loops')
+        .patch(loop.id, { create_new_branch: false }, params(aliceId));
+      expect(off.create_new_branch).toBe(false);
+      expect(off.auto_push).toBe(loop.auto_push);
+      const on = await app
+        .service('loops')
+        .patch(loop.id, { create_new_branch: true }, params(aliceId));
+      expect(on.create_new_branch).toBe(true);
+    });
+
     it('recomputes the next run when the recurrence changes', async () => {
       const loop = await app.service('loops').create(loopData(), params(aliceId));
       const patched = await app
@@ -514,6 +625,63 @@ describe('Loops service', () => {
       expect(row.last_session_id).toBe(77);
       expect(row.last_run_at).toBeTruthy();
       expect(new Date(row.next_run_at).getTime()).toBeGreaterThan(Date.now());
+    });
+
+    it('passes the loop usage_limit_action to every session it starts', async () => {
+      await makeDueLoop({ usage_limit_action: 'continue', usage_limit: 0.5 });
+      await app.service('loops').runDue();
+      expect(sessionsCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ usage_limit_action: 'continue', usage_limit: 0.5 }),
+        expect.anything()
+      );
+    });
+
+    it('starts the session on the base branch when create_new_branch is off', async () => {
+      await makeDueLoop({ create_new_branch: false });
+      await app.service('loops').runDue();
+
+      expect(sessionsCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ base_branch: 'main', create_new_branch: false }),
+        expect.anything()
+      );
+    });
+
+    it('passes loop auto_load_skills to spawned sessions, not current user defaults', async () => {
+      await db('users')
+        .where({ id: aliceId })
+        .update({ default_auto_load_skills: JSON.stringify(['Other default']) });
+      const loop = await makeDueLoop({ auto_load_skills: ['Pinned skill'] });
+      await app.service('loops').runDue();
+      expect(sessionsCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          loop_id: loop.id,
+          auto_load_skills: ['Pinned skill'],
+        }),
+        expect.anything()
+      );
+      await db('users')
+        .where({ id: aliceId })
+        .update({ default_auto_load_skills: JSON.stringify(['Changed default']) });
+      sessionsCreate.mockClear();
+      await db('loops')
+        .where({ id: loop.id })
+        .update({ next_run_at: new Date(Date.now() - 60_000).toISOString() });
+      await app.service('loops').runDue();
+      expect(sessionsCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ auto_load_skills: ['Pinned skill'] }),
+        expect.anything()
+      );
+    });
+
+    it('does not inject user default skills when the loop has no preload skills', async () => {
+      await db('users')
+        .where({ id: aliceId })
+        .update({ default_auto_load_skills: JSON.stringify(['Fresh default']) });
+      const loop = await makeDueLoop({ auto_load_skills: [] });
+      await app.service('loops').runDue();
+      const payload = sessionsCreate.mock.calls.at(-1)?.[0];
+      expect(payload.loop_id).toBe(loop.id);
+      expect(payload.auto_load_skills).toBeUndefined();
     });
 
     it('reuses the loop MCP snapshot instead of current defaults', async () => {

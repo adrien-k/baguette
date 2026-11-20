@@ -1,7 +1,9 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { usersService } from '../feathers.js';
+import { currentUserKeys } from '../queries/keys.js';
+import { feathersGet } from '../queries/feathersFinders.js';
 import { useAuth } from '../hooks/useAuth.jsx';
-import { useRefetchOnSseReconnect } from '../hooks/useRefetchOnSseReconnect.js';
 
 const CurrentUserContext = createContext(null);
 
@@ -9,81 +11,48 @@ const CurrentUserContext = createContext(null);
 export function CurrentUserProvider({ children }) {
   const { user: authUser } = useAuth();
   const authUserId = authUser?.id;
-  const [currentUser, setCurrentUser] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const fetchIdRef = useRef(0);
+  const queryClient = useQueryClient();
+
+  const query = useQuery({
+    queryKey: currentUserKeys.detail(authUserId),
+    queryFn: () => feathersGet(usersService, authUserId),
+    enabled: authUserId != null,
+  });
+
+  const { refetch: refetchQuery } = query;
 
   const refetch = useCallback(
-    ({ silent = false } = {}) => {
+    (opts) => {
       if (authUserId == null) return;
-      const fetchId = ++fetchIdRef.current;
-      if (!silent) {
-        setLoading(true);
-        setError(null);
-      }
-      usersService
-        .get(authUserId)
-        .then((record) => {
-          if (fetchId !== fetchIdRef.current) return;
-          setCurrentUser(record);
-          setError(null);
-        })
-        .catch((err) => {
-          if (fetchId !== fetchIdRef.current) return;
-          if (!silent) {
-            setCurrentUser(null);
-            setError(err instanceof Error ? err : new Error(String(err)));
-          }
-        })
-        .finally(() => {
-          if (fetchId === fetchIdRef.current && !silent) setLoading(false);
-        });
+      // `silent` callers only wanted no loading spinner; React Query refetch
+      // keeps showing existing data either way.
+      void opts;
+      return refetchQuery().then(() => undefined);
     },
-    [authUserId]
+    [authUserId, refetchQuery]
   );
 
   const updateCurrentUser = useCallback(
     (record) => {
       if (authUserId == null || record?.id == null) return;
       if (String(record.id) !== String(authUserId)) return;
-      setCurrentUser(record);
-      setError(null);
-      setLoading(false);
+      queryClient.setQueryData(currentUserKeys.detail(authUserId), record);
     },
-    [authUserId]
+    [authUserId, queryClient]
   );
 
-  useEffect(() => {
-    if (authUserId == null) {
-      fetchIdRef.current += 1;
-      setCurrentUser(null);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-    refetch();
-  }, [authUserId, refetch]);
-
-  useEffect(() => {
-    if (authUserId == null) return;
-    const onPatched = (updated) => {
-      if (String(updated?.id) !== String(authUserId)) return;
-      refetch();
-    };
-    usersService.on('patched', onPatched);
-    return () => usersService.off('patched', onPatched);
-  }, [authUserId, refetch]);
-
-  useRefetchOnSseReconnect(refetch, authUserId != null);
-
-  return (
-    <CurrentUserContext.Provider
-      value={{ currentUser, loading, error, refetch, updateCurrentUser }}
-    >
-      {children}
-    </CurrentUserContext.Provider>
+  const value = useMemo(
+    () => ({
+      currentUser: authUserId != null ? (query.data ?? null) : null,
+      loading: authUserId != null && query.isPending,
+      error: query.error ?? null,
+      refetch,
+      updateCurrentUser,
+    }),
+    [authUserId, query.data, query.isPending, query.error, refetch, updateCurrentUser]
   );
+
+  return <CurrentUserContext.Provider value={value}>{children}</CurrentUserContext.Provider>;
 }
 
 export function useCurrentUser() {

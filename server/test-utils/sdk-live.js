@@ -1,7 +1,7 @@
 /**
  * Env-gated live agent-SDK tests: real LLM (or mock) turns against a full Feathers app.
  *
- * Set SDK_TESTS_<SDK>_API_KEY + SDK_TESTS_<SDK>_MODEL (see `.env.example`) to enable.
+ * Set SDK_TESTS_<SDK>_API_KEY + SDK_TESTS_<SDK>_MODEL (see `.env.dev.example`) to enable.
  * Suites skip when those vars are unset so `pnpm test` stays free/offline by default.
  *
  * Recommended cheap models and observed harness costs (one turn, 2026-10-31):
@@ -9,8 +9,10 @@
  *   cursor  glm-5p3-flash                               ~$0.0045  (composer-2.5 was ~$0.028)
  *   pi      opencode-go/glm-5.3-flash                   ~$0.0051
  *
- * `runLiveSdkSuite` also exercises agent-configs listModels + testConnectivity and a
- * reviewer turn (CurrentSessionInfo) per SDK.
+ * `runLiveSdkSuite` also exercises agent-configs listModels + testConnectivity, a
+ * `completeText` smoke call (predictable one-word answer), and a reviewer turn
+ * (CurrentSessionInfo) per SDK. `runLiveBashStdoutSuite` checks typed bash `result.stdout`
+ * on persisted `tool_call` rows.
  */
 import { execFile } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -31,10 +33,9 @@ const execFileAsync = promisify(execFile);
 const LIVE_TODO_TITLE = 'sdk-live-todo';
 const LIVE_TASK_LABEL = 'echo-ok';
 
-const LIVE_BAGUETTE_YAML = `session:
-  tasks:
-    ${LIVE_TASK_LABEL}:
-      run: echo ok
+const LIVE_BAGUETTE_YAML = `tasks:
+  ${LIVE_TASK_LABEL}:
+    run: echo ok
 `;
 
 const LIVE_SDK_TURN_PROMPT = [
@@ -52,6 +53,21 @@ const LIVE_SDK_REVIEW_PROMPT = [
   'Do not create, update, or close issues.',
   '1. Call CurrentSessionInfo.',
   '2. Reply with the single word REVIEW_OK.',
+].join('\n');
+
+/** completeText smoke: fixed factual prompt with a single predictable word as the answer. */
+const LIVE_COMPLETE_PROMPT = 'What is the day after Monday? Respond with just a word.';
+const LIVE_COMPLETE_EXPECTED = 'tuesday';
+
+/** Unique marker echoed by live bash stdout integration turns. */
+export const LIVE_BASH_STDOUT_MARKER = 'baguette_sdk_live_bash_stdout';
+
+const LIVE_SDK_BASH_STDOUT_PROMPT = [
+  'You are running an automated integration test. Follow these steps in order, then stop.',
+  'Do not edit files. Do not ask questions. Do not start a subagent.',
+  'Do not call MCP tools (no CreateTodo, RunTask, or GitHub tools). Use only the Bash/shell tool.',
+  `1. Run this exact command: echo ${LIVE_BASH_STDOUT_MARKER}`,
+  '2. Reply with the single word BASH_OK.',
 ].join('\n');
 
 async function initLiveWorktree(absPath) {
@@ -174,6 +190,42 @@ function toolNamesFromMessages(rows) {
 function hasToolName(names, fragment) {
   const needle = String(fragment).toLowerCase();
   return names.some((n) => n.toLowerCase().includes(needle));
+}
+
+function completedBashToolCalls(rows) {
+  const out = [];
+  for (const row of rows) {
+    if (row.type !== 'tool_call') continue;
+    const payload = parsePayload(row);
+    const kind = payload.kind;
+    const name = typeof payload.name === 'string' ? payload.name : '';
+    const isBash = kind === 'bash' || /^bash$/i.test(name);
+    if (!isBash) continue;
+    const status = payload.status ?? payload.tool_status;
+    if (status !== 'completed') continue;
+    out.push(payload);
+  }
+  return out;
+}
+
+/** Assert completed bash tool_call rows expose non-empty typed `result.stdout`. */
+export function assertPersistedBashStdout(rows, expectedSubstring, dump) {
+  const bashCalls = completedBashToolCalls(rows);
+  expect(bashCalls.length, `expected a completed bash tool_call\n${dump}`).toBeGreaterThan(0);
+  const stdoutValues = bashCalls.map((payload) => {
+    const result = payload.result;
+    if (result && typeof result === 'object' && result.stdout != null) {
+      return String(result.stdout);
+    }
+    return '';
+  });
+  const combined = stdoutValues.join('\n');
+  expect(combined.trim().length, `bash tool_call result.stdout was empty\n${dump}`).toBeGreaterThan(
+    0
+  );
+  expect(combined, `bash stdout missing "${expectedSubstring}"\n${dump}`).toContain(
+    expectedSubstring
+  );
 }
 
 function sumUsageField(usageRows, field) {
@@ -383,6 +435,35 @@ async function assertLiveListModels(app, ctx, env) {
   }
 }
 
+/**
+ * completeText smoke: run the one-shot primitive against the seeded config/model and
+ * assert the predictable answer. Mock has no model and must return '' (the fallback
+ * contract), every real SDK must answer the factual prompt.
+ */
+async function assertLiveCompleteText(app, _db, ctx, env) {
+  const plugin = getSdkPlugin(env.sdk);
+  const svc = plugin?.servicePath ? app.service(plugin.servicePath) : null;
+  expect(svc?.completeText, `SDK service must expose completeText (${env.sdk})`).toBeTypeOf(
+    'function'
+  );
+  const text = await svc.completeText(LIVE_COMPLETE_PROMPT, {
+    userId: ctx.userId,
+    agentConfigId: ctx.configId,
+    model: env.model,
+    modelParams: env.modelParams,
+  });
+  if (env.sdk === 'mock') {
+    expect(text, 'mock completeText must return an empty string (callers fall back)').toBe('');
+  } else {
+    expect(
+      String(text).toLowerCase(),
+      `completeText returned an unexpected answer\nprompt: ${LIVE_COMPLETE_PROMPT}\ncompletion: ${text}`
+    ).toContain(LIVE_COMPLETE_EXPECTED);
+  }
+  // eslint-disable-next-line no-console -- live test report
+  console.log(`[sdk-live ${env.sdk}] completeText -> ${JSON.stringify(String(text).trim())}`);
+}
+
 async function assertLiveConnectivity(app, ctx, env, { listModelsOk = false } = {}) {
   if (listModelsOk && env.sdk === 'pi') {
     // Pi listModels already loaded the provider catalog; opencode-go probe path is redundant.
@@ -515,6 +596,7 @@ export async function runLiveSdkSuite(sdk, opts = {}) {
     ctx = await seedLiveSession(db, sdk, env);
     const listModelsOk = await assertLiveListModels(app, ctx, env);
     await assertLiveConnectivity(app, ctx, env, { listModelsOk });
+    await assertLiveCompleteText(app, db, ctx, env);
     const builderResult = await runLiveTurnAndAssert(app, db, ctx, env, builderOpts);
     let reviewerResult = null;
     if (includeReviewer) {
@@ -536,4 +618,43 @@ export async function runLiveSdkSuite(sdk, opts = {}) {
  */
 export async function runLiveSdkIntegration(sdk, assertOpts = {}) {
   return runLiveSdkSuite(sdk, { builder: assertOpts, includeReviewer: false });
+}
+
+/**
+ * One builder turn that runs bash and asserts typed `result.stdout` is persisted.
+ *
+ * @param {'claude' | 'cursor' | 'pi' | 'mock'} sdk
+ */
+export async function runLiveBashStdoutSuite(sdk) {
+  const env = readLiveSdkEnv(sdk);
+  const prevMockEnv = applyMockLiveEnv(sdk);
+  const db = await createMigratedTestDb();
+  let app;
+  let ctx;
+  try {
+    app = await createLiveApp(db);
+    ctx = await seedLiveSession(db, sdk, env);
+    const expectedStdout = sdk === 'mock' ? 'mock bash' : LIVE_BASH_STDOUT_MARKER;
+    const builderOpts =
+      sdk === 'mock'
+        ? {
+            expectUsage: false,
+            expectTodo: false,
+            expectTaskTools: false,
+            prompt: 'exercise the mock agent turn',
+          }
+        : {
+            expectTodo: false,
+            expectTaskTools: false,
+            prompt: LIVE_SDK_BASH_STDOUT_PROMPT,
+          };
+    const { rows, usageRows, agent } = await runLiveTurnAndAssert(app, db, ctx, env, builderOpts);
+    const dump = formatTurnDump(rows, usageRows, agent);
+    assertPersistedBashStdout(rows, expectedStdout, dump);
+    return { rows };
+  } finally {
+    await stopLiveTurn(app, sdk, ctx);
+    await db.destroy();
+    restoreMockLiveEnv(prevMockEnv);
+  }
 }

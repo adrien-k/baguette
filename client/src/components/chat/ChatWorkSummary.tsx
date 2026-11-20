@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { groupChatDisplayMessages } from '@baguette/shared/chat-display-groups.js';
 import { formatTaskDuration } from '../../utils/dates.js';
@@ -21,6 +21,20 @@ type SessionTask = {
   command?: string;
 };
 
+function WorkingDots() {
+  return (
+    <span className="inline-flex items-end gap-px pb-px ml-px" aria-hidden>
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          className="inline-block w-[3px] h-[3px] rounded-full bg-current animate-bounce"
+          style={{ animationDelay: `${i * 160}ms`, animationDuration: '0.9s' }}
+        />
+      ))}
+    </span>
+  );
+}
+
 export default function ChatWorkSummary({
   messages,
   indices,
@@ -35,6 +49,8 @@ export default function ChatWorkSummary({
   onSelectAgent,
   tasks,
   onSelectTask,
+  inProgress = false,
+  awaitingApproval = false,
 }: {
   messages: ChatMessageView[];
   indices: number[];
@@ -49,21 +65,55 @@ export default function ChatWorkSummary({
   onSelectAgent?: (agent: SessionAgent) => void;
   tasks?: SessionTask[];
   onSelectTask?: (taskId: number) => void;
+  /** Turn still in progress (agent running on this work block). */
+  inProgress?: boolean;
+  /** Agent waiting on user input; keep expanded when the turn has stopped. */
+  awaitingApproval?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const autoExpanded = inProgress || awaitingApproval;
+  const [userOverride, setUserOverride] = useState<'collapsed' | 'expanded' | null>(null);
+  const prevActiveRef = useRef(autoExpanded);
+  const expanded =
+    userOverride === 'expanded' ? true : userOverride === 'collapsed' ? false : autoExpanded;
+
+  useEffect(() => {
+    const wasActive = prevActiveRef.current;
+    if (wasActive && !autoExpanded) {
+      setUserOverride(null);
+    }
+    prevActiveRef.current = autoExpanded;
+  }, [autoExpanded]);
+
   const duration = formatTaskDuration(durationMs);
   const callsLabel = callCount === 1 ? '1 call' : `${callCount} calls`;
-  const innerItems = useMemo(() => groupChatDisplayMessages(messages), [messages]);
+  const innerItems = useMemo(
+    () => groupChatDisplayMessages(messages, { foldMidTurnAssistants: false }),
+    [messages]
+  );
 
-  let label = 'Worked';
-  if (duration) label += ` for ${duration}`;
-  if (callCount > 0) label += ` · ${callsLabel}`;
+  const toggleExpanded = () => {
+    setUserOverride(expanded ? 'collapsed' : 'expanded');
+  };
+
+  let doneLabel = 'Worked';
+  if (duration) doneLabel += ` for ${duration}`;
+  if (callCount > 0) doneLabel += ` · ${callsLabel}`;
+
+  const headerLabel = inProgress ? (
+    <span className="inline-flex items-baseline gap-0.5">
+      Working
+      <WorkingDots />
+    </span>
+  ) : (
+    doneLabel
+  );
 
   return (
     <div className="rounded-lg border border-line/80 bg-inset/40">
       <button
         type="button"
-        onClick={() => setExpanded((v) => !v)}
+        onClick={toggleExpanded}
+        aria-expanded={expanded}
         className="flex w-full items-center gap-2 px-3 py-2 text-xs text-faint hover:text-fg-muted transition-colors text-left"
       >
         {expanded ? (
@@ -71,7 +121,7 @@ export default function ChatWorkSummary({
         ) : (
           <ChevronRight className="w-3.5 h-3.5 shrink-0" aria-hidden />
         )}
-        <span>{label}</span>
+        <span>{headerLabel}</span>
       </button>
       {expanded && (
         <div className="space-y-2 border-t border-line/80 px-2 py-2">
@@ -94,6 +144,8 @@ export default function ChatWorkSummary({
                   onSelectAgent={onSelectAgent}
                   tasks={tasks}
                   onSelectTask={onSelectTask}
+                  inProgress={inProgress}
+                  awaitingApproval={awaitingApproval}
                 />
               );
             }

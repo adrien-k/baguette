@@ -40,7 +40,7 @@ export default function SessionViewTabs({
         <div className="relative min-w-0 flex-1">
           <div className="flex overflow-x-auto gap-1 scrollbar-none pr-4">
             {LOOP_VIEWS.map(({ id, label, Icon }) => {
-              const tabDisabled = isNewLoopRoute && id === 'runs';
+              const tabDisabled = isNewLoopRoute && id === 'overview';
               return (
                 <button
                   key={id}

@@ -1,4 +1,4 @@
-import { mapPiEvent, piTurnResultOps } from './mapping.ts';
+import { mapPiAssistantMessageThinkingBackfill, mapPiEvent, piTurnResultOps } from './mapping.ts';
 import type { MessageOp } from '../../../shared/message-types.ts';
 import type { MessageStreamWriter } from '../../../shared/message-stream-writer.ts';
 import { addPiTokenUsage, emptyTurnUsage } from '../../services/turn-usage.js';
@@ -15,6 +15,7 @@ export type ProcessPiSessionStreamOptions = {
 export type ProcessPiSessionStreamResult = {
   finishedOk: boolean;
   turnUsage: PiTurnUsage;
+  lastError: string | null;
 };
 
 function errorDetail(value: unknown, fallback: string): string {
@@ -41,6 +42,7 @@ export async function processPiSessionStream(
   const turnUsage = emptyTurnUsage();
 
   let applyChain: Promise<void> = Promise.resolve();
+  let thinkingStreamed = false;
 
   const noteTurnResultFromOps = (ops: MessageOp[]) => {
     for (const op of ops) {
@@ -58,11 +60,22 @@ export async function processPiSessionStream(
 
   const ensureFailureRecorded = async () => {
     if (turnResultRecorded || finishedOk) return;
+    // A deliberate stop is not a failure: leave no terminal verdict row behind.
+    if (abortSignal?.aborted) return;
     const detail = lastError ?? 'Pi agent turn failed before completing.';
     const ops = piTurnResultOps('error', detail);
     noteTurnResultFromOps(ops);
     await writer.apply(ops);
     finishedOk = false;
+  };
+
+  /** Apply mapped ops, dropping terminal verdict rows once the turn is deliberately aborted. */
+  const applyOps = (ops: MessageOp[] | null | undefined) => {
+    if (!ops?.length) return;
+    const effective = abortSignal?.aborted ? ops.filter((op) => op.op !== 'turn_result') : ops;
+    if (!effective.length) return;
+    noteTurnResultFromOps(ops);
+    applyChain = applyChain.then(() => writer.apply(effective));
   };
 
   const unsubscribe = subscribe((event) => {
@@ -94,12 +107,17 @@ export async function processPiSessionStream(
       lastError = errorDetail(event.finalError ?? event.errorMessage, 'Turn failed after retries');
     }
 
-    // Pi still emits agent_settled after a failed assistant turn; do not treat that as success.
-    const ops = event.type === 'agent_settled' && turnFailed ? null : mapPiEvent(event);
-    if (ops?.length) {
-      noteTurnResultFromOps(ops);
-      applyChain = applyChain.then(() => writer.apply(ops));
+    let ops = event.type === 'agent_settled' && turnFailed ? null : mapPiEvent(event);
+    if (event.type === 'message_end' && !thinkingStreamed) {
+      const backfill = mapPiAssistantMessageThinkingBackfill(event.message);
+      if (backfill?.length) {
+        ops = ops?.length ? [...ops, ...backfill] : backfill;
+      }
     }
+    if (ops?.some((op) => op.op === 'assistant_thinking')) {
+      thinkingStreamed = true;
+    }
+    applyOps(ops);
   });
 
   try {
@@ -123,5 +141,5 @@ export async function processPiSessionStream(
   }
 
   if (abortSignal?.aborted) finishedOk = false;
-  return { finishedOk, turnUsage };
+  return { finishedOk, turnUsage, lastError };
 }

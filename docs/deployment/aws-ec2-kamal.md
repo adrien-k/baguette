@@ -4,14 +4,14 @@ This guide provisions a single Ubuntu EC2 instance with Route 53 DNS and [acme.s
 
 ## What the stack creates
 
-| Resource                       | Purpose                                                                                |
-| ------------------------------ | -------------------------------------------------------------------------------------- |
-| EC2 (Ubuntu 24.04)             | Kamal deploy target; Docker installed; `/home/ubuntu/baguette_storage` for app data    |
-| Elastic IP                     | Stable public IP; `www.<DOMAIN>` and `*.<DOMAIN>` point here                           |
-| Security group                 | TCP 22 (Kamal/CI), 80, 443                                                             |
-| IAM instance role              | Route 53 `dns_aws` (list zones, change records on `HostedZoneId`); SSM Session Manager |
-| Route 53 A records             | `www.<DOMAIN>` and `*.<DOMAIN>` → Elastic IP                                           |
-| acme.sh + `~/acme.sh/renew.sh` | Wildcard cert; CI renews before each deploy                                            |
+| Resource                       | Purpose                                                                                                                                                                                                |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| EC2 (Ubuntu 24.04)             | Kamal deploy target; Docker installed; root volume (`/dev/sda1`) holds `/home/ubuntu/baguette_storage` (SQLite DB, repos, worktrees) and is kept when the instance is replaced or the stack is deleted |
+| Elastic IP                     | Stable public IP; `<DOMAIN>` and `*.<DOMAIN>` point here (www.<DOMAIN> resolves via the wildcard)                                                                                                      |
+| Security group                 | TCP 22 (Kamal/CI), 80, 443                                                                                                                                                                             |
+| IAM instance role              | Route 53 `dns_aws` (list zones, change records on `HostedZoneId`); SSM Session Manager; KMS grant for the SSM agent data key (`alias/aws/ssm` plus optional `SsmKmsKeyArn`)                            |
+| Route 53 A records             | `<DOMAIN>` (apex) and `*.<DOMAIN>` (wildcard, covers www) → Elastic IP                                                                                                                                 |
+| acme.sh + `~/acme.sh/renew.sh` | Wildcard cert; CI renews before each deploy                                                                                                                                                            |
 
 Template: [`infra/aws/cloudformation/baguette-kamal.yaml`](../../infra/aws/cloudformation/baguette-kamal.yaml) (instance bootstrap: [`userdata.sh`](../../infra/aws/cloudformation/userdata.sh))
 
@@ -66,7 +66,7 @@ aws ec2 describe-subnets --filters Name=map-public-ip-on-launch,Values=true \
 
 Other commands: `update`, `delete`, `outputs`, `status`, `bootstrap-logs`, `render`. Override `STACK_NAME`, `AWS_REGION`, `PARAMETERS_FILE`, or `TAGS_FILE` as needed.
 
-Stack creation waits for bootstrap (Docker, acme.sh, first certificate) and fails if that script fails (up to 25 minutes). `create` uses `--disable-rollback` so a failed instance is left running for inspection. Fetch the log with `./infra/aws/provision-stack.sh bootstrap-logs`, then `delete` when you are done. The instance appears in **Systems Manager → Fleet Manager** once SSM registration completes (usually a few minutes after boot).
+Stack creation waits for bootstrap (Docker, acme.sh, first certificate) and fails if that script fails (up to 25 minutes); on failure the stack rolls back and its resources are removed — check `bootstrap-logs` output or the stack events for the cause. The instance appears in **Systems Manager → Fleet Manager** once SSM registration completes (usually a few minutes after boot).
 
 ### Manual CloudFormation (optional)
 
@@ -79,8 +79,7 @@ aws cloudformation create-stack \
   --template-body file:///tmp/baguette-kamal.yaml \
   --parameters file://infra/aws/parameters.json \
   --tags file://infra/aws/tags.json \
-  --capabilities CAPABILITY_IAM \
-  --disable-rollback
+  --capabilities CAPABILITY_IAM
 ```
 
 ## GitHub Actions configuration
@@ -91,14 +90,14 @@ When the stack completes, print values to copy into the fork:
 ./infra/aws/provision-stack.sh outputs
 ```
 
-That prints each GitHub Actions variable on its own line (`DEPLOY_SERVER=www.<DOMAIN>`, `DOMAIN=<DOMAIN>`). `DEPLOY_USER` is omitted — Kamal and the workflow default to `ubuntu`.
+That prints the required `DOMAIN` variable, the `SSH_PRIVATE_KEY` secret with the SSM commands to fetch it, and the instance/IP values for later. `DEPLOY_USER` is omitted — Kamal and the workflow default to `ubuntu`.
 
 ### Variables (Settings → Secrets and variables → Actions → **Variables**)
 
-| Variable        | Source                                      |
-| --------------- | ------------------------------------------- |
-| `DEPLOY_SERVER` | `www.<DOMAIN>` (resolves to the Elastic IP) |
-| `DOMAIN`        | Stack parameter `DomainName`                |
+| Variable        | Source                                                                                                         |
+| --------------- | -------------------------------------------------------------------------------------------------------------- |
+| `DOMAIN`        | Stack parameter `DomainName` (required)                                                                        |
+| `DEPLOY_SERVER` | Optional. Defaults to `DOMAIN` (deploy SSH uses the apex record); set `www.<DOMAIN>` or a raw IP if you prefer |
 
 ### Secrets (**Secrets** tab)
 
@@ -141,17 +140,90 @@ Run the **Deploy** workflow from GitHub Actions (see [kamal.md §5.2](kamal.md#5
 - **TLS renewal**: Handled on each deploy via `renew.sh` (see deploy workflow). Redeploy if the cert ages out between releases.
 - **Admin shell**: `aws ssm start-session --target <InstanceId> --region <region>` (output `SsmStartSessionCommand`). Switch to `ubuntu` with `sudo su - ubuntu` if needed.
 - **Resize instance / disk**: Update `parameters.json`, run `./infra/aws/provision-stack.sh update` (disk size increases may require OS steps).
-- **Teardown**: `./infra/aws/provision-stack.sh delete` — deletes the instance, EIP, and Route 53 records created by the stack.
+- **Install updates**: Most changes apply via `./infra/aws/provision-stack.sh update`; updates roll back automatically on failure. Changes that replace the instance (e.g. a new subnet) follow [Recreating the EC2 instance](#recreating-the-ec2-instance).
+- **Teardown**: `./infra/aws/provision-stack.sh delete` — deletes the instance, EIP, and Route 53 records the stack created. The root volume has `DeleteOnTermination: false` and is left behind on purpose (delete it in the console when you are done recovering data).
+
+## App data and instance replacement
+
+`baguette_storage` (SQLite database, cloned repos, worktrees) lives on the root volume (`/dev/sda1`) with `DeleteOnTermination: false`:
+
+- **Terminating or replacing the instance** (a replacement update, or stack teardown) detaches and keeps the volume instead of deleting it. Delete such retained volumes by hand once you no longer need the data.
+- **A replaced instance boots a fresh root volume from the AMI** — the data does not follow automatically. Restore it from the retained old volume (or a snapshot) as shown in the next section.
+
+Two things other than the volume itself do **not** carry over automatically when the stack is recreated (a plain in-place replacement via `update` keeps the stack, and with it the EIP):
+
+- **The Elastic IP** is a stack resource: recreating the stack allocates a new IP, and the Route 53 records the stack manages follow it automatically (TTL 300 — plan for bounded DNS-propagation downtime).
+- **The deploy SSH key** is generated per instance at bootstrap: [re-fetch `SSH_PRIVATE_KEY`](#fetch-ssh_private_key-with-ssm) and update the GitHub secret after any replacement.
+
+`ENCRYPTION_KEY` and the `AUTH_GITHUB_*` secrets are legacy — kept for backward compatibility with deployments configured before the in-app wizard; new installs do not need them (the first boot generates the encryption key into `baguette_storage`). If you set `ENCRYPTION_KEY`, keep it unchanged across replacements: the restored SQLite data is encrypted with it.
+
+### Backups
+
+Snapshots take a moment and are crash-consistent; for guaranteed consistency, stop the Baguette containers for the snapshot (`docker stop $(docker ps --format '{{.Names}}' | grep '^baguette')`, restart them after the snapshot completes):
+
+```bash
+INSTANCE_ID=$(aws cloudformation describe-stack-resource --stack-name baguette-kamal \
+  --logical-resource-id BaguetteInstance --query 'StackResourceDetail.PhysicalResourceId' --output text)
+VOL=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" \
+  --query 'Reservations[0].Instances[0].BlockDeviceMappings[?DeviceName==`/dev/sda1`].Ebs.VolumeId' --output text)
+aws ec2 create-snapshot --volume-id "$VOL" --description "baguette storage snapshot"
+aws ec2 wait snapshot-completed --snapshot-ids <id>
+```
+
+## Recreating the EC2 instance
+
+Some updates require CloudFormation to **replace** the EC2 instance (stop + terminate + recreate) — for example moving the instance to a different subnet by changing `SubnetId`. The replacement boots a fresh root volume from the AMI; the old one is detached and kept (`DeleteOnTermination: false`), so nothing is lost:
+
+1. **Note the current root volume id** before the update (this is what you restore from):
+
+   ```bash
+   REGION=us-east-1
+   OLD_INSTANCE_ID=$(aws cloudformation describe-stack-resource --stack-name baguette-kamal \
+     --logical-resource-id BaguetteInstance --query 'StackResourceDetail.PhysicalResourceId' --output text)
+   OLD_VOL=$(aws ec2 describe-instances --instance-ids "$OLD_INSTANCE_ID" --region "$REGION" \
+     --query 'Reservations[0].Instances[0].BlockDeviceMappings[?DeviceName==`/dev/sda1`].Ebs.VolumeId' --output text)
+   ```
+
+2. Update `parameters.json` with the change (for the subnet example: point `SubnetId` at the target subnet — its VPC must match `VpcId`), then:
+
+   ```bash
+   ./infra/aws/provision-stack.sh update
+   ```
+
+   The instance is replaced in place (no delete + recreate needed — the EIP and Route 53 records stay). When it completes, [re-fetch `SSH_PRIVATE_KEY`](#fetch-ssh_private_key-with-ssm) and run the Deploy workflow.
+
+3. **Optional — restore app data** from the retained volume onto the fresh instance (skip for a fresh start):
+
+   ```bash
+   INSTANCE_ID=$(aws cloudformation describe-stack-resource --stack-name baguette-kamal \
+     --logical-resource-id BaguetteInstance --query 'StackResourceDetail.PhysicalResourceId' --output text)
+   aws ec2 attach-volume --volume-id "$OLD_VOL" --instance-id "$INSTANCE_ID" --device /dev/sdi --region "$REGION"
+   aws ssm start-session --target "$INSTANCE_ID"        # then on the instance:
+   #   sudo mkdir -p /mnt/restore && sudo mount -o ro /dev/xvdi /mnt/restore
+   #   sudo docker stop $(sudo docker ps --format '{{.Names}}' | grep '^baguette')
+   #   sudo rsync -aHAX --delete /mnt/restore/ /home/ubuntu/baguette_storage/
+   #   sudo umount /mnt/restore
+   #   sudo docker start $(sudo docker ps -a --format '{{.Names}}' | grep '^baguette')
+   #   exit
+   aws ec2 detach-volume --volume-id "$OLD_VOL" --region "$REGION"
+   ```
+
+   The old volume mounts read-only and is detached afterwards — keep it or snapshot it as a backup before deleting. Verify the UI afterwards (session list intact).
 
 ## Troubleshooting
 
-| Symptom                                    | Check                                                                                                                                                                                              |
-| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Stack stuck / instance running but no cert | `./infra/aws/provision-stack.sh bootstrap-logs` (or `sudo tail -f /var/log/cloud-init-output.log`); run `/home/ubuntu/acme.sh/renew.sh` as `ubuntu`                                                |
-| acme.sh install / WaitCondition FAILURE    | Installer must run in `/home/ubuntu` (it writes `master.tar.gz` to cwd). `bootstrap-logs` reads the instance id from the stack resource, not outputs (outputs only exist after `CREATE_COMPLETE`). |
-| SSM target not connected                   | Instance has public egress; IAM role includes `AmazonSSMManagedInstanceCore`; wait a few minutes after boot                                                                                        |
-| acme DNS errors                            | `HostedZoneId` matches the zone for `DomainName`; role allows `route53:ListHostedZones` plus record changes on that zone                                                                           |
-| Deploy SSH fails                           | `SSH_PRIVATE_KEY` is the deploy key from SSM; security group allows SSH from GitHub Actions (`SshIngressCidr`)                                                                                     |
-| 502 / proxy errors                         | First deploy still running; ensure `www` and wildcard DNS resolve to the Elastic IP (`dig www.<DOMAIN>`)                                                                                           |
+| Symptom                                                                    | Check                                                                                                                                                                                                                                                                                                                                                     |
+| -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Stack stuck / instance running but no cert                                 | `./infra/aws/provision-stack.sh bootstrap-logs` (or `sudo tail -f /var/log/cloud-init-output.log`); run `/home/ubuntu/acme.sh/renew.sh` as `ubuntu`                                                                                                                                                                                                       |
+| acme.sh install / WaitCondition FAILURE                                    | Installer must run in `/home/ubuntu` (it writes `master.tar.gz` to cwd). `bootstrap-logs` reads the instance id from the stack resource, not outputs (outputs only exist after `CREATE_COMPLETE`).                                                                                                                                                        |
+| SSM target not connected                                                   | Instance has public egress; IAM role includes `AmazonSSMManagedInstanceCore`; wait a few minutes after boot                                                                                                                                                                                                                                               |
+| SSM handshake fails: `Fetching data key failed … kms:Decrypt AccessDenied` | The account encrypts the SSM agent data key with a KMS key (Session Manager preferences or SSM default host management configuration). Update the stack with the `SsmKmsKeyArn` parameter set to that key's ARN (the account's `aws/ssm` alias is granted by default), or turn off the KMS encryption in the SSM console (Session Manager → Preferences). |
+| acme DNS errors                                                            | `HostedZoneId` matches the zone for `DomainName`; role allows `route53:ListHostedZones` plus record changes on that zone                                                                                                                                                                                                                                  |
+| Deploy SSH fails                                                           | `SSH_PRIVATE_KEY` is the deploy key from SSM; security group allows SSH from GitHub Actions (`SshIngressCidr`)                                                                                                                                                                                                                                            |
+| 502 / proxy errors                                                         | First deploy still running; ensure apex and wildcard DNS resolve to the Elastic IP (`dig www.<DOMAIN>` — wildcard covers www)                                                                                                                                                                                                                             |
 
 For provider-agnostic Kamal steps (GitHub App, env vars, local deploy), see [kamal.md](kamal.md).
+
+```
+
+```

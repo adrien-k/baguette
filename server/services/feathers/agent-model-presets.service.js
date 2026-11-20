@@ -10,6 +10,30 @@ import {
 
 class AgentModelPresetsService extends KnexService {}
 
+const FLAG_FIELDS = ['enabled', 'for_subagents', 'for_new_sessions'];
+
+/**
+ * Accept booleans or 0/1 numbers for the flag columns (SQLite stores 0/1);
+ * anything else is a client bug and gets rejected instead of silently flipped.
+ */
+function coerceFlag(value, field) {
+  if (typeof value === 'boolean') return value ? 1 : 0;
+  if (value === 0 || value === 1) return value;
+  throw new BadRequest(`${field} must be a boolean`);
+}
+
+function applyFlagDefaults(data) {
+  for (const field of FLAG_FIELDS) {
+    if (data[field] === undefined) data[field] = 1;
+  }
+}
+
+function coerceFlagFields(data) {
+  for (const field of FLAG_FIELDS) {
+    if (data[field] !== undefined) data[field] = coerceFlag(data[field], field);
+  }
+}
+
 function validatePresetFields(data) {
   const description = data.description != null ? String(data.description).trim() : '';
   if (!description) throw new BadRequest('description is required');
@@ -49,6 +73,9 @@ async function attachAgentSdkToResult(context) {
       ...row,
       agent_sdk: config?.sdk ?? null,
       model_params: coerceModelParams(row.model_params),
+      enabled: Boolean(row.enabled),
+      for_subagents: Boolean(row.for_subagents),
+      for_new_sessions: Boolean(row.for_new_sessions),
     };
   };
 
@@ -64,6 +91,8 @@ async function attachAgentSdkToResult(context) {
 
 async function beforeCreate(context) {
   validatePresetFields(context.data);
+  applyFlagDefaults(context.data);
+  coerceFlagFields(context.data);
   return context;
 }
 
@@ -81,6 +110,7 @@ async function beforePatch(context) {
   if (context.data.agent_config_id !== undefined) {
     await assertOwnedConfig(context);
   }
+  coerceFlagFields(context.data);
   context.data.updated_at = new Date().toISOString();
   return context;
 }
@@ -112,7 +142,15 @@ async function beforeRemove(context) {
   return context;
 }
 
-const PATCH_FIELDS = ['description', 'agent_config_id', 'model', 'model_params'];
+const PATCH_FIELDS = [
+  'description',
+  'agent_config_id',
+  'model',
+  'model_params',
+  'enabled',
+  'for_subagents',
+  'for_new_sessions',
+];
 
 export function registerAgentModelPresetsService(app, path = 'agent-model-presets') {
   const options = {

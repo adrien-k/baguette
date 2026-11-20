@@ -1,8 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Copy, ExternalLink, GitBranch, Pencil, CircleHelp } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { isGlobalSession } from '@baguette/shared/session-scope.js';
-import { sessionsService } from '../../feathers.js';
+import {
+  findSessionImagePlaceholders,
+  hasSessionImagePlaceholders,
+  interpolateSessionImagePlaceholders,
+  localSessionImageUrl,
+} from '@baguette/shared/session-images.js';
+import { sessionsService, sessionImagesService } from '../../feathers.js';
 import { toastError } from '../../utils/toastError.jsx';
 import CardRepoBadge from '../../components/CardRepoBadge.jsx';
 import CollapsibleMarkdown from '../../components/chat/CollapsibleMarkdown.tsx';
@@ -18,6 +24,7 @@ import McpSessionServers from '../../components/McpSessionServers.jsx';
 import { useCurrentUser } from '../../context/CurrentUserContext.jsx';
 import { isSessionOwner } from '@baguette/shared/session-sharing.js';
 import Toggle from '../../components/Toggle.jsx';
+import SubscriptionCard from '../../components/SubscriptionCard.jsx';
 
 const SECTION_HEADING_CLASS = 'text-xs font-medium uppercase tracking-wide text-faint';
 
@@ -213,6 +220,33 @@ export default function DetailsView({ session, readonly, onSessionUpdate }) {
   const [saving, setSaving] = useState(false);
   const [usage, setUsage] = useState(null);
   const [usageLoading, setUsageLoading] = useState(false);
+  const rawPrDescription = session?.pr_description?.trim() ?? '';
+  const [imageRows, setImageRows] = useState(null);
+
+  // Uploaded images are referenced by `{{image:<id>}}` placeholders in the
+  // description; resolve them for display (Details renders the public image
+  // URL while the GitHub body shows the attached asset).
+  useEffect(() => {
+    if (!session?.id || !hasSessionImagePlaceholders(rawPrDescription)) {
+      setImageRows(null);
+      return undefined;
+    }
+    let cancelled = false;
+    sessionImagesService
+      .find({ query: { session_id: session.id, $limit: 200 } })
+      .then((data) => {
+        if (!cancelled) setImageRows(Array.isArray(data) ? data : (data?.data ?? []));
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setImageRows(null);
+          toastError('Failed to load session images', err);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.id, rawPrDescription]);
 
   useEffect(() => {
     setTitle(session?.label ?? '');
@@ -271,12 +305,28 @@ export default function DetailsView({ session, readonly, onSessionUpdate }) {
     setEditingTitle(false);
   };
 
-  const prDescription = session?.pr_description?.trim();
+  const prDescription = useMemo(() => {
+    if (!rawPrDescription) return rawPrDescription;
+    if (!hasSessionImagePlaceholders(rawPrDescription)) return rawPrDescription;
+    const bySlug = new Set(findSessionImagePlaceholders(rawPrDescription));
+    const rowsById = new Map();
+    for (const row of imageRows ?? []) {
+      if (bySlug.has(row.image_slug)) rowsById.set(row.image_slug, row);
+    }
+    return interpolateSessionImagePlaceholders(rawPrDescription, (imageSlug) => {
+      const row = rowsById.get(imageSlug);
+      if (!row) return null;
+      return {
+        url: row.github_url || localSessionImageUrl(row, window.location.origin),
+        alt_text: row.alt_text,
+      };
+    });
+  }, [rawPrDescription, imageRows]);
   const hasPr = !!(session?.pr_url || session?.pr_number != null);
   const showCost = usage?.breakdown?.some((row) => row.cost_usd > 0);
 
   return (
-    <div className="flex-1 min-h-0 overflow-auto bg-page p-4 sm:p-6">
+    <div className="flex-1 min-h-0 overflow-auto bg-page p-4 pb-16 sm:p-6 sm:pb-20">
       <div className={`${SESSION_CONTENT_MAX_WIDTH_CLASS} space-y-4`}>
         <DetailsCard label="Description">
           <div className="space-y-3">
@@ -488,6 +538,12 @@ export default function DetailsView({ session, readonly, onSessionUpdate }) {
             </>
           )}
         </DetailsCard>
+
+        <SubscriptionCard
+          session={session}
+          locked={settingsLocked}
+          onSessionUpdate={onSessionUpdate}
+        />
       </div>
     </div>
   );

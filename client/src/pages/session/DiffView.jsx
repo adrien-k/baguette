@@ -31,10 +31,37 @@ import { SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
 import { toastFeathersError } from '../../utils/toastError.jsx';
 import { mergeFailureToastLabel } from '../../utils/mergeSessionErrors.js';
 import { diffFileDisplayPath, diffFileScrollId } from '../../utils/paths.js';
+import { filterDiffFiles } from '../../utils/fileFilters.js';
 const DIFF_CONTENT_MAX_WIDTH_CLASS = 'w-full max-w-5xl mx-auto';
 import { DIFF_FILE_BODY_CLASS, DIFF_LINE_WRAP_CLASS } from '../../utils/diffLineWrap.js';
 import { useCurrentUser } from '../../context/CurrentUserContext.jsx';
 import { isSessionOwner } from '@baguette/shared/session-sharing.js';
+
+/** File-by-file selector options: filtered files, keeping an explicit selection visible. */
+function buildFileSelectorOptions(changedFiles, selectedFile) {
+  const options = changedFiles.length > 0 ? changedFiles : [];
+  if (selectedFile && !options.some((f) => diffFileDisplayPath(f) === selectedFile)) {
+    return [{ oldPath: selectedFile, newPath: selectedFile }, ...options];
+  }
+  return options;
+}
+
+function diffFilesSummaryLabel({
+  fileByFile,
+  changedFilesLoading,
+  visibleChangedCount,
+  selectorCount,
+  visibleCount,
+  totalCount,
+  filtersActive,
+}) {
+  if (fileByFile) {
+    if (changedFilesLoading && visibleChangedCount === 0) return 'Showing current file';
+    return `Showing 1 of ${visibleChangedCount || selectorCount} changed files`;
+  }
+  if (filtersActive) return `Showing ${visibleCount} of ${totalCount} changed files`;
+  return `${totalCount} file${totalCount !== 1 ? 's' : ''} changed`;
+}
 
 const DIFF_HUNK_ROW = 'text-info bg-info/10';
 const DIFF_HUNK_NUM = 'text-info/70';
@@ -536,6 +563,7 @@ export default function DiffView({
   onAgentConfigChange,
   cursorModelPrefs,
   onCursorModelPrefChange,
+  fileFilters = null,
 }) {
   const { currentUser } = useCurrentUser();
   const canManageSession = isSessionOwner(session, currentUser);
@@ -615,6 +643,10 @@ export default function DiffView({
   const hasDiff = diff && diff.trim().length > 0;
   const hasPr = !!session?.pr_number;
   const files = hasDiff ? parseDiff(diff) : [];
+  const compiledFileFilters = fileFilters?.compiled ?? null;
+  const filtersActive = Boolean(compiledFileFilters?.active);
+  const visibleFiles = filterDiffFiles(files, compiledFileFilters);
+  const visibleChangedFiles = filterDiffFiles(changedFiles, compiledFileFilters);
 
   useEffect(() => {
     if (fileByFile || !scrollToFile || loading) return;
@@ -709,12 +741,9 @@ export default function DiffView({
       </div>
     ) : null;
 
-  const fileSelectorOptions =
-    fileByFile && changedFiles.length > 0
-      ? changedFiles
-      : fileByFile && selectedFile
-        ? [{ oldPath: selectedFile, newPath: selectedFile }]
-        : [];
+  const fileSelectorOptions = fileByFile
+    ? buildFileSelectorOptions(visibleChangedFiles, selectedFile)
+    : [];
   const fileSelector =
     fileByFile && onSelectedFileChange && fileSelectorOptions.length > 0 ? (
       <div className="shrink-0 px-3 sm:px-4 py-2 border-b border-line/60 bg-inset/30">
@@ -802,11 +831,15 @@ export default function DiffView({
               {/* Header: file count + view mode toggle */}
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-xs text-faint">
-                  {fileByFile
-                    ? changedFilesLoading && changedFiles.length === 0
-                      ? 'Showing current file'
-                      : `Showing 1 of ${changedFiles.length || fileSelectorOptions.length} changed files`
-                    : `${files.length} file${files.length !== 1 ? 's' : ''} changed`}
+                  {diffFilesSummaryLabel({
+                    fileByFile,
+                    changedFilesLoading,
+                    visibleChangedCount: visibleChangedFiles.length,
+                    selectorCount: fileSelectorOptions.length,
+                    visibleCount: visibleFiles.length,
+                    totalCount: files.length,
+                    filtersActive,
+                  })}
                   {canComment && (
                     <span className="text-faint">
                       {' '}
@@ -849,8 +882,22 @@ export default function DiffView({
                   </button>
                 </div>
               </div>
+              {filtersActive && visibleFiles.length === 0 && files.length > 0 && (
+                <div className="flex flex-col items-center justify-center gap-2 text-faint text-sm py-10">
+                  <p>No files match the current filters.</p>
+                  {typeof fileFilters?.clear === 'function' && (
+                    <button
+                      type="button"
+                      onClick={fileFilters.clear}
+                      className="text-xs text-accent hover:underline"
+                    >
+                      Clear filters
+                    </button>
+                  )}
+                </div>
+              )}
               {/* Per-file diffs */}
-              {files.map((file) => (
+              {visibleFiles.map((file) => (
                 <FileDiff
                   key={diffFileDisplayPath(file)}
                   file={file}

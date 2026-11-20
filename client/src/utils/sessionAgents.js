@@ -1,4 +1,13 @@
+import {
+  agentAccessibleTitle,
+  agentDisplayTitle,
+  agentNameMatchesType,
+  agentTypeLabel,
+} from '../../../shared/agent-display-title.js';
+
 /** @typedef {{ id: number; ref?: number; name?: string; agent_type?: string; status?: string; is_primary?: number | boolean }} SessionAgentSummary */
+
+export { agentAccessibleTitle, agentNameMatchesType, agentDisplayTitle };
 
 function agentRefPrefix(agent) {
   if (agent?.ref == null) return '';
@@ -32,43 +41,6 @@ export function reviewerFromSession(session) {
   return null;
 }
 
-function agentTypeLabel(agentType) {
-  if (agentType === 'reviewer') return 'Reviewer';
-  if (agentType === 'subagent') return 'Subagent';
-  return 'Builder';
-}
-
-/** True when stored name is just the default type label (e.g. "Builder" / "builder"). */
-export function agentNameMatchesType(name, agentType) {
-  if (!name || !agentType) return false;
-  const normalized = name.trim().toLowerCase();
-  const type = agentType.trim().toLowerCase();
-  const label = agentTypeLabel(agentType).toLowerCase();
-  return normalized === type || normalized === label;
-}
-
-/** Default name for a secondary builder from the first words of the user's prompt. */
-export function agentTitleFromPrompt(prompt, maxWords = 4) {
-  const words = String(prompt ?? '')
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
-  if (!words.length) return 'Builder';
-  const title = words.slice(0, maxWords).join(' ');
-  const maxLen = 120;
-  if (title.length <= maxLen) return title;
-  return `${title.slice(0, maxLen - 1)}…`;
-}
-
-/** Primary label for lists and composer chrome. */
-export function agentDisplayTitle(agent) {
-  if (!agent) return 'Agent';
-  const typeLabel = agentTypeLabel(agent.agent_type);
-  if (agentNameMatchesType(agent.name, agent.agent_type)) return typeLabel;
-  const name = agent.name?.trim();
-  return name || typeLabel;
-}
-
 /** Menu row label when switching agents. */
 export function agentMenuOptionLabel(agent) {
   const typeLabel = agentTypeLabel(agent.agent_type);
@@ -97,6 +69,18 @@ export function isPrimaryAgent(agent) {
   return Boolean(agent && Number(agent.is_primary) === 1);
 }
 
+/**
+ * The session-list caret must not hide other agents while one of them is the
+ * open chat — collapsing would drop the selected row out of the tree.
+ * @param {SessionAgentSummary[]} agents
+ * @param {number | string | null | undefined} currentAgentId
+ */
+export function isAgentTreeCollapseLocked(agents, currentAgentId) {
+  if (currentAgentId == null || currentAgentId === '') return false;
+  const selected = (agents ?? []).find((agent) => Number(agent.id) === Number(currentAgentId));
+  return Boolean(selected && !isPrimaryAgent(selected));
+}
+
 /** Stable list order for agents panel and switchers (ref ascending, then id). */
 export function sortSessionAgentsByRefAsc(agents) {
   return [...agents].sort((a, b) => {
@@ -107,9 +91,55 @@ export function sortSessionAgentsByRefAsc(agents) {
   });
 }
 
+/**
+ * Last-activity timestamp in ms (`updated_at` — bumped on every agent patch).
+ * Returns 0 when unknown so timed agents sort ahead; SQLite CURRENT_TIMESTAMP
+ * values ("YYYY-MM-DD HH:MM:SS", UTC) are normalized to ISO before parsing.
+ */
+function agentLastActivityMs(agent) {
+  const raw = agent?.updated_at;
+  if (!raw) return 0;
+  const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(raw) ? `${raw}Z` : raw;
+  const ms = Date.parse(normalized);
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+/**
+ * Most recent activity first. Stable sort: ties and agents without a
+ * timestamp keep their input order (feed it ref-ascending for a stable,
+ * creation-ordered fallback).
+ */
+export function sortSessionAgentsByLastActivityDesc(agents) {
+  return [...agents].sort((a, b) => agentLastActivityMs(b) - agentLastActivityMs(a));
+}
+
 /** MCP StartSubagent agents (`agent_type` subagent). */
 export function isSubagentBuilder(agent) {
   return agent?.agent_type === 'subagent';
+}
+
+/**
+ * Extra builder started from the composer (not the session primary, not an MCP subagent).
+ * These are the only agents whose title can be renamed in the session list.
+ */
+export function isSecondaryBuilder(agent) {
+  return agent?.agent_type === 'builder' && !isPrimaryAgent(agent);
+}
+
+/** Primary or secondary builder — shares the session worktree (not subagent/reviewer). */
+function isComposerBuilderAgent(agent) {
+  return agent?.agent_type === 'builder';
+}
+
+/** Git sync / merge / push footer on builder chats only (primary and secondary). */
+export function showSessionChatFooterExtrasForAgent(activeAgent) {
+  if (!activeAgent) return true;
+  return isComposerBuilderAgent(activeAgent);
+}
+
+/** Session reviewer row (`agent_type` reviewer) — managed from the review UI, not editable. */
+export function isReviewerAgent(agent) {
+  return agent?.agent_type === 'reviewer';
 }
 
 /** Agent turn finished or idle — safe to remove (server also enforces). */
@@ -143,6 +173,66 @@ export function isAnyAgentAwaitingUser(session) {
   return session.status === 'approval' || session.review_status === 'approval';
 }
 
+/** Realtime fields on session DTO `agents` summaries and agents-service rows. */
+const AGENT_REALTIME_SYNC_KEYS = [
+  'status',
+  'active_turn_id',
+  'updated_at',
+  'name',
+  'error_message',
+  'agent_config_id',
+  'agent_sdk',
+  'model',
+  'parent_agent_id',
+];
+
+/**
+ * Overlay turn/status fields from session `agents` (SSE-merged on the detail query) onto
+ * the dedicated agents-service list when the embed row is strictly newer (`updated_at`).
+ * Stale session GET/patch snapshots must not clobber a fresher agents-service row.
+ * @param {SessionAgentSummary[]} agents
+ * @param {SessionAgentSummary[] | null | undefined} embedded
+ * @returns {SessionAgentSummary[]}
+ */
+export function mergeAgentsWithSessionEmbeds(agents, embedded) {
+  if (!Array.isArray(agents) || !agents.length) return agents ?? [];
+  if (!Array.isArray(embedded) || !embedded.length) return agents;
+  const byId = new Map(embedded.map((row) => [row.id, row]));
+  let anyChange = false;
+  const next = agents.map((agent) => {
+    const summary = byId.get(agent.id);
+    if (!summary) return agent;
+    const embedMs = agentLastActivityMs(summary);
+    const agentMs = agentLastActivityMs(agent);
+    if (embedMs === 0 || embedMs <= agentMs) return agent;
+    const overlay = {};
+    for (const key of AGENT_REALTIME_SYNC_KEYS) {
+      if (summary[key] !== undefined && summary[key] !== agent[key]) {
+        overlay[key] = summary[key];
+      }
+    }
+    if (!Object.keys(overlay).length) return agent;
+    anyChange = true;
+    return { ...agent, ...overlay };
+  });
+  return anyChange ? next : agents;
+}
+
+/** Merge defined fields from an agents-service event into an existing row. */
+export function mergeAgentServicePatch(existing, patch) {
+  if (!existing || !patch?.id) return existing;
+  const merged = { ...existing };
+  let changed = false;
+  for (const [key, value] of Object.entries(patch)) {
+    if (key === 'session_id' || value === undefined) continue;
+    if (merged[key] !== value) {
+      merged[key] = value;
+      changed = true;
+    }
+  }
+  return changed ? merged : existing;
+}
+
 /** Merge a realtime `agents` service patch into a session DTO (embedded `agents` list). */
 export function applyAgentPatchToSession(session, agent) {
   if (!session?.id || !agent?.session_id || session.id !== agent.session_id) {
@@ -150,14 +240,24 @@ export function applyAgentPatchToSession(session, agent) {
   }
   const agents = Array.isArray(session.agents) ? [...session.agents] : [];
   const agentIdx = agents.findIndex((a) => a.id === agent.id);
-  const summary = {
-    id: agent.id,
-    ref: agent.ref,
-    name: agent.name,
-    agent_type: agent.agent_type,
-    status: agent.status,
-    is_primary: agent.is_primary,
-  };
+  // Defined fields only, so partial patches do not clobber embedded tree fields.
+  const summary = {};
+  for (const key of [
+    'id',
+    'ref',
+    'name',
+    'agent_type',
+    'status',
+    'is_primary',
+    // Sidebar agent-list fields (provider icon, model label).
+    'agent_config_id',
+    'agent_sdk',
+    'model',
+    'parent_agent_id',
+    'updated_at',
+  ]) {
+    if (agent[key] !== undefined) summary[key] = agent[key];
+  }
   if (agentIdx >= 0) agents[agentIdx] = { ...agents[agentIdx], ...summary };
   else agents.push(summary);
   const reviewer = agents.find((a) => a.agent_type === 'reviewer');
@@ -172,6 +272,12 @@ export function applyAgentPatchToSession(session, agent) {
 export function activeAgentsRunningLabel(count) {
   if (count === 1) return '1 agent running';
   return `${count} agents running`;
+}
+
+/** Label for agents still running besides the currently selected one. */
+export function otherAgentsRunningLabel(count) {
+  if (count === 1) return '1 other agent running';
+  return `${count} other agents running`;
 }
 
 /**

@@ -3,25 +3,22 @@
 # Prerequisites:
 #   - Optional .env (PUBLIC_HOST is set below). No required secrets.
 #   - Optional BOOTSTRAP_PASSWORD for the first visitor on a public host (env-only).
-#   - Persist the volume below (`DATA_DIR=/data`) across restarts.
+#   - Persist the volume below (`DATA_DIR=/data/baguette`) across restarts.
 #
 # Run:
 #   docker compose -f docker-compose.local.yml up --build
 #
-# Open http://localhost:3000
+# Open http://www.127.0.0.1.traefik.me:3000
 
 services:
   baguette:
     build: .
     ports:
       - '3000:3000'
-    env_file:
-      - .env
     environment:
       NODE_ENV: production
+      PUBLIC_HOST: http://www.127.0.0.1.traefik.me:3000
       PORT: 3000
-      PUBLIC_HOST: http://localhost:3000
-      DATA_DIR: /data
     volumes:
       - baguette-local-data:/data
       - /var/run/docker.sock:/var/run/docker.sock

@@ -1,7 +1,14 @@
 #!/usr/bin/env node
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import knex from 'knex';
 import knexfile from '../knexfile.js';
-import { seedInstanceSettings } from '../server/lib/instance-settings.js';
+import { resolveServerDir, packageRoot } from '../lib/paths.js';
+
+const serverDir = resolveServerDir(packageRoot());
+const { seedInstanceSettings } = await import(
+  pathToFileURL(path.join(serverDir, 'lib/instance-settings.js')).href
+);
 
 const db = knex(knexfile);
 let failed = false;

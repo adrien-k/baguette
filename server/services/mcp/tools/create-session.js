@@ -1,11 +1,14 @@
 import { z } from 'zod';
+import logger from '../../../logger.js';
 import { stringifyModelParamsForStorage } from '../../../../shared/agent-session-defaults.js';
+import { isGlobalSession } from '../../../../shared/session-scope.js';
 import { getSdkPlugin } from '../../../agent-sdks/registry.js';
 import { ensureBuiltInSdkPluginsRegistered } from '../../../agent-sdks/ensure-builtins-registered.js';
 import { loadModelsForSdk } from '../../baguette-models-for-user.js';
 import { loadOwnedAgentConfig } from '../../agent-config-resolver.js';
 import { normalizeSubagentDefaultMode } from '../../../../shared/subagent-default-mode.js';
 import { resolveMcpBuilderModel } from '../../agent-mcp-model-resolver.js';
+import { getPrimaryBuilderAgent, insertAgentObserver } from '../../agents-db.js';
 import {
   agentCreatedModelClause,
   agentCreatedModelSchemaFields,
@@ -43,12 +46,23 @@ function createSessionDescription(mode) {
     'Create a new Baguette agent session (same fields as the dashboard form). Use ListBranches for base_branch. ' +
     `${agentCreatedModelClause(mode, 'session')} ` +
     'For follow-up work and stacked PRs, pass `branch` (or base_branch) set to the parent session `remote_branch` from CurrentSessionInfo so the new session branches off that head (create_new_branch defaults to true). ' +
-    'Pass is_global to start a global session from the shared repos folder (omit base_branch and repo_id when is_global).'
+    'Pass is_global to start a global session from the shared repos folder (omit base_branch and repo_id when is_global). ' +
+    'For orchestration: pass notify_parent: true to get a wake-up message each time the new session’s builder turn finishes (completed/failed) or waits for user input — then end your turn instead of blocking. ' +
+    'Only global sessions may observe the sessions they create; a repo session must create children without notify_parent.'
   );
 }
 
 export function createCreateSessionTool(ctx) {
-  const { app, userId, userParams, user, requireRepoAccess, loadRepoWithKeys, callerSession } = ctx;
+  const {
+    app,
+    userId,
+    userParams,
+    user,
+    requireRepoAccess,
+    loadRepoWithKeys,
+    callerSession,
+    callerAgent,
+  } = ctx;
   const mode = normalizeSubagentDefaultMode(user?.subagent_default_mode);
   // Callers (e.g. Slack) may supply their own model resolution for when no default is configured.
   const resolveBuilderModel = ctx.resolveBuilderModel ?? resolveMcpBuilderModel;
@@ -88,6 +102,12 @@ export function createCreateSessionTool(ctx) {
         .boolean()
         .optional()
         .describe('When true, every authenticated user on this instance can open the session'),
+      notify_parent: z
+        .boolean()
+        .optional()
+        .describe(
+          'When true, subscribe this agent to the new session’s turn-end notifications (wake-up messages on completed/failed turns and on approval). Only global sessions may observe the sessions they create — a repo session must pass false. Prefer ending your turn right after creating; use UnwatchSession to stop notifications.'
+        ),
     },
     handler: async ({
       repo_id,
@@ -104,9 +124,21 @@ export function createCreateSessionTool(ctx) {
       auto_push = true,
       plugins,
       is_shared,
+      notify_parent = false,
     }) => {
       if (!is_global && repo_id == null) {
         return fail('repo_id is required unless is_global is true');
+      }
+      if (notify_parent && (callerSession?.id == null || callerAgent?.id == null)) {
+        return fail(
+          'notify_parent requires an in-session agent (caller session and agent); external MCP callers cannot receive wake-ups.'
+        );
+      }
+      if (notify_parent && !isGlobalSession(callerSession)) {
+        return fail(
+          'Only global sessions can observe the sessions they create — a repo session cannot watch its children. ' +
+            'Create the session without notify_parent, or run the orchestration from a global session.'
+        );
       }
       let resolvedBaseBranch = base_branch;
       if (!is_global) {
@@ -208,11 +240,36 @@ export function createCreateSessionTool(ctx) {
           ...(ctx.initialMessageMeta ? { initialMessageMeta: ctx.initialMessageMeta } : {}),
           ...(ctx.initialLabel ? { initialLabel: ctx.initialLabel } : {}),
         });
+        const message = `Session created: /sessions/${session.id}`;
+        if (notify_parent) {
+          // Atomic spawn+watch: insert the caller's observer row right after create so
+          // the session's first turn can never finish before the subscription exists.
+          try {
+            const db = app.get('db');
+            const observed = await getPrimaryBuilderAgent(db, session.id);
+            if (observed) {
+              await insertAgentObserver(db, {
+                agentId: observed.id,
+                observerAgentId: callerAgent.id,
+              });
+            }
+          } catch (err) {
+            logger.warn(
+              { sessionId: session.id, callerAgentId: callerAgent?.id, err: err?.message },
+              'Failed to insert CreateSession notify_parent observer row'
+            );
+            return ok({
+              sessionId: session.id,
+              sessionPath: `/sessions/${session.id}`,
+              message: `${message} Warning: turn-end notifications could not be armed (re-arm with WatchSession).`,
+            });
+          }
+        }
         await continueInSlackThread(app, callerSession?.id, session.id);
         return ok({
           sessionId: session.id,
           sessionPath: `/sessions/${session.id}`,
-          message: `Session created: /sessions/${session.id}`,
+          message,
         });
       } catch (err) {
         return fail(err.message);

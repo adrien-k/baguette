@@ -6,6 +6,7 @@ const SCHEDULE_TABS = [
   { value: 'interval', label: 'Interval' },
   { value: 'daily', label: 'Daily' },
   { value: 'weekly', label: 'Weekly' },
+  { value: 'manual', label: 'Manually' },
 ];
 
 /**
@@ -39,7 +40,11 @@ export default function LoopScheduleFields({ schedule, onChange, disabled = fals
         ))}
       </div>
 
-      {schedule.schedule_type === 'interval' ? (
+      {schedule.schedule_type === 'manual' ? (
+        <p className={`text-xs ${TEXT_FAINT}`}>
+          Runs only when you click Run now — nothing is scheduled automatically.
+        </p>
+      ) : schedule.schedule_type === 'interval' ? (
         <select
           value={schedule.interval_minutes}
           disabled={disabled}

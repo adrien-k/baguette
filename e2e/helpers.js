@@ -1,7 +1,10 @@
-import { mkdir } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { execFile } from 'node:child_process';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { expect } from '@playwright/test';
+import { titleFromPrompt } from '../shared/agent-naming.js';
 import { E2E_THEME, e2eThemeSuffix } from './fixtures.js';
 import {
   MOCK_ALT_PRIMARY_MODEL_ID,
@@ -37,6 +40,127 @@ export {
 
 export function localRepoName() {
   return `e2e-mock-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+const execFileAsync = promisify(execFile);
+
+async function runGit(cwd, args) {
+  const { stdout } = await execFileAsync('git', args, {
+    cwd: cwd ?? undefined,
+    maxBuffer: 10 * 1024 * 1024,
+  });
+  return stdout.trim();
+}
+
+/**
+ * Local repo upgraded to "GitHub mode" against a real local bare origin, so the
+ * GitPush approval e2e can push for real without any GitHub network:
+ *
+ * - the bare origin is seeded FROM the main clone (`master` plus a
+ *   `development` branch at the same commit), so session branches and the
+ *   `development` target share history and pushes are fast-forwards
+ * - the main clone tracks the bare as `origin`
+ * - the repos row flips to `access_mode: 'github'` with that origin (GitPush
+ *   tool, auto-push and the Push modal all take the github path)
+ *
+ * Pushes run `git push` with a fake token; the auth extraheader is scoped to
+ * `http.https://github.com/` so it never reaches the plain-path origin.
+ * Returns `{ repoId, repoName, originPath }`.
+ */
+export async function seedGitPushOriginRepo(page, repoName = localRepoName()) {
+  const repoId = await createLocalRepo(page, repoName);
+
+  const dataDir = dirname(E2E_DB_PATH);
+  const { default: Database } = await import('better-sqlite3');
+  const db = new Database(E2E_DB_PATH, { timeout: 10_000, fileMustExist: true });
+  let repoRow;
+  try {
+    repoRow = db.prepare('SELECT repo_path, default_branch FROM repos WHERE id = ?').get(repoId);
+  } finally {
+    db.close();
+  }
+  expect(repoRow?.repo_path).toBeTruthy();
+  const mainCloneDir = join(dataDir, repoRow.repo_path);
+  const baseBranch = repoRow.default_branch || 'master';
+
+  const originDir = join(dataDir, 'gitpush-origins');
+  const originPath = join(originDir, `${repoName}.git`);
+  await mkdir(originDir, { recursive: true });
+  await runGit(null, ['init', '--bare', '-b', baseBranch, originPath]);
+  await runGit(mainCloneDir, ['remote', 'add', 'origin', originPath]);
+  // Seed the bare from the main clone: master as-is, development from the same
+  // commit so the modal's HEAD:development push is always a fast-forward.
+  await runGit(mainCloneDir, ['push', '-q', 'origin', baseBranch]);
+  await runGit(mainCloneDir, ['push', '-q', 'origin', `${baseBranch}:development`]);
+  await runGit(mainCloneDir, ['fetch', 'origin']);
+
+  const dbWrite = new Database(E2E_DB_PATH, { timeout: 10_000, fileMustExist: true });
+  try {
+    dbWrite
+      .prepare("UPDATE repos SET origin = ?, access_mode = 'github' WHERE id = ?")
+      .run(originPath, repoId);
+  } finally {
+    dbWrite.close();
+  }
+
+  return { repoId, repoName, originPath };
+}
+
+/** Resolve a git ref to its full sha (e2e push verification). */
+export async function gitSha(cwd, ref) {
+  return runGit(cwd, ['rev-parse', ref]);
+}
+
+/** `refs/heads/<branch>` on a bare or local origin (e2e push verification). */
+export async function gitRemoteBranchSha(originPath, branch) {
+  return runGit(originPath, ['rev-parse', '--verify', `refs/heads/${branch}`]);
+}
+
+/** Main clone directory for a local repo (where `.baguette.yaml` is stored). */
+export async function e2eRepoMainClonePath(repoId) {
+  const dataDir = dirname(E2E_DB_PATH);
+  const { default: Database } = await import('better-sqlite3');
+  const db = new Database(E2E_DB_PATH, { timeout: 10_000, fileMustExist: true });
+  let repoRow;
+  try {
+    repoRow = db.prepare('SELECT repo_path FROM repos WHERE id = ?').get(repoId);
+  } finally {
+    db.close();
+  }
+  expect(repoRow?.repo_path).toBeTruthy();
+  return join(dataDir, repoRow.repo_path);
+}
+
+/** Write `.baguette.yaml` on the repo main clone and commit so session worktrees see it. */
+export async function writeE2eRepoBaguetteYaml(repoId, config) {
+  const yaml = await import('js-yaml');
+  const mainCloneDir = await e2eRepoMainClonePath(repoId);
+  const text = yaml.dump({ config }, { lineWidth: -1 });
+  await writeFile(join(mainCloneDir, '.baguette.yaml'), text, 'utf8');
+  await runGit(mainCloneDir, ['add', '.baguette.yaml']);
+  await runGit(mainCloneDir, [
+    '-c',
+    'user.email=e2e@baguette.dev',
+    '-c',
+    'user.name=E2E',
+    'commit',
+    '-m',
+    'e2e: baguette config',
+  ]);
+}
+
+/** Read a session's worktree path from the webServer sqlite. */
+export async function e2eSessionWorktreePath(sessionId) {
+  const { default: Database } = await import('better-sqlite3');
+  const db = new Database(E2E_DB_PATH, { timeout: 10_000, fileMustExist: true });
+  let row;
+  try {
+    row = db.prepare('SELECT session_path FROM sessions WHERE id = ?').get(sessionId);
+  } finally {
+    db.close();
+  }
+  expect(row?.session_path).toBeTruthy();
+  return join(dirname(E2E_DB_PATH), row.session_path);
 }
 
 /**
@@ -148,55 +272,70 @@ async function waitForSessionProvisioningDone(page) {
 
 export async function expectMockQuickTurnComplete(page) {
   await waitForSessionProvisioningDone(page);
-  await openSessionAgentsPanel(page);
-  const main = page.locator('li').filter({ hasText: 'Main' });
-  await expect(main.getByText(/Completed|Stopped/i)).toBeVisible({ timeout: 120_000 });
   await page.getByRole('button', { name: 'Chat', exact: true }).click();
-  await expect(page.getByText(MOCK_E2E_QUICK_TURN_SUMMARY)).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(MOCK_E2E_QUICK_TURN_SUMMARY)).toBeVisible({ timeout: 120_000 });
 }
 
-/** Open the session side panel Agents tab (`?panel=agents`). */
-export async function openSessionAgentsPanel(page) {
-  const url = new URL(page.url());
-  url.searchParams.set('panel', 'agents');
-  await page.goto(url.toString());
-  await expect(page.getByRole('button', { name: 'Agents', exact: true })).toBeVisible({
-    timeout: 30_000,
-  });
+/** Sidebar agent-tree row for an agent by its exact displayed title. */
+export function sessionAgentTreeRow(page, name) {
+  return page
+    .locator('[data-testid="agent-tree-row"]')
+    .filter({ has: page.getByText(name, { exact: true }) });
 }
 
-export async function ensureSidePanelVisible(page) {
-  const agentsTab = page.getByRole('button', { name: 'Agents', exact: true });
-  if (await agentsTab.isVisible()) return;
-  await page.getByTitle('Show side panel').click();
-  await expect(agentsTab).toBeVisible({ timeout: 15_000 });
+/**
+ * Open an agent's chat from the sidebar agent tree. Skips the disclosure caret
+ * (always the first button on the builder row) so the row's name button is clicked.
+ */
+export async function selectAgentInTree(page, name) {
+  const row = sessionAgentTreeRow(page, name);
+  await expect(row).toBeVisible({ timeout: 30_000 });
+  await row.locator('button:not([data-testid="agent-tree-toggle"])').first().click();
+}
+
+/** Wait until no agent with `name` is running (API poll — the tree only shows a spinner while running). */
+export async function waitForAgentNotRunning(page, name, timeout = 120_000) {
+  await expect
+    .poll(
+      async () => {
+        const agents = await listSessionAgentsForPage(page);
+        return agents.filter((a) => a.name === name && a.status === 'running').length;
+      },
+      { timeout, intervalMs: 1_000 }
+    )
+    .toBe(0);
+}
+
+/** Open **Start subagent** from the composer Send (Schedule) menu; composer text must already be set. */
+export async function openStartSubagentModalFromComposer(page) {
+  await page.getByTitle('Schedule', { exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Start subagent' }).click();
+  await expect(page.getByRole('heading', { name: 'Start subagent' })).toBeVisible();
+}
+
+export async function confirmStartSubagentModal(page) {
+  await page.getByRole('button', { name: 'Start subagent' }).click();
 }
 
 /**
  * Create an extra builder from the composer's Send menu ("Start subagent").
  *
- * The agent is named from the prompt's first four words, so `name` must be at most four
- * words. The prompt sent to it appends the quick mock prompt so its first turn is fast;
- * the helper waits for that turn to complete before returning (the composer targets the
- * new builder meanwhile).
+ * The start-subagent modal prefills the label from the prompt's first four words, so
+ * `name` must be at most four words. The prompt sent to it appends the quick mock prompt
+ * so its first turn is fast; the helper confirms the modal and waits for that turn to
+ * complete before returning (the composer targets the new builder meanwhile).
  */
 export async function addManualBuilderAgent(page, name) {
-  await ensureSidePanelVisible(page);
-  await openSessionAgentsPanel(page);
+  // The modal prefills the label from the prompt's first four words — resolve the stored name.
+  const storedName = titleFromPrompt(`${name} ${MOCK_E2E_QUICK_TURN_PROMPT}`);
   const composer = await sessionChatComposer(page);
   await composer.fill(`${name} ${MOCK_E2E_QUICK_TURN_PROMPT}`);
-  await page.getByTitle('Schedule', { exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Start subagent' }).click();
-  const row = page.locator('li').filter({ hasText: name });
+  await openStartSubagentModalFromComposer(page);
+  await confirmStartSubagentModal(page);
+  const row = sessionAgentTreeRow(page, storedName);
   await expect(row).toBeVisible({ timeout: 30_000 });
-  await expect(row.getByText(/Completed/i)).toBeVisible({ timeout: 120_000 });
-}
-
-export async function selectAgentInPanel(page, name) {
-  await openSessionAgentsPanel(page);
-  const row = page.locator('li').filter({ hasText: name });
-  await expect(row).toBeVisible({ timeout: 30_000 });
-  await row.locator('button').first().click();
+  await waitForAgentNotRunning(page, storedName);
+  return storedName;
 }
 
 export async function sessionChatComposer(page) {
@@ -273,6 +412,21 @@ export async function openComposerAgentSwitcher(page) {
   return dialog;
 }
 
+/** Select an agent through the composer switcher (works even when it has no tree row). */
+export async function selectAgentViaComposer(page, name) {
+  const chatTab = page.getByRole('button', { name: 'Chat', exact: true });
+  if (await chatTab.isVisible()) await chatTab.click();
+  const dialog = await openComposerAgentSwitcher(page);
+  // Option label: "[#{ref} ]{name}[ ({type})][ (${cost})]".
+  const pattern = new RegExp(`^(?:#\\d+ )?${escapeRegExp(name)}(?: \(.*\))?$`);
+  await dialog.getByRole('button', { name: pattern }).click();
+  await expect(dialog).toHaveCount(0, { timeout: 15_000 });
+}
+
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 /**
  * While a turn is active on one agent and another is idle, open the composer
  * switcher and assert Running / Idle section headings (retries until the menu
@@ -324,11 +478,140 @@ export async function saveE2eScreenshot(page, fileName, options = {}) {
   return path;
 }
 
-const E2E_DB_PATH = join(
-  fileURLToPath(new URL('..', import.meta.url)),
-  '.data-e2e',
-  'baguette.sqlite3'
-);
+/** Screenshot a single locator (e.g. a panel or list) under `e2e/screenshots/`. */
+export async function saveE2eLocatorScreenshot(locator, fileName, options = {}) {
+  const path = process.env.E2E_SCREENSHOT_PATH
+    ? withE2eThemeSuffix(process.env.E2E_SCREENSHOT_PATH)
+    : saveE2eScreenshotPath(fileName);
+  await mkdir(dirname(path), { recursive: true });
+  await locator.screenshot({ path, ...options });
+  return path;
+}
+
+const E2E_DATA_DIR = join(fileURLToPath(new URL('..', import.meta.url)), '.data-e2e');
+const E2E_DB_PATH = join(E2E_DATA_DIR, 'baguette.sqlite3');
+
+/** Numeric session id from a session route segment (`/sessions/<id>` uses DB id). */
+export async function e2eNumericSessionId(routeId) {
+  const { default: Database } = await import('better-sqlite3');
+  const db = new Database(E2E_DB_PATH, { timeout: 10_000, fileMustExist: true });
+  try {
+    const asNumber = Number(routeId);
+    if (Number.isFinite(asNumber)) {
+      const byId = db.prepare('SELECT id FROM sessions WHERE id = ?').get(asNumber);
+      if (byId?.id) return byId.id;
+    }
+    const byShort = db.prepare('SELECT id FROM sessions WHERE short_id = ?').get(routeId);
+    expect(byShort?.id).toBeTruthy();
+    return byShort.id;
+  } finally {
+    db.close();
+  }
+}
+
+/** Persist a session plan row (mock CreatePlan only streams UI — does not write the DB). */
+export async function seedE2eSessionPlan(page, { markdown } = {}) {
+  const { MOCK_E2E_PLAN_MARKDOWN } = await import('../shared/mock-agent-sdk.js');
+  const routeId = parseSessionIdFromUrl(page.url());
+  const sessionId = await e2eNumericSessionId(routeId);
+  const res = await page.request.post('/api/session-plans', {
+    data: {
+      session_id: sessionId,
+      markdown: markdown ?? MOCK_E2E_PLAN_MARKDOWN,
+    },
+  });
+  expect(res.ok()).toBe(true);
+  return res.json();
+}
+
+/** Insert an MCP-styled user row for UI tests (matches CreateSessionMessage storage). */
+export async function seedE2eMcpUserMessage({ targetSessionId, content, mcpSender }) {
+  const { buildMcpUserMessageJson } =
+    await import('../server/services/mcp/lib/session-resolution.js');
+  const message_json = buildMcpUserMessageJson(content, mcpSender);
+  const { default: Database } = await import('better-sqlite3');
+  const db = new Database(E2E_DB_PATH, { timeout: 10_000, fileMustExist: true });
+  try {
+    const agent = db
+      .prepare('SELECT id, agent_sdk, model FROM agents WHERE session_id = ? AND is_primary = 1')
+      .get(targetSessionId);
+    expect(agent?.id).toBeTruthy();
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO session_messages (session_id, agent_id, type, subtype, message_json, agent_sdk, model, created_at)
+       VALUES (?, ?, 'user', 'mcp', ?, ?, ?, ?)`
+    ).run(
+      targetSessionId,
+      agent.id,
+      message_json,
+      agent.agent_sdk ?? 'mock',
+      agent.model ?? 'mock',
+      now
+    );
+  } finally {
+    db.close();
+  }
+}
+
+/** Session row fields for MCP sender links (label, repo, global). */
+export async function e2eSessionRow(sessionId) {
+  const { default: Database } = await import('better-sqlite3');
+  const db = new Database(E2E_DB_PATH, { timeout: 10_000, fileMustExist: true });
+  try {
+    return db
+      .prepare('SELECT id, short_id, label, repo_id, is_global FROM sessions WHERE id = ?')
+      .get(sessionId);
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Absolute session worktree path from the webServer sqlite. `sessions.session_path`
+ * is stored relative to DATA_DIR (mirroring server/config.js resolution); older rows
+ * may hold absolute paths.
+ */
+export async function getE2eSessionWorktreePath(sessionId) {
+  const { default: Database } = await import('better-sqlite3');
+  const db = new Database(E2E_DB_PATH, { timeout: 10_000, fileMustExist: true });
+  let sessionPath = null;
+  try {
+    const row = db.prepare('SELECT session_path FROM sessions WHERE id = ?').get(sessionId);
+    sessionPath = row?.session_path ?? null;
+  } finally {
+    db.close();
+  }
+  if (!sessionPath) return null;
+  if (isAbsolute(sessionPath)) return sessionPath;
+  return join(E2E_DATA_DIR, sessionPath);
+}
+
+/**
+ * Write files into a session worktree and commit them (dev e2e only). The mock
+ * agent leaves files untracked, which `git diff` does not report — a commit makes
+ * them show up in the Files panel and Diff view like real agent work.
+ * Returns the new HEAD short sha.
+ */
+export async function commitWorktreeFiles(worktreePath, files, message = 'Add sample files') {
+  for (const [relPath, content] of Object.entries(files)) {
+    const absPath = join(worktreePath, relPath);
+    await mkdir(dirname(absPath), { recursive: true });
+    await writeFile(absPath, content, 'utf8');
+  }
+  const git = (...args) => execFileAsync('git', ['-C', worktreePath, ...args], { stdio: 'pipe' });
+  await git('add', '-A');
+  await git(
+    '-c',
+    'user.name=Baguette E2E',
+    '-c',
+    'user.email=e2e@baguette.local',
+    'commit',
+    '-m',
+    message
+  );
+  const head = await git('rev-parse', '--short', 'HEAD');
+  return head.stdout.trim();
+}
 
 /** Set `users.color_scheme` directly in the webServer sqlite (theme runs). */
 export async function setE2eUserColorScheme(userId, scheme) {
@@ -467,25 +750,21 @@ export async function seedE2eUsageDashboard(page) {
 }
 
 async function waitForPrimaryBuilderIdle(page) {
-  await openSessionAgentsPanel(page);
-  const main = page.locator('li').filter({ hasText: 'Main' });
-  await expect(main.getByText(/Completed|Stopped/i)).toBeVisible({ timeout: 120_000 });
+  await waitForAgentNotRunning(page, 'Builder');
 }
 
 /** Primary builder MCP subagent phrase; waits for a new summary line and subagent row. */
 export async function sendSubagentPromptAndWait(page) {
   await waitForPrimaryBuilderIdle(page);
-  await selectAgentInPanel(page, 'Main');
   const summaryLocator = page.getByText(MOCK_E2E_SUBAGENT_SUMMARY);
   const summariesBefore = await summaryLocator.count();
   await sendSessionChatMessage(page, MOCK_E2E_SUBAGENT_PROMPT);
   await expect
     .poll(async () => summaryLocator.count(), { timeout: 120_000 })
     .toBeGreaterThan(summariesBefore);
-  await openSessionAgentsPanel(page);
-  const row = page.locator('li').filter({ hasText: MOCK_E2E_SUBAGENT_NAME }).last();
+  await waitForAgentNotRunning(page, MOCK_E2E_SUBAGENT_NAME);
+  const row = sessionAgentTreeRow(page, MOCK_E2E_SUBAGENT_NAME);
   await expect(row).toBeVisible({ timeout: 120_000 });
-  await expect(row.getByText(/Completed/i)).toBeVisible({ timeout: 120_000 });
 }
 
 export async function expectMcpReadonlyComposer(page) {
@@ -500,16 +779,23 @@ export async function expectMcpReadonlyComposer(page) {
   });
 }
 
-export async function deleteAgentFromPanel(page, name) {
-  await openSessionAgentsPanel(page);
-  const row = page.locator('li').filter({ hasText: name });
-  await row.getByTitle('Delete agent').click();
-  const modal = page.locator('.fixed.inset-0').filter({
-    has: page.getByRole('heading', { name: 'Delete agent?' }),
-  });
-  await expect(modal).toBeVisible();
-  await modal.getByRole('button', { name: 'Delete agent', exact: true }).click();
-  await expect(row).toHaveCount(0, { timeout: 30_000 });
+/**
+ * Delete every agent named `name` in the current session via the API — the
+ * list UI no longer exposes delete (test hygiene between same-name spawns).
+ */
+export async function deleteAgentViaApi(page, name) {
+  const agents = await listSessionAgentsForPage(page);
+  const matches = agents.filter((a) => a.name === name);
+  for (const agent of matches) {
+    const res = await page.request.delete(`/api/agents/${agent.id}`);
+    expect(res.ok()).toBe(true);
+  }
+  await expect
+    .poll(async () => {
+      const remaining = (await listSessionAgentsForPage(page)).filter((a) => a.name === name);
+      return remaining.length;
+    })
+    .toBe(0);
 }
 
 export async function listAgentConfigs(page) {

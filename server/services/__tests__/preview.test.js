@@ -6,7 +6,7 @@ import { describe, it, expect, vi } from 'vitest';
 
 // Set env before importing modules that read it at load time
 process.env.ENCRYPTION_KEY = 'test-encryption-key-at-least-32-chars-long!!';
-process.env.PUBLIC_API_HOST = 'https://preview.example.com';
+process.env.PUBLIC_HOST = 'https://preview.example.com';
 
 const {
   signProxyToken,

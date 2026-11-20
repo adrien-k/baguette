@@ -19,6 +19,7 @@ import { resolveDataDirRelativePath } from '../../config.js';
 import { buildBaguetteToolList, buildReviewerAgentTools } from '../../services/mcp/server.js';
 import { loadConfiguredSlackApps } from '../../services/mcp/lib/slack.js';
 import { toolListToPiCustomTools } from './adapt-tools.js';
+import { createSpillOversizedToolResultsExtension } from './extensions/spill-oversized-tool-results.ts';
 import { buildSystemPromptAppend } from '../../services/session-prompt.js';
 import { processPiSessionStream, type PiTurnUsage } from './sdk-turn.ts';
 import { piTurnResultOps } from './mapping.ts';
@@ -39,6 +40,12 @@ import {
   rejectTurnMismatch,
 } from '../../services/agent-message-dispatch.js';
 import { createMessageStreamWriter } from '../../services/message-writer-factory.ts';
+import {
+  prepareAgentTurnCompaction,
+  registerBaguetteToolMessageCompactionHook,
+  unregisterBaguetteToolMessageCompactionHook,
+} from '../../services/agent-turn-compaction.js';
+import { prepareAgentTurnStart } from '../../services/agent-turn-prelude.js';
 import { sessionMessageIdentity } from '../../services/feathers/message-create-fields.js';
 import type { MessageStreamWriter } from '../../../shared/message-stream-writer.ts';
 import type { SystemMessagePayload } from '../../../shared/session-messages.ts';
@@ -63,6 +70,7 @@ import {
   resolveAgentRowForMessage,
 } from '../../services/agents-db.js';
 import { patchAgentInternal } from '../../services/feathers/agents.service.js';
+import { METADATA_TIMEOUT_MS } from '../../services/session-metadata.js';
 import {
   clearAgentActiveTurnId,
   setAgentActiveTurnId,
@@ -71,7 +79,6 @@ import {
 } from '../../services/agent-turn-patch.js';
 
 const PI_METADATA_MODEL_ID = 'claude-haiku-4-5';
-const METADATA_TIMEOUT_MS = 30_000;
 
 type PiSessionState = {
   isProcessing: boolean;
@@ -147,7 +154,7 @@ export class PiAgentService {
         ...session,
         absolute_session_path: absoluteCwd,
       },
-      { agent, db: this.app.get('db') as never, agentSdk: PI_AGENT_SDK_KEY }
+      { agent, db: this.app.get('db') as never, app: this.app, agentSdk: PI_AGENT_SDK_KEY }
     );
     return systemPrompt ? [systemPrompt] : [];
   }
@@ -159,8 +166,12 @@ export class PiAgentService {
     if (sessionsDir) await mkdir(sessionsDir, { recursive: true });
   }
 
-  _openSessionManager(session: AgentSessionRow, storedPiSessionId?: string | null): SessionManager {
-    const cwd = piWorktreeCwd(session);
+  _openSessionManager(
+    session: AgentSessionRow,
+    storedPiSessionId?: string | null,
+    agent: AgentRow | null = null
+  ): SessionManager {
+    const cwd = piWorktreeCwd(session, agent);
     const sessionsDir = piSessionsDir(session) ?? undefined;
     if (storedPiSessionId && sessionsDir) {
       const sessionFile = SessionManager.findById(cwd, storedPiSessionId, sessionsDir);
@@ -194,7 +205,7 @@ export class PiAgentService {
     } = {}
   ): Promise<PiBuildAgentOptionsResult> {
     await this._ensurePiDirs(session);
-    const cwd = piWorktreeCwd(session);
+    const cwd = piWorktreeCwd(session, agent);
     const agentDir = piAgentDir(session) ?? undefined;
     const configId = requireAgentConfigId(agentConfigId);
     const agentConfig = await this.loadAgentConfig(session.user_id, configId);
@@ -223,7 +234,10 @@ export class PiAgentService {
       // MCP" and examples/sdk/14-codemode-mcp.ts). The extension's own default
       // loader reads only the global pi agent dir, so it must point at this
       // session's mcp.json (written above from the enabled user MCP servers).
-      extensionFactories: [createMcpExtension({ loadConfig: () => readPiUserMcpConfig(agentDir) })],
+      extensionFactories: [
+        createMcpExtension({ loadConfig: () => readPiUserMcpConfig(agentDir) }),
+        createSpillOversizedToolResultsExtension(session.id),
+      ],
     });
     await resourceLoader.reload();
     const resolvedTools =
@@ -234,7 +248,7 @@ export class PiAgentService {
           agent,
         })
       );
-    const sessionManager = this._openSessionManager(session, storedPiSessionId);
+    const sessionManager = this._openSessionManager(session, storedPiSessionId, agent);
     const options: PiBuildAgentOptionsResult = {
       cwd,
       agentDir,
@@ -392,6 +406,7 @@ export class PiAgentService {
   }): Promise<{
     outcome: 'completed' | 'failed' | 'stopped';
     turnUsage?: PiTurnUsage;
+    error_message?: string | null;
   }> {
     const key = activeKey ?? session.id;
     const controller = abortController ?? new AbortController();
@@ -414,7 +429,7 @@ export class PiAgentService {
       });
       sessionState.piSession = piSession;
       streamStarted = true;
-      const { finishedOk, turnUsage } = await processPiSessionStream({
+      const { finishedOk, turnUsage, lastError } = await processPiSessionStream({
         writer,
         subscribe: (listener) =>
           piSession.subscribe((event) => {
@@ -425,8 +440,15 @@ export class PiAgentService {
         },
         abortSignal: controller.signal,
       });
-      outcome = finishedOk ? 'completed' : 'failed';
-      return { outcome, turnUsage };
+      if (finishedOk) {
+        outcome = 'completed';
+      } else if (controller.signal.aborted) {
+        // Deliberate stop (Stop button, agents.stop): the turn was aborted, not failed.
+        outcome = 'stopped';
+      } else {
+        outcome = 'failed';
+      }
+      return { outcome, turnUsage, error_message: lastError };
     } catch (err) {
       if ((err as Error).name !== 'AbortError') {
         logger.error(
@@ -451,7 +473,11 @@ export class PiAgentService {
       } else {
         outcome = 'stopped';
       }
-      return { outcome, turnUsage: emptyTurnUsage() };
+      return {
+        outcome,
+        turnUsage: emptyTurnUsage(),
+        error_message: (err as Error).name === 'AbortError' ? null : (err as Error).message,
+      };
     } finally {
       if (!streamStarted) {
         try {
@@ -524,6 +550,13 @@ export class PiAgentService {
         requiresModelParamsOnTurn: getSdkPlugin('pi')?.requiresModelParamsOnTurn === true,
       });
       const turnAgentConfigId = requireAgentConfigId(row.agent_config_id);
+      await prepareAgentTurnStart(this.app, session, agent, {
+        channel,
+        agentSdk: PI_AGENT_SDK_KEY,
+      });
+      registerBaguetteToolMessageCompactionHook(sessionId, () =>
+        prepareAgentTurnCompaction(this.app, session)
+      );
       writer =
         turnId != null
           ? createMessageStreamWriter(this.app, {
@@ -587,7 +620,7 @@ export class PiAgentService {
         throw new Error('pi-agent: missing turn writer');
       }
 
-      const { outcome, turnUsage } = await this.runTurn({
+      const { outcome, turnUsage, error_message } = await this.runTurn({
         session,
         userText,
         agentOptions,
@@ -626,9 +659,14 @@ export class PiAgentService {
       } else if (outcome === 'failed' && channel === 'review') {
         await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'failed', {
           sdk: 'pi',
+          error_message,
         });
       } else if (outcome === 'failed' && channel !== 'review' && !awaitingUser) {
-        await setAgentTurnTerminal(this.app, agent, userId, 'failed');
+        await setAgentTurnTerminal(this.app, agent, userId, 'failed', { error_message });
+      } else if (outcome === 'stopped' && channel !== 'review') {
+        // Mirror Claude: the aborter usually patches 'stopped' itself; this keeps the
+        // agent from staying 'running' if the turn is aborted by any other path.
+        await setAgentTurnTerminal(this.app, agent, userId, 'stopped');
       }
     } catch (err) {
       awaitingUser = Boolean(sessionState.endTurnAwaitingUser);
@@ -639,21 +677,16 @@ export class PiAgentService {
           if (channel === 'review') {
             await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'failed', {
               sdk: 'pi',
+              error_message: (err as Error).message,
             });
-            await getReviewAgentTurn(this.app)._persistStatus(session, (err as Error).message);
           } else {
-            await setAgentTurnTerminal(this.app, agent, userId, 'failed');
             if (writer) {
               await this._recordPiTurnError(writer, (err as Error).message);
-            } else {
-              await this._persistStatusMessage(
-                sessionId,
-                userId,
-                (err as Error).message,
-                session,
-                channel,
-                agent.id
-              );
+            }
+            await setAgentTurnTerminal(this.app, agent, userId, 'failed', {
+              error_message: (err as Error).message,
+            });
+            if (!writer) {
               this.app.service('sessions').emit('app:error', {
                 sessionId,
                 message: (err as Error).message,
@@ -668,6 +701,7 @@ export class PiAgentService {
         turnFinishedOk = true;
       }
     } finally {
+      unregisterBaguetteToolMessageCompactionHook(sessionId);
       await clearAgentActiveTurnId(this.app, agent, userId).catch(() => {});
       this._activeSessions.delete(activeKey);
     }
@@ -763,31 +797,28 @@ export class PiAgentService {
     return this.getActiveSession(id);
   }
 
-  async generateSessionMetadata(
-    initialPrompt: string,
-    shortId = '',
-    user: { id?: number } | null = null,
-    _repo: { id?: number | null } | null = null,
-    session: Pick<AgentSessionRow, 'model' | 'model_params' | 'agent_config_id'> | null = null
-  ): Promise<{ label: string; branchName: string }> {
-    const fallbackBranch = `task-${shortId}`;
-    const prompt = `Generate metadata for a coding task. Output ONLY a JSON object with no markdown or explanation:
-- "label": very short label (max 50 chars) summarizing the task
-- "branch": short kebab-case git branch name suffixed with "-${shortId}" (e.g. "fix-auth-token-${shortId}"), max 60 chars
-
-Task: ${initialPrompt}`;
-
-    let label = '';
-    let branchName = fallbackBranch;
-
-    const config = user?.id ? await this.loadAgentConfig(user.id, session?.agent_config_id) : null;
+  /**
+   * One-shot completion: send a prompt, return the raw response text.
+   * Must resolve within METADATA_TIMEOUT_MS and abort its own session on timeout —
+   * callers treat '' as "no completion" and fall back to defaults.
+   */
+  async completeText(
+    prompt: string,
+    opts: {
+      userId?: number | null;
+      agentConfigId?: number | null;
+      model?: string | null;
+    } = {}
+  ): Promise<string> {
+    const config =
+      opts.userId != null ? await this.loadAgentConfig(opts.userId, opts.agentConfigId) : null;
     const { apiKey, envVar } = resolvePiCredentials(config);
     if (!apiKey) {
-      return { label, branchName };
+      return '';
     }
 
     const modelRuntime = await createPiModelRuntime(apiKey, envVar);
-    const modelId = session?.model || PI_METADATA_MODEL_ID;
+    const modelId = opts.model || PI_METADATA_MODEL_ID;
 
     const cwd = process.cwd();
     const agentDir = undefined;
@@ -816,7 +847,7 @@ Task: ${initialPrompt}`;
         config,
       });
     } catch {
-      return { label, branchName };
+      return '';
     }
 
     let collectedText = '';
@@ -839,14 +870,11 @@ Task: ${initialPrompt}`;
       await Promise.race([
         consume,
         new Promise<void>((_, reject) => {
-          timer = setTimeout(
-            () => reject(new Error('Metadata generation timed out')),
-            METADATA_TIMEOUT_MS
-          );
+          timer = setTimeout(() => reject(new Error('Completion timed out')), METADATA_TIMEOUT_MS);
         }),
       ]);
     } catch {
-      // fall back to defaults
+      // fall back to an empty completion
     } finally {
       if (timer) clearTimeout(timer);
       unsubscribe();
@@ -857,25 +885,7 @@ Task: ${initialPrompt}`;
       }
     }
 
-    const text = collectedText.trim();
-    if (text) {
-      try {
-        const jsonText = text
-          .replace(/^```(?:json)?\n?/, '')
-          .replace(/\n?```$/, '')
-          .trim();
-        const parsed = JSON.parse(jsonText) as { label?: string; branch?: string };
-        label = (parsed.label || '').slice(0, 80);
-        branchName = (parsed.branch || fallbackBranch)
-          .replace(/[^a-z0-9-]/g, '-')
-          .replace(/-+/g, '-')
-          .slice(0, 60);
-      } catch {
-        label = text.slice(0, 80);
-      }
-    }
-
-    return { label, branchName };
+    return collectedText.trim();
   }
 
   /**
@@ -910,7 +920,7 @@ export function registerPiAgentService(app: AgentApp, path = PI_AGENT_SERVICE_PA
       'stopTurn',
       'runTurn',
       'buildAgentOptions',
-      'generateSessionMetadata',
+      'completeText',
       'prepareTiedSessionLoopCompaction',
       'handleMessageCreated',
       'isInterruptedSessionResumable',

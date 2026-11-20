@@ -210,7 +210,10 @@ describe('CursorAgentService turn context', () => {
       expect(app.get('reviewAgentTurn').onAgentTurnComplete).toHaveBeenCalledWith(
         expect.objectContaining({ id: 1 }),
         'failed',
-        { sdk: 'cursor' }
+        expect.objectContaining({
+          sdk: 'cursor',
+          error_message: expect.any(String),
+        })
       );
     });
   });

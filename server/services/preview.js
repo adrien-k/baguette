@@ -1,5 +1,6 @@
 import crypto from 'crypto';
-import { ENCRYPTION_KEY, PUBLIC_API_URL } from '../config.js';
+import { ENCRYPTION_KEY } from '../config.js';
+import { resolveSessionSubdomainPublicUrl } from '../lib/public-host.js';
 
 const TTL_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -43,14 +44,14 @@ export function buildSessionHostname(base, suffix) {
 
 /** Returns the preview subdomain URL for a session (portal or single-service). e.g. https://session-abc123.example.com/ */
 export function getPreviewHost(shortId) {
-  const url = new URL(PUBLIC_API_URL);
+  const url = new URL(resolveSessionSubdomainPublicUrl());
   url.hostname = buildSessionHostname(url.hostname, `${SESSION_PREFIX}${shortId}`);
   return url.toString();
 }
 
 /** Returns the preview subdomain URL for a named service. e.g. https://session-abc123-api.example.com/ */
 export function getServicePreviewHost(shortId, serviceName) {
-  const url = new URL(PUBLIC_API_URL);
+  const url = new URL(resolveSessionSubdomainPublicUrl());
   url.hostname = buildSessionHostname(url.hostname, `${SESSION_PREFIX}${shortId}-${serviceName}`);
   return url.toString();
 }

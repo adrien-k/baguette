@@ -34,6 +34,19 @@ export function isLoopHomePathname(pathname) {
   return /^\/repos\/\d+\/loops$/.test(pathname);
 }
 
+/** True when the dashboard shows a session or loop workspace — a specific session/loop (detail)
+ * or the creation form (`…/sessions/new`, `…/loops/new`) — rather than the list home.
+ * Mobile layouts use this to drop the global navbar in favor of the workspace header's back link. */
+export function isSessionWorkspacePathname(pathname) {
+  if (!pathname) return false;
+  if (isSessionHomePathname(pathname) || isLoopHomePathname(pathname)) return false;
+  return (
+    /^\/(?:(?:global|shared)\/)?sessions\/[^/]+$/.test(pathname) ||
+    /^\/(?:(?:global|shared)\/)?loops\/[^/]+$/.test(pathname) ||
+    /^\/repos\/\d+\/(?:sessions|loops)\/[^/]+$/.test(pathname)
+  );
+}
+
 /** Navbar / dashboard: sessions that are not tied to a single repository. */
 export const GLOBAL_SCOPE = '__global__';
 
@@ -129,6 +142,9 @@ export function sessionHref(session, { fromAllSessions } = {}) {
 export const SUBAGENT_EXCLUDED_MCP_TOOLS = [
   'UpdateSession',
   'UpdateIssueStatus',
+  // Session shipping stays with the parent builder: pushing can retarget
+  // remote_branch and open the Push modal, which is the parent's decision.
+  'GitPush',
   'StartSubagent',
   'CreateSession',
   'CreateLoop',
@@ -138,7 +154,18 @@ export const SUBAGENT_EXCLUDED_MCP_TOOLS = [
   'UpdateSkill',
   'DeleteSkill',
   'ConfigRepoPrompt',
+  'StartReview',
+  'ContinueReview',
+  // Fleet orchestration is the parent's job: a subagent must not stop sessions
+  // (including its own parent's turn), subscribe to wake-ups that dispatch
+  // subagent turns outside the parent's control, or inspect/await other sessions.
+  'StopSession',
+  'WatchSession',
+  'UnwatchSession',
+  'AwaitSessionTurn',
+  'GetSessionStatus',
   'PrComment',
+  'EditPrComment',
   'PrReview',
   'PrMarkCommentViewed',
   'PrComments',
@@ -150,20 +177,31 @@ export const SUBAGENT_EXCLUDED_MCP_TOOLS = [
   'ListGithubTags',
 ];
 
+/**
+ * MCP tools omitted on inbound HTTP MCP (`/api/mcp`) — no caller session/agent;
+ * subagent and fleet orchestration belong to in-session builder turns.
+ */
+export const EXTERNAL_MCP_EXCLUDED_TOOLS = [
+  'StartSubagent',
+  'AwaitAgent',
+  'StopSubagent',
+  'StopSession',
+  'WatchSession',
+  'UnwatchSession',
+  'AwaitSessionTurn',
+];
+
 export const GLOBAL_SESSION_EXCLUDED_MCP_TOOLS = [
   'GitPull',
   'GitPush',
   'GitFetch',
-  'PrComments',
+  // PR write tools stay global-excluded; read-only inspection (PrRead, PrComments,
+  // PrWorkflows, ListGithubPrs, GetGithubPr) is session_id-parameterized and allowed.
   'PrMarkCommentViewed',
   'PrComment',
+  'EditPrComment',
   'PrReview',
-  'PrWorkflows',
-  'PrWorkflowLogs',
-  'ListGithubPrs',
-  'GetGithubPr',
   'AddGithubLabel',
-  'ListGithubTags',
   'ConfigRepoPrompt',
   'ListProjectCommands',
   'RunTask',

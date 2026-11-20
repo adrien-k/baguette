@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { resolveDataDirRelativePath } from '../../config.js';
 import { cursorSessionDataDir } from '../cursor/session-paths.js';
+import { agentWorktreeCwd } from '../../services/subagent-worktree.js';
 
 function piSessionDataDir(session) {
   const base = cursorSessionDataDir(session);
@@ -17,6 +18,10 @@ export function piSessionsDir(session) {
   return dataDir ? path.join(dataDir, 'sessions') : null;
 }
 
-export function piWorktreeCwd(session) {
-  return resolveDataDirRelativePath(session?.session_path) || process.cwd();
+export function piWorktreeCwd(session, agent = null) {
+  return (
+    agentWorktreeCwd(session, agent) ||
+    resolveDataDirRelativePath(session?.session_path) ||
+    process.cwd()
+  );
 }

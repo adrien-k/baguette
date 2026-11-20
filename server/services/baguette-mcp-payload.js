@@ -1,4 +1,4 @@
-/** Default number of messages per page for the GetSessionMessages MCP tool. */
+/** Default number of messages per page for the GetAgentMessages MCP tool. */
 export const MCP_MESSAGES_PAGE_SIZE = 50;
 
 /**
@@ -25,7 +25,7 @@ function stripThinkingBlocks(messageJson) {
 }
 
 /**
- * Build one page of session messages for the GetSessionMessages MCP tool.
+ * Build one page of session messages for the GetAgentMessages MCP tool.
  * Thinking blocks are stripped from assistant rows; thinking-only rows are skipped entirely.
  * The caller fetches up to one extra row to know whether more pages exist (hasMoreRows).
  * Returns { messages, nextMessageId, hasMore }: nextMessageId is the id to pass as

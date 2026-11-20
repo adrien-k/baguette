@@ -11,7 +11,7 @@ import { agentConfigsService } from '../feathers.js';
 import { toastError } from '../utils/toastError.jsx';
 import { fetchAgentConfigModels } from '../utils/fetchAgentSdkModels.js';
 import { modelsKeptForFetch, shouldFetchModels } from '../utils/agentConfigModelCache.js';
-import { useRefetchOnSseReconnect } from '../hooks/useRefetchOnSseReconnect.js';
+import { subscribeSseReconnect } from '../utils/sseReconnect.js';
 
 const AgentConfigContext = createContext(null);
 
@@ -170,10 +170,17 @@ export function AgentConfigProvider({ children }) {
     };
   }, [reload, dropModelCache, ensureModels]);
 
-  useRefetchOnSseReconnect((opts) => {
-    reload({ silent: opts?.silent !== false });
-    refetchCachedModels();
-  }, true);
+  useEffect(
+    () =>
+      subscribeSseReconnect(() => {
+        // Silent: reconnects are routine (stream drop, tab visible, online
+        // again). A visible reload would flash loading pickers and, on a
+        // transient failure, wipe the config list — keep prior data instead.
+        reload({ silent: true });
+        refetchCachedModels();
+      }),
+    [reload, refetchCachedModels]
+  );
 
   const configOptions = useMemo(() => configs.map(configOptionFromRow), [configs]);
 

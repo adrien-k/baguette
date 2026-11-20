@@ -7,6 +7,7 @@ import {
   resolveServicesConfig,
   buildDockerTaskHostnames,
   buildDockerTaskImages,
+  resolveConfigSessionBlock,
 } from './baguette-config.js';
 import { getPreviewHost, getServicePreviewHost } from './preview.js';
 
@@ -18,7 +19,6 @@ const SERVER_ONLY_ENV_KEYS = [
   'AUTH_GITHUB_APP_SLUG',
   'DATA_DIR',
   'PUBLIC_HOST',
-  'PUBLIC_API_HOST',
 ];
 
 export function stripServerEnv(env) {
@@ -47,6 +47,7 @@ async function buildInterpolateContext(db, sessionId) {
   let interpolateOpts = null;
   if (session?.session_path) {
     baguetteConfig = await loadBaguetteConfig(session.session_path);
+    if (baguetteConfig?.error) baguetteConfig = null;
     if (baguetteConfig) {
       const servicesConfig = resolveServicesConfig(baguetteConfig);
       const servicesUriMap = servicesConfig
@@ -83,14 +84,11 @@ export async function getInterpolateOptsForSession(db, sessionId) {
 export async function buildTaskEnv(db, sessionId) {
   const { baguetteConfig, interpolateOpts } = await buildInterpolateContext(db, sessionId);
 
+  const configEnv = resolveConfigSessionBlock(baguetteConfig).env;
   let sessionEnv = {};
-  if (
-    interpolateOpts &&
-    baguetteConfig.session?.env &&
-    typeof baguetteConfig.session.env === 'object'
-  ) {
-    assertNoTaskPlaceholders(baguetteConfig.session.env, 'session.env');
-    sessionEnv = interpolateEnv(baguetteConfig.session.env, {
+  if (interpolateOpts && configEnv && typeof configEnv === 'object') {
+    assertNoTaskPlaceholders(configEnv, 'env');
+    sessionEnv = interpolateEnv(configEnv, {
       ...interpolateOpts,
       taskHostnames: {},
       taskImages: {},

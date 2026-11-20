@@ -16,6 +16,12 @@ import type {
 
 /** Throttle assistant row patches during streaming (UI still updates via `patched` events). */
 const ASSISTANT_PATCH_DEBOUNCE_MS = 250;
+
+function assistantPayloadHasVisibleText(payload: AssistantMessagePayload): boolean {
+  return payload.blocks.some(
+    (b) => b.type === 'text' && String((b as { text?: string }).text ?? '').trim()
+  );
+}
 const TOOL_PROGRESS_PATCH_DEBOUNCE_MS = 250;
 
 /**
@@ -55,6 +61,8 @@ export type WriterDeps = {
   patchRow: (id: number, patch: Record<string, unknown>) => Promise<void>;
   appendRaw?: (event: unknown) => Promise<void>;
   builders: ToolCallBuilders;
+  /** Spill or trim oversized tool raw results before they are stored on the tool_call row. */
+  guardToolRawResult?: (toolName: string, rawResult: unknown) => Promise<unknown>;
 };
 
 type PendingTool = { id: number; payload: ToolCallPayload; rawInput: Record<string, unknown> };
@@ -273,10 +281,15 @@ export class MessageStreamWriter {
       opts.args != null && hasNonemptyToolInput(opts.args)
         ? mergeToolCallInput(rawInput, opts.args)
         : rawInput;
+    let rawResult = opts.rawResult;
+    if (this.deps.guardToolRawResult) {
+      const toolName = opts.name ?? base.name ?? 'tool';
+      rawResult = await this.deps.guardToolRawResult(toolName, rawResult);
+    }
     const completed = this.deps.builders.buildToolCallComplete(base, {
       name: opts.name,
       args: mergedArgs,
-      rawResult: opts.rawResult,
+      rawResult,
       isError: opts.isError,
       toolCallStatus: opts.toolCallStatus,
       endedAt: opts.endedAt,
@@ -320,6 +333,9 @@ export class MessageStreamWriter {
   }
 
   async persistTurnResult(payload: TurnResultPayload): Promise<void> {
+    if (this.assistantRowId && assistantPayloadHasVisibleText(this.assistantPayload)) {
+      this.assistantPayload = { ...this.assistantPayload, turn_reply: true };
+    }
     await this.flushAssistant();
     this.resetThinkingTokensRow();
     await this.persistPayload(payload);

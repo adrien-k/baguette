@@ -3,6 +3,7 @@ import { feathers } from 'feathers';
 import { BadRequest, NotFound } from 'feathers/errors';
 import { createTestDb } from '../../test-utils/db.js';
 import { registerSkillsService } from '../feathers/skills.service.js';
+import { loadBuiltinSkills } from '../builtin-skills.js';
 
 const db = createTestDb();
 const params = (user) => ({ provider: 'rest', user });
@@ -79,5 +80,24 @@ describe('skills service', () => {
     await expect(
       app.service('skills').create(skill({ description: '  ' }), params(alice))
     ).rejects.toBeInstanceOf(BadRequest);
+  });
+
+  it('readByLabel returns built-in skill content', async () => {
+    const builtins = await loadBuiltinSkills();
+    expect(builtins.length).toBeGreaterThan(0);
+    const first = builtins[0];
+    const row = await app.service('skills').readByLabel({ label: first.label }, params(alice));
+    expect(row).toMatchObject({
+      label: first.label,
+      description: first.description,
+      content: first.content,
+      source: 'builtin',
+    });
+  });
+
+  it('readByLabel returns NotFound for unknown label', async () => {
+    await expect(
+      app.service('skills').readByLabel({ label: '___not_a_skill___' }, params(alice))
+    ).rejects.toBeInstanceOf(NotFound);
   });
 });

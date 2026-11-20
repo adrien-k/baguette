@@ -6,6 +6,9 @@ import { ok } from './result.js';
 const BUILDER_SESSION_RESTRICTIONS =
   "Work exclusively within this session's session_path (the git worktree root returned above). Do not read, edit, search files, or run any shell command outside of it. If session_path is not already your shell cwd, cd into it or pass it as the shell tool's working_directory before git or other repo-local commands.";
 
+const ISOLATED_SUBAGENT_RESTRICTIONS =
+  "Work exclusively within subagent_worktree_path (your isolated git worktree root returned above). Do not read, edit, search files, or run shell commands in the parent session worktree (session_path) or outside your subagent worktree. If subagent_worktree_path is not already your shell cwd, cd into it or pass it as the shell tool's working_directory before git or other repo-local commands.";
+
 const REVIEW_READ_ONLY_SESSION_RESTRICTIONS =
   "Work exclusively within this session's session_path (the git worktree root returned above). You may read files and run read-only git/search commands there only. Do not edit files or run commands that change the working tree. If session_path is not already your shell cwd, cd into it or pass it as the shell tool's working_directory before repo-local commands.";
 
@@ -29,13 +32,23 @@ export function currentSessionInfoDescription({ githubApiAvailable: apiAvailable
   return DESCRIPTION_PREFIX + mid + DESCRIPTION_SUFFIX;
 }
 
+function isolatedSubagentFromCaller(callerAgent) {
+  if (!callerAgent?.worktree_path) return null;
+  const subagentWorktreePath = resolveDataDirRelativePath(callerAgent.worktree_path) || '';
+  if (!subagentWorktreePath) return null;
+  return {
+    subagent_worktree_path: subagentWorktreePath,
+    subagent_local_branch: callerAgent.local_branch ?? null,
+  };
+}
+
 /**
  * @param {object} sessionRow
- * @param {{ readOnlySession?: boolean, repo?: object | null, token?: string | null }} [options]
+ * @param {{ readOnlySession?: boolean, repo?: object | null, token?: string | null, callerAgent?: object | null }} [options]
  */
 function buildCurrentSessionInfo(
   sessionRow,
-  { readOnlySession = false, repo = null, token = null } = {}
+  { readOnlySession = false, repo = null, token = null, callerAgent = null } = {}
 ) {
   const sessionPath =
     sessionRow.absolute_session_path || resolveDataDirRelativePath(sessionRow.session_path) || '';
@@ -56,6 +69,14 @@ function buildCurrentSessionInfo(
   const pushRef = remoteBranch || localBranch;
   const origin = repo?.origin ?? null;
 
+  const isolatedSubagent = isolatedSubagentFromCaller(callerAgent);
+  let workingDirectoryRestrictions = readOnlySession
+    ? REVIEW_READ_ONLY_SESSION_RESTRICTIONS
+    : BUILDER_SESSION_RESTRICTIONS;
+  if (isolatedSubagent && !readOnlySession) {
+    workingDirectoryRestrictions = ISOLATED_SUBAGENT_RESTRICTIONS;
+  }
+
   const info = {
     is_global: false,
     session_id: sessionRow.id,
@@ -66,9 +87,7 @@ function buildCurrentSessionInfo(
     remote_branch: remoteBranch,
     local_branch: localBranch,
     session_path: sessionPath,
-    working_directory_restrictions: readOnlySession
-      ? REVIEW_READ_ONLY_SESSION_RESTRICTIONS
-      : BUILDER_SESSION_RESTRICTIONS,
+    working_directory_restrictions: workingDirectoryRestrictions,
     git_diff_against_base: `git diff origin/${baseBranch}...HEAD`,
     git_merge_base_with_base: `git merge-base HEAD origin/${baseBranch}`,
     git_commits_not_on_any_remote: 'git rev-list --count HEAD --not --remotes',
@@ -80,11 +99,20 @@ function buildCurrentSessionInfo(
     info.git_commits_to_push = `git rev-list --count origin/${pushRef}..HEAD`;
     info.git_commits_behind_remote = `git rev-list --count HEAD..origin/${pushRef}`;
   }
+  if (isolatedSubagent) {
+    info.subagent_worktree_path = isolatedSubagent.subagent_worktree_path;
+    info.subagent_local_branch = isolatedSubagent.subagent_local_branch;
+  }
   return info;
 }
 
 export function createCurrentSessionInfoTool(getSessionRow, options = {}) {
-  const { readOnlySession = false, getRepo = null, getToken = null } = options;
+  const {
+    readOnlySession = false,
+    getRepo = null,
+    getToken = null,
+    getCallerAgent = null,
+  } = options;
   const apiAvailable = options.githubApiAvailable ?? true;
   return {
     name: 'CurrentSessionInfo',
@@ -94,6 +122,7 @@ export function createCurrentSessionInfoTool(getSessionRow, options = {}) {
       const session = await getSessionRow();
       let repo = null;
       let token = null;
+      let callerAgent = null;
       if (getRepo) {
         try {
           repo = await getRepo();
@@ -108,7 +137,14 @@ export function createCurrentSessionInfoTool(getSessionRow, options = {}) {
           token = null;
         }
       }
-      return ok(buildCurrentSessionInfo(session, { readOnlySession, repo, token }));
+      if (getCallerAgent) {
+        try {
+          callerAgent = await getCallerAgent();
+        } catch {
+          callerAgent = null;
+        }
+      }
+      return ok(buildCurrentSessionInfo(session, { readOnlySession, repo, token, callerAgent }));
     },
   };
 }

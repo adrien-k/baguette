@@ -1,6 +1,6 @@
 /** Posting replies as the bot. Failures are logged, never thrown — a reply must not break a turn. */
 import logger from '../logger.js';
-import { PUBLIC_API_URL } from '../config.js';
+import { PUBLIC_HOST } from '../config.js';
 import { signSlackToken } from './slack-auth.js';
 import { postEphemeral, postMarkdown, postMessage, updateMessage } from './slack.js';
 import { toSlackMrkdwn } from './slack-text.js';
@@ -60,7 +60,7 @@ export async function sayPrivately(slackApp, { channel, user, threadTs, text }) 
  */
 export async function nudgeToLogIn(slackApp, { channel, user, thread_ts: threadTs }) {
   const token = signSlackToken({ slack_app_id: slackApp.id, slack_user_id: user });
-  const url = `${PUBLIC_API_URL}/api/slack/link?token=${encodeURIComponent(token)}`;
+  const url = `${PUBLIC_HOST}/api/slack/link?token=${encodeURIComponent(token)}`;
   await sayPrivately(slackApp, {
     channel,
     user,

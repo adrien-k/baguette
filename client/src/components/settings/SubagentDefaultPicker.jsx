@@ -90,6 +90,7 @@ function PresetChoices({ presets, presetsLoading, configOptions }) {
 }
 
 export default function SubagentDefaultPicker({
+  embedded = false,
   description,
   mode,
   onModeChange,
@@ -110,7 +111,7 @@ export default function SubagentDefaultPicker({
   const loadPresets = useCallback(() => {
     setPresetsLoading(true);
     agentModelPresetsService
-      .find({ query: { $limit: 50, $sort: { id: 1 } } })
+      .find({ query: { $limit: 50, $sort: { id: 1 }, enabled: 1 } })
       .then((res) => setPresets(res.data ?? res))
       .catch((err) => toastError('Failed to load preset models', err))
       .finally(() => setPresetsLoading(false));
@@ -134,94 +135,100 @@ export default function SubagentDefaultPicker({
     showInheritPlaceholder: true,
   };
 
-  return (
-    <div className="space-y-3 rounded-lg border border-line bg-control/30 p-4">
-      <div>
-        <h4 className="text-sm font-medium text-fg">Agent-created sessions and subagents</h4>
-        <p className="text-xs text-faint mt-0.5">{description}</p>
-      </div>
-      <div className="space-y-2">
-        {MODE_OPTIONS.map((opt) => {
-          const selected = normalizedMode === opt.value;
-          if (opt.value === SUBAGENT_DEFAULT_CONFIG) {
-            return (
-              <RadioCard key={opt.value} selected={selected}>
-                <ModeRadio opt={opt} selected={selected} onModeChange={onModeChange} />
-                {selected ? (
-                  <div className="mt-3 pl-6 min-w-0">
-                    <AgentDefaultModelPicker {...pickerProps} />
+  const body = (
+    <div className="space-y-2">
+      {MODE_OPTIONS.map((opt) => {
+        const selected = normalizedMode === opt.value;
+        if (opt.value === SUBAGENT_DEFAULT_CONFIG) {
+          return (
+            <RadioCard key={opt.value} selected={selected}>
+              <ModeRadio opt={opt} selected={selected} onModeChange={onModeChange} />
+              {selected ? (
+                <div className="mt-3 pl-6 min-w-0">
+                  <AgentDefaultModelPicker {...pickerProps} />
+                </div>
+              ) : null}
+            </RadioCard>
+          );
+        }
+        if (opt.value === SUBAGENT_DEFAULT_PRESET) {
+          return (
+            <RadioCard key={opt.value} selected={selected}>
+              <ModeRadio opt={opt} selected={selected} onModeChange={onModeChange} />
+              {selected ? (
+                <div className="mt-3 pl-6 space-y-2">
+                  <p className="text-[11px] text-faint">
+                    No preset is selected here. The agent picks one from this list on each call.
+                  </p>
+                  <PresetChoices
+                    presets={presets}
+                    presetsLoading={presetsLoading}
+                    configOptions={configOptions}
+                  />
+                </div>
+              ) : null}
+            </RadioCard>
+          );
+        }
+        if (opt.value === SUBAGENT_DEFAULT_ANY) {
+          return (
+            <RadioCard key={opt.value} selected={selected}>
+              <ModeRadio opt={opt} selected={selected} onModeChange={onModeChange} />
+              {selected ? (
+                <div className="mt-3 pl-6 space-y-3">
+                  <p className="text-[11px] text-faint">
+                    Nothing is selected here. Each call passes a preset, or an agent configuration
+                    and model from ListModels.
+                  </p>
+                  <div className="space-y-1">
+                    <p className="text-[11px] font-medium text-secondary">Agent configurations</p>
+                    {configOptions.length === 0 ? (
+                      <p className="text-xs text-faint">No agent configurations yet.</p>
+                    ) : (
+                      <ul className="text-xs text-secondary space-y-1">
+                        {configOptions.map((c) => (
+                          <li key={c.key} className="truncate">
+                            <span className="font-medium text-heading">{c.label}</span>
+                            <span className="text-faint">
+                              {' '}
+                              · {formatAgentSdkDisplayName(c.sdk)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
-                ) : null}
-              </RadioCard>
-            );
-          }
-          if (opt.value === SUBAGENT_DEFAULT_PRESET) {
-            return (
-              <RadioCard key={opt.value} selected={selected}>
-                <ModeRadio opt={opt} selected={selected} onModeChange={onModeChange} />
-                {selected ? (
-                  <div className="mt-3 pl-6 space-y-2">
-                    <p className="text-[11px] text-faint">
-                      No preset is selected here. The agent picks one from this list on each call.
-                    </p>
+                  <div className="space-y-1">
+                    <p className="text-[11px] font-medium text-secondary">Presets</p>
                     <PresetChoices
                       presets={presets}
                       presetsLoading={presetsLoading}
                       configOptions={configOptions}
                     />
                   </div>
-                ) : null}
-              </RadioCard>
-            );
-          }
-          if (opt.value === SUBAGENT_DEFAULT_ANY) {
-            return (
-              <RadioCard key={opt.value} selected={selected}>
-                <ModeRadio opt={opt} selected={selected} onModeChange={onModeChange} />
-                {selected ? (
-                  <div className="mt-3 pl-6 space-y-3">
-                    <p className="text-[11px] text-faint">
-                      Nothing is selected here. Each call passes a preset, or an agent configuration
-                      and model from ListModels.
-                    </p>
-                    <div className="space-y-1">
-                      <p className="text-[11px] font-medium text-secondary">Agent configurations</p>
-                      {configOptions.length === 0 ? (
-                        <p className="text-xs text-faint">No agent configurations yet.</p>
-                      ) : (
-                        <ul className="text-xs text-secondary space-y-1">
-                          {configOptions.map((c) => (
-                            <li key={c.key} className="truncate">
-                              <span className="font-medium text-heading">{c.label}</span>
-                              <span className="text-faint">
-                                {' '}
-                                · {formatAgentSdkDisplayName(c.sdk)}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-[11px] font-medium text-secondary">Presets</p>
-                      <PresetChoices
-                        presets={presets}
-                        presetsLoading={presetsLoading}
-                        configOptions={configOptions}
-                      />
-                    </div>
-                  </div>
-                ) : null}
-              </RadioCard>
-            );
-          }
-          return (
-            <RadioCard key={opt.value} selected={selected}>
-              <ModeRadio opt={opt} selected={selected} onModeChange={onModeChange} />
+                </div>
+              ) : null}
             </RadioCard>
           );
-        })}
+        }
+        return (
+          <RadioCard key={opt.value} selected={selected}>
+            <ModeRadio opt={opt} selected={selected} onModeChange={onModeChange} />
+          </RadioCard>
+        );
+      })}
+    </div>
+  );
+
+  if (embedded) return body;
+
+  return (
+    <div className="space-y-3 rounded-lg border border-line bg-control/30 p-4">
+      <div>
+        <h4 className="text-sm font-medium text-fg">Agent-created sessions and subagents</h4>
+        {description ? <p className="text-xs text-faint mt-0.5">{description}</p> : null}
       </div>
+      {body}
     </div>
   );
 }

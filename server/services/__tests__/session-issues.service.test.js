@@ -247,4 +247,382 @@ describe('session-issues service', () => {
     const still = await db('session_issues').where({ id: created.id }).first();
     expect(still.status).toBe('opened');
   });
+
+  const decisionOptions = [
+    { id: 'keep', title: 'Keep it', description: 'No migration' },
+    { id: 'drop', title: 'Drop it', description: 'Loses history' },
+  ];
+
+  it('forces needs_decision when created with options', async () => {
+    const created = await app.service('session-issues').create(
+      {
+        session_id: sessionId,
+        severity: 'high',
+        title: 'Choose a fix',
+        status: 'opened',
+        options: decisionOptions,
+      },
+      { user }
+    );
+    expect(created.status).toBe('needs_decision');
+    expect(created.options).toEqual(decisionOptions);
+    expect(created.selected_option_id).toBeNull();
+  });
+
+  it('counts opened and needs_decision issues together', async () => {
+    await app.service('session-issues').create(
+      {
+        session_id: sessionId,
+        severity: 'high',
+        title: 'Choose a fix',
+        options: decisionOptions,
+      },
+      { user }
+    );
+    await app
+      .service('session-issues')
+      .create({ session_id: sessionId, severity: 'low', title: 'Plain' }, { user });
+    await app.service('session-issues').create(
+      {
+        session_id: sessionId,
+        severity: 'low',
+        title: 'Skip me',
+        status: 'ignored',
+      },
+      { user }
+    );
+    const found = await app.service('session-issues').find({
+      ...params(user),
+      query: {
+        session_id: sessionId,
+        $or: [{ status: 'opened' }, { status: 'needs_decision' }],
+        $limit: 0,
+      },
+    });
+    expect(found.total).toBe(2);
+  });
+
+  it('reopens a decision when options are cleared', async () => {
+    const created = await app.service('session-issues').create(
+      {
+        session_id: sessionId,
+        severity: 'high',
+        title: 'Choose a fix',
+        options: decisionOptions,
+      },
+      { user }
+    );
+    expect(created.status).toBe('needs_decision');
+
+    const cleared = await app
+      .service('session-issues')
+      .patch(created.id, { options: [] }, { user });
+    expect(cleared.status).toBe('opened');
+    expect(cleared.options).toBeNull();
+    expect(cleared.selected_option_id).toBeNull();
+
+    const again = await app
+      .service('session-issues')
+      .patch(created.id, { options: decisionOptions }, { user });
+    expect(again.status).toBe('needs_decision');
+    const ignored = await app
+      .service('session-issues')
+      .patch(created.id, { options: [], status: 'ignored' }, { user });
+    expect(ignored.status).toBe('ignored');
+    expect(ignored.options).toBeNull();
+  });
+
+  it('does not create needs_decision without options', async () => {
+    const created = await app.service('session-issues').create(
+      {
+        session_id: sessionId,
+        severity: 'low',
+        title: 'No choices',
+        status: 'needs_decision',
+      },
+      { user }
+    );
+    expect(created.status).toBe('opened');
+    expect(created.options).toBeNull();
+  });
+
+  it('rejects invalid options', async () => {
+    await expect(
+      app.service('session-issues').create(
+        {
+          session_id: sessionId,
+          severity: 'low',
+          title: 'Bad',
+          options: [{ id: 'only', title: 'Only one' }],
+        },
+        { user }
+      )
+    ).rejects.toThrow('2 to 5');
+    await expect(
+      app.service('session-issues').create(
+        {
+          session_id: sessionId,
+          severity: 'low',
+          title: 'Dup',
+          options: [
+            { id: 'same', title: 'A' },
+            { id: 'same', title: 'B' },
+          ],
+        },
+        { user }
+      )
+    ).rejects.toThrow('duplicate option id');
+  });
+
+  it('selectOption records the choice and reopens the issue', async () => {
+    const created = await app.service('session-issues').create(
+      {
+        session_id: sessionId,
+        severity: 'high',
+        title: 'Choose a fix',
+        options: decisionOptions,
+      },
+      { user }
+    );
+    const selected = await app
+      .service('session-issues')
+      .selectOption({ id: created.id, option_id: 'keep' }, params(user));
+    expect(selected.status).toBe('opened');
+    expect(selected.selected_option_id).toBe('keep');
+    expect(selected.options).toEqual(decisionOptions);
+
+    const row = await db('session_issues').where({ id: created.id }).first();
+    expect(row.status).toBe('opened');
+    expect(row.selected_option_id).toBe('keep');
+
+    const changed = await app
+      .service('session-issues')
+      .selectOption({ id: created.id, option_id: 'drop' }, params(user));
+    expect(changed.status).toBe('opened');
+    expect(changed.selected_option_id).toBe('drop');
+
+    const opened = await app
+      .service('session-issues')
+      .create({ session_id: sessionId, severity: 'low', title: 'Plain' }, { user });
+    await expect(
+      app.service('session-issues').selectOption({ id: opened.id, option_id: 'keep' }, params(user))
+    ).rejects.toThrow(/no decision options/);
+
+    const pending = await app.service('session-issues').create(
+      {
+        session_id: sessionId,
+        severity: 'medium',
+        title: 'Still choosing',
+        options: decisionOptions,
+      },
+      { user }
+    );
+    await expect(
+      app
+        .service('session-issues')
+        .selectOption({ id: pending.id, option_id: 'missing' }, params(user))
+    ).rejects.toThrow('Unknown option');
+  });
+
+  it('selectOption on submitted or resolved issues is rejected', async () => {
+    const submittedIssue = await app.service('session-issues').create(
+      {
+        session_id: sessionId,
+        severity: 'high',
+        title: 'Submitted choice',
+        options: decisionOptions,
+      },
+      { user }
+    );
+    const submittedChosen = await app
+      .service('session-issues')
+      .selectOption({ id: submittedIssue.id, option_id: 'keep' }, params(user));
+    await app
+      .service('session-issues')
+      .patch(submittedChosen.id, { status: 'submitted' }, params(user));
+    await expect(
+      app
+        .service('session-issues')
+        .selectOption({ id: submittedChosen.id, option_id: 'drop' }, params(user))
+    ).rejects.toThrow(/opened decision/);
+
+    const resolvedIssue = await app.service('session-issues').create(
+      {
+        session_id: sessionId,
+        severity: 'low',
+        title: 'Resolved choice',
+        options: decisionOptions,
+      },
+      { user }
+    );
+    const resolvedChosen = await app
+      .service('session-issues')
+      .selectOption({ id: resolvedIssue.id, option_id: 'keep' }, params(user));
+    await app
+      .service('session-issues')
+      .patch(resolvedChosen.id, { status: 'resolved' }, { user, agentStatusUpdate: true });
+    await expect(
+      app
+        .service('session-issues')
+        .selectOption({ id: resolvedChosen.id, option_id: 'drop' }, params(user))
+    ).rejects.toThrow(/opened decision/);
+  });
+
+  it('does not let an external patch set selected_option_id', async () => {
+    const created = await app.service('session-issues').create(
+      {
+        session_id: sessionId,
+        severity: 'high',
+        title: 'Choose a fix',
+        options: decisionOptions,
+      },
+      { user }
+    );
+    await app
+      .service('session-issues')
+      .patch(created.id, { selected_option_id: 'keep' }, params(user));
+    const row = await db('session_issues').where({ id: created.id }).first();
+    expect(row.selected_option_id).toBeNull();
+    expect(row.status).toBe('needs_decision');
+  });
+
+  it('keeps needs_decision when a status-only patch would dismiss the choice', async () => {
+    const created = await app.service('session-issues').create(
+      {
+        session_id: sessionId,
+        severity: 'high',
+        title: 'Choose a fix',
+        options: decisionOptions,
+      },
+      { user }
+    );
+    const opened = await app
+      .service('session-issues')
+      .patch(created.id, { status: 'opened' }, params(user));
+    expect(opened.status).toBe('needs_decision');
+    expect(opened.selected_option_id).toBeNull();
+
+    const ignored = await app
+      .service('session-issues')
+      .patch(created.id, { status: 'ignored' }, params(user));
+    expect(ignored.status).toBe('needs_decision');
+
+    await expect(
+      app
+        .service('session-issues')
+        .patch(created.id, { status: 'resolved' }, { user, agentStatusUpdate: true })
+    ).rejects.toThrow(/need a decision|choose an option/);
+
+    const chosen = await app
+      .service('session-issues')
+      .selectOption({ id: created.id, option_id: 'keep' }, params(user));
+    expect(chosen.status).toBe('opened');
+    const resolved = await app
+      .service('session-issues')
+      .patch(chosen.id, { status: 'resolved' }, { user, agentStatusUpdate: true });
+    expect(resolved.status).toBe('resolved');
+  });
+
+  it('closes a needs_decision issue so it is archived', async () => {
+    const created = await app.service('session-issues').create(
+      {
+        session_id: sessionId,
+        severity: 'high',
+        title: 'Duplicate choice',
+        options: decisionOptions,
+      },
+      { user }
+    );
+    const closed = await app
+      .service('session-issues')
+      .patch(created.id, { status: 'closed' }, params(user));
+    expect(closed.status).toBe('closed');
+    const row = await db('session_issues').where({ id: created.id }).first();
+    expect(row.status).toBe('closed');
+  });
+
+  it('askAgentToFixAll leaves needs_decision issues unsubmitted', async () => {
+    const decision = await app.service('session-issues').create(
+      {
+        session_id: sessionId,
+        severity: 'high',
+        title: 'Secret choice',
+        description: 'Secret impact',
+        options: decisionOptions,
+      },
+      { user }
+    );
+    const opened = await app
+      .service('session-issues')
+      .create({ session_id: sessionId, severity: 'low', title: 'Plain bug' }, { user });
+    const result = await app
+      .service('session-issues')
+      .askAgentToFixAll({ session_id: sessionId }, params(user));
+    expect(result.issues.map((issue) => issue.id)).toEqual([opened.id]);
+    expect(result.issues[0].status).toBe('submitted');
+
+    const still = await app.service('session-issues').get(decision.id, { user });
+    expect(still.status).toBe('needs_decision');
+
+    const messages = await app.service('messages').find({
+      ...params(user),
+      query: { session_id: sessionId },
+      paginate: false,
+    });
+    const rows = Array.isArray(messages) ? messages : messages.data;
+    const parsed = JSON.parse(rows[0].message_json);
+    const content = parsed.content ?? parsed.message?.content ?? '';
+    expect(content).toContain('needs_decision');
+    expect(content).not.toContain('Secret choice');
+  });
+
+  it('tells the builder the user already picked an approach', async () => {
+    const created = await app.service('session-issues').create(
+      {
+        session_id: sessionId,
+        severity: 'high',
+        title: 'Sensitive title',
+        description: 'Sensitive description',
+        options: decisionOptions,
+      },
+      { user }
+    );
+    await app
+      .service('session-issues')
+      .selectOption({ id: created.id, option_id: 'drop' }, params(user));
+    await app.service('session-issues').askAgentToFix(created.id, params(user));
+    const messages = await app.service('messages').find({
+      ...params(user),
+      query: { session_id: sessionId, $sort: { id: 1 } },
+      paginate: false,
+    });
+    const rows = Array.isArray(messages) ? messages : messages.data;
+    const parsed = JSON.parse(rows[0].message_json);
+    const content = parsed.content ?? parsed.message?.content ?? '';
+    expect(content).toContain('already selected an approach');
+    expect(content).toContain('ReadIssue');
+    expect(content).not.toContain('Sensitive title');
+    expect(content).not.toContain('Drop it');
+    expect(content).not.toContain('drop');
+  });
+
+  it('rejects selectOption from a collaborator', async () => {
+    await db('sessions').where({ id: sessionId }).update({ is_shared: 1 });
+    const created = await app.service('session-issues').create(
+      {
+        session_id: sessionId,
+        severity: 'high',
+        title: 'Shared choice',
+        options: decisionOptions,
+      },
+      { user }
+    );
+    await expect(
+      app
+        .service('session-issues')
+        .selectOption({ id: created.id, option_id: 'keep' }, params(other))
+    ).rejects.toThrow(/Session not found/);
+    const still = await db('session_issues').where({ id: created.id }).first();
+    expect(still.status).toBe('needs_decision');
+  });
 });

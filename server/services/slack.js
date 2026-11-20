@@ -4,12 +4,12 @@
  * Pure network helpers only — no DB access. Callers pass a bot token.
  */
 
-import { PUBLIC_API_URL } from '../config.js';
+import { PUBLIC_HOST } from '../config.js';
 
 const SLACK_API = 'https://slack.com/api';
 
-export const slackEventsUrl = () => `${PUBLIC_API_URL}/api/slack/events`;
-export const slackRedirectUri = () => `${PUBLIC_API_URL}/api/slack/oauth/callback`;
+export const slackEventsUrl = () => `${PUBLIC_HOST}/api/slack/events`;
+export const slackRedirectUri = () => `${PUBLIC_HOST}/api/slack/oauth/callback`;
 
 /** Slack errors that are worth explaining rather than echoing raw. */
 const ERROR_HINTS = {

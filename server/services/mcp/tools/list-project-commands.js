@@ -6,7 +6,7 @@ import {
 import { ok, fail } from '../lib/result.js';
 
 export function createListProjectCommandsTool(ctx) {
-  const { session } = ctx;
+  const { session, absoluteSessionPath } = ctx;
   return {
     name: 'ListProjectCommands',
     description:
@@ -15,7 +15,7 @@ export function createListProjectCommandsTool(ctx) {
     handler: async () => {
       let cfg;
       try {
-        cfg = await loadBaguetteConfig(session.session_path);
+        cfg = await loadBaguetteConfig(absoluteSessionPath || session.session_path);
         if (cfg?.error) throw new Error(cfg.error);
       } catch (err) {
         return fail(err.message);

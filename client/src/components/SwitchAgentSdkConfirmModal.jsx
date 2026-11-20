@@ -28,7 +28,7 @@ export default function SwitchAgentSdkConfirmModal({
       </p>
       <p className={`${TEXT_FAINT} text-xs mb-4`}>
         Your messages stay in this session. The agent can read earlier turns with the{' '}
-        <span className="font-mono text-fg-muted">GetSessionMessages</span> MCP tool when needed.
+        <span className="font-mono text-fg-muted">GetAgentMessages</span> MCP tool when needed.
       </p>
       <ModalActions>
         <button type="button" onClick={onCancel} disabled={loading} className={GHOST_BUTTON_CLASS}>

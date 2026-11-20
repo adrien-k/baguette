@@ -7,7 +7,7 @@
  * so the user saw no reply, no toast, and no error banner. These tests pin the new
  * behavior in `CursorAgentService._streamOneRun`:
  *   - real failures (ERROR/EXPIRED, remote CANCELLED, silent stream ends) emit
- *     `app:error`, persist a turn-bound status row, and mark the agent failed;
+ *     `app:error`, persist a turn_result error, and mark the agent failed;
  *   - a deliberate user stop stays quiet and does not mark the agent failed.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -68,6 +68,7 @@ describe('CursorAgentService terminal status surfacing', () => {
   let agentPatch;
   let reviewAgentTurnStub;
   let sessionEmit;
+  let onUsageLimit;
   let messagesCreate;
   let app;
   let builderAgentId;
@@ -122,6 +123,7 @@ describe('CursorAgentService terminal status surfacing', () => {
 
     agentPatch = vi.fn().mockResolvedValue({});
     sessionEmit = vi.fn();
+    onUsageLimit = vi.fn().mockResolvedValue({ action: 'stop', resume_at: null });
     messagesCreate = vi.fn().mockResolvedValue({ id: 1 });
     reviewAgentTurnStub = {
       onAgentTurnComplete: vi.fn().mockResolvedValue(undefined),
@@ -134,7 +136,7 @@ describe('CursorAgentService terminal status surfacing', () => {
         return undefined;
       },
       service: (name) => {
-        if (name === 'sessions') return { emit: sessionEmit };
+        if (name === 'sessions') return { emit: sessionEmit, onUsageLimit };
         if (name === 'agents') return { patch: agentPatch };
         if (name === 'messages') return { create: messagesCreate, patch: vi.fn() };
         return { create: vi.fn(), patch: vi.fn() };
@@ -179,14 +181,13 @@ describe('CursorAgentService terminal status surfacing', () => {
       expect.objectContaining({
         session_id: 1,
         turn_id: 7,
-        type: 'system',
-        subtype: 'status',
+        type: 'turn_result',
       }),
       expect.anything()
     );
     const statusData = messagesCreate.mock.calls[0][0];
     const payload = JSON.parse(statusData.message_json);
-    expect(payload.status).toContain('Cursor did not report a reason');
+    expect(payload.error_message).toContain('Cursor did not report a reason');
   });
 
   it('marks ERROR with Cursor’s detail as app:error carrying the detail', async () => {
@@ -449,13 +450,14 @@ describe('CursorAgentService terminal status surfacing', () => {
     );
 
     const reviewAgentTurn = reviewAgentTurnStub;
-    expect(reviewAgentTurn._persistStatus).toHaveBeenCalledWith(
+    expect(reviewAgentTurn.onAgentTurnComplete).toHaveBeenCalledWith(
       sessionRow,
-      expect.stringContaining('stopped unexpectedly')
+      'failed',
+      expect.objectContaining({
+        sdk: 'cursor',
+        error_message: expect.stringContaining('stopped unexpectedly'),
+      })
     );
-    expect(reviewAgentTurn.onAgentTurnComplete).toHaveBeenCalledWith(sessionRow, 'failed', {
-      sdk: 'cursor',
-    });
     expect(sessionEmit).toHaveBeenCalledWith(
       'app:error',
       expect.objectContaining({ sessionId: 1 })
@@ -487,5 +489,90 @@ describe('CursorAgentService terminal status surfacing', () => {
       expect.objectContaining({ status: 'failed' }),
       expect.anything()
     );
+  });
+
+  describe('usage limits', () => {
+    const stream = (service, run, channel = 'chat') =>
+      service._streamOneRun(
+        sessionRow,
+        run,
+        undefined,
+        {},
+        {
+          activeKey: 'turn-key',
+          channel,
+          writer: mockWriter().writer,
+        }
+      );
+    const errorRun = (message) =>
+      mockRun([{ type: 'status', status: 'ERROR', message, agent_id: 'a', run_id: 'r' }]);
+
+    it('a limit in the terminal status stops the agent and hands over to the policy', async () => {
+      const service = setupTurnState();
+      await stream(service, errorRun('You have hit your usage limit. Try again in 2 hours.'));
+
+      expect(onUsageLimit).toHaveBeenCalledWith(
+        1,
+        builderAgentId,
+        expect.objectContaining({ sdk: 'cursor', reason: 'rejected' })
+      );
+      const { reset_at_ms } = onUsageLimit.mock.calls[0][2];
+      expect(reset_at_ms).toBeGreaterThan(Date.now() + 119 * 60_000);
+      expect(agentPatch).toHaveBeenCalledWith(
+        builderAgentId,
+        expect.objectContaining({ status: 'stopped' }),
+        expect.anything()
+      );
+      expect(agentPatch).not.toHaveBeenCalledWith(
+        builderAgentId,
+        expect.objectContaining({ status: 'failed' }),
+        expect.anything()
+      );
+      expect(sessionEmit).not.toHaveBeenCalledWith('app:error', expect.anything());
+    });
+
+    it('a silent end whose run result is a limit also goes to the policy', async () => {
+      const service = setupTurnState();
+      await stream(
+        service,
+        mockRun([], {
+          result: { id: 'run-test', status: 'error', error: { message: 'Usage limit reached' } },
+        })
+      );
+      expect(onUsageLimit).toHaveBeenCalledTimes(1);
+      expect(sessionEmit).not.toHaveBeenCalledWith('app:error', expect.anything());
+    });
+
+    it('transient rate-limit / quota text is a normal failure, not a plan limit', async () => {
+      const service = setupTurnState();
+      await stream(service, errorRun('rate limit: too many requests, quota check failed (429)'));
+      expect(onUsageLimit).not.toHaveBeenCalled();
+      expect(sessionEmit).toHaveBeenCalledWith('app:error', expect.anything());
+      expect(agentPatch).toHaveBeenCalledWith(
+        builderAgentId,
+        expect.objectContaining({ status: 'failed' }),
+        expect.anything()
+      );
+    });
+
+    it('review turns are never policy-handled: a limit stays a failed review', async () => {
+      const service = setupTurnState({ channel: 'review' });
+      await stream(service, errorRun('You have hit your usage limit.'), 'review');
+      expect(onUsageLimit).not.toHaveBeenCalled();
+      expect(reviewAgentTurnStub.onAgentTurnComplete).toHaveBeenCalledWith(
+        sessionRow,
+        'failed',
+        expect.anything()
+      );
+    });
+
+    it('a deliberate user stop never triggers the policy', async () => {
+      const service = setupTurnState({ stopRequested: true });
+      await stream(
+        service,
+        mockRun([{ type: 'status', status: 'CANCELLED', agent_id: 'a', run_id: 'r' }])
+      );
+      expect(onUsageLimit).not.toHaveBeenCalled();
+    });
   });
 });

@@ -11,7 +11,9 @@ import {
   loadBaguetteConfig,
   readBaguetteConfigRaw,
   getAvailableCommands,
+  resolveSessionChatRecipes,
   getScriptBlock,
+  resolveConfigSessionBlock,
   BaguetteConfigError,
   resolveServicesConfig,
 } from '../baguette-config.js';
@@ -24,6 +26,7 @@ import {
   gitLocalAndRemoteSha,
   gitLogSinceBase,
   gitFetch,
+  gitCommitsToPush,
   gitPush,
   mergePR,
   markPRReady,
@@ -39,10 +42,13 @@ import {
   splitPrBody,
   buildPrBody,
   buildSessionFooter,
+  withDescriptionLink,
   resolveRestoreWorktreeBranches,
 } from '../github.js';
 import { removeSlackFileDirs, slackFilesDir, slackSessionFilesDir } from '../slack-files.js';
 import { trimSessionMessagesForArchive } from '../session-archive.js';
+import { persistGitPushApprovalOutcome } from '../git-push-approval-persistence.js';
+import * as sessionPushWorktree from '../session-push-worktree.js';
 import { loadSessionFooterUsageLines } from '../pr-footer-usage.js';
 import logger from '../../logger.js';
 import { requireUser, scopeByUser } from './hooks.js';
@@ -67,10 +73,18 @@ import {
   getAgentServiceForAgent,
   getAgentServiceForSession,
 } from '../agent-session-routing.js';
+import { getUtilityModelService } from '../utility-model.js';
+import { completeSessionMetadata } from '../session-metadata.js';
 import { assertAgentConfigOnCreate, loadOwnedAgentConfig } from '../agent-config-resolver.js';
 import { isGlobalSession } from '../../../shared/session-scope.js';
 import { gitAuthFromRepo, isLocalRepo } from '../../../shared/repo-origin.js';
+import {
+  findSessionImagePlaceholders,
+  hasSessionImagePlaceholders,
+  interpolateSessionImagePlaceholders,
+} from '../../../shared/session-images.js';
 import { stringifyModelParamsForStorage } from '../../../shared/agent-session-defaults.js';
+import { teardownSubagentWorktreesForSessionArchive } from '../subagent-worktree.js';
 import {
   computeSessionGitStatus,
   sessionNeedsPrMetadataSync,
@@ -81,6 +95,7 @@ import {
   builderChatActiveKey,
   getPrimaryBuilderAgent,
   listAgentsForSession,
+  listAgentCostsForSession,
   getReviewerAgent,
   insertPrimaryBuilderAgent,
   ensureReviewerAgentRow,
@@ -88,13 +103,12 @@ import {
 import { patchAgentInternal } from './agents.service.js';
 import { setAgentTurnTerminal } from '../agent-turn-patch.js';
 import { getReviewAgentTurn } from '../review-agent-turn.js';
-import { listSdkPlugins, storedSessionIdColumns } from '../../agent-sdks/registry.js';
+import { getSdkPlugin, listSdkPlugins, storedSessionIdColumns } from '../../agent-sdks/registry.js';
 import {
   getPreviewServiceDefinitions,
   getSessionPreviewUrl,
   previewTaskLookupKey,
   resolvePreviewServiceConfig,
-  sessionHasPreviewConfig,
 } from '../preview-services.js';
 import { isPortListening } from '../port-utils.js';
 import path from 'path';
@@ -107,7 +121,24 @@ import {
 import { getGithubToken } from '../agent-settings.js';
 import { resolveSessionPrStatus, storedPrStatusSkipsGithubRefresh } from '../session-pr-status.js';
 import { buildSystemPromptAppend } from '../session-prompt.js';
+import {
+  applyUserDefaultAutoLoadSkillsOnCreate,
+  parseAutoLoadSkillLabels,
+  serializeAutoLoadSkillLabels,
+} from '../skill-resolution.js';
 import { getAgentById } from '../agents-db.js';
+import {
+  usageLimitFieldsError,
+  applyUserDefaultUsageLimitsOnCreate,
+  USAGE_LIMIT_RESUME_PROMPT,
+  computeResumeAtMs,
+  MAX_UNKNOWN_RESET_RETRIES,
+  usageLimitStatusText,
+  allowsOverage,
+  blockingLimitWindow,
+  nearlyFull,
+} from '../../lib/usage-limit.js';
+import { getCachedSubscriptionLimits } from '../../lib/subscription-limits.js';
 import { normalizeUsageAgentType } from '../../../shared/usage-agent-type.js';
 import { getCodeserverUrl } from '../codeserver-handler.js';
 import { removeSessionDockerResources } from '../docker-session.js';
@@ -156,6 +187,13 @@ export class SessionsService extends KnexService {
     this._sessionActivityLastBumpMs = Object.create(null);
     /** Sessions the agent asked to close; archived once their current turn ends. */
     this._archiveAfterTurnIds = new Set();
+    /** Consecutive limit hits with no reset time per session id (see `onUsageLimit`). */
+    this.usageLimitRetries = new Map();
+    /**
+     * Per `continue` session: whether the plan was seen under its limit (`sawBelow`) and
+     * whether the crossing was already announced (`notified`). See `noteOverageCrossing`.
+     */
+    this.overageCrossings = new Map();
   }
 
   setup(app) {
@@ -217,6 +255,9 @@ export class SessionsService extends KnexService {
       if (this._provisioningBySessionId.get(sessionId) === promise) {
         this._provisioningBySessionId.delete(sessionId);
       }
+      // The provisioning-abort registration must live exactly as long as the job:
+      // archive/stop add it to cancel in-flight setup, and the settled job clears it.
+      this._provisioningAbortSessionIds.delete(sessionId);
     });
   }
 
@@ -472,16 +513,16 @@ export class SessionsService extends KnexService {
       '',
       'Other agents in this session were also interrupted by the restart:',
       ...lines,
-      'Re-synchronize with ListSubagents / AwaitSubagent as needed, and do not redo work a resumed subagent is already doing.',
+      'Re-synchronize with ListAgents / AwaitAgent as needed, and do not redo work a resumed subagent is already doing.',
     ].join('\n');
   }
 
   /**
    * Resume what can be resumed of the interrupted children captured at boot; stop the rest.
-   * Runs after the primaries are resumed: a resumed `notify_parent` child that finishes
-   * early must not wake its parent before the parent's own restart prompt has been
-   * injected (the wake would start a parent turn and the injection would be rejected as
-   * a turn mismatch).
+   * Runs after the primaries are resumed: a resumed child with an `agent_observers` wake-up
+   * subscription that finishes early must not wake its parent before the parent's own
+   * restart prompt has been injected (the wake would start a parent turn and the injection
+   * would be rejected as a turn mismatch).
    */
   async _settleStaleChildAgents(staleChildren, counts) {
     for (const child of staleChildren) {
@@ -698,7 +739,7 @@ export class SessionsService extends KnexService {
   async _runCleanupAndFinalize(session) {
     if (session.session_path) {
       const baguetteConfig = await loadBaguetteConfig(session.session_path);
-      const cleanupCommand = getScriptBlock(baguetteConfig?.session?.cleanup);
+      const cleanupCommand = getScriptBlock(resolveConfigSessionBlock(baguetteConfig).cleanup);
       if (cleanupCommand) {
         try {
           await this.app.service('tasks').create(
@@ -765,6 +806,7 @@ export class SessionsService extends KnexService {
     const repo = session?.repo_id ? await db('repos').where({ id: session.repo_id }).first() : null;
     await trimSessionMessagesForArchive(db, sessionId);
     if (!isGlobalSession(session)) {
+      await teardownSubagentWorktreesForSessionArchive(this.app, sessionId, session, repo);
       await removeWorktree(session, repo, { keepLocalBranch: true });
     }
     this.app.service('tasks').deleteSessionTasks(sessionId);
@@ -867,6 +909,13 @@ export class SessionsService extends KnexService {
 
   async stop(data, params) {
     const session = params.resolvedSession;
+    const wasProvisioning = session.status === PROVISIONING_STATUS;
+    if (wasProvisioning) {
+      // Cancel in-flight setup like archive does, so it can neither fail the
+      // session afterwards (status 'failed') nor dispatch turns post-stop.
+      this._provisioningAbortSessionIds.add(session.id);
+      await unstickProvisioningSessionRow(this.app, session.id);
+    }
     await this._stopAllBuilderAgents(session);
     const builder = await getPrimaryBuilderAgent(this.app.get('db'), session.id);
     if (builder) {
@@ -889,6 +938,16 @@ export class SessionsService extends KnexService {
       if (err instanceof BaguetteConfigError) throw new BadRequest(err.message);
       throw err;
     }
+  }
+
+  async recipes(data, params) {
+    const session = params.resolvedSession;
+    const agentType = data?.agent_type;
+    if (!session?.session_path || isGlobalSession(session)) {
+      return resolveSessionChatRecipes(null, { agent_type: agentType });
+    }
+    const baguetteConfig = await loadBaguetteConfig(session.session_path);
+    return resolveSessionChatRecipes(baguetteConfig, { agent_type: agentType });
   }
 
   async baguetteYaml(_data, params) {
@@ -1153,17 +1212,9 @@ export class SessionsService extends KnexService {
       { total_tokens: 0, cost_usd: 0, input_tokens: 0, output_tokens: 0 }
     );
 
-    const agentCostRows = await db('usage')
-      .where({ session_id: session.id })
-      .whereNotNull('agent_id')
-      .select('agent_id')
-      .sum('cost_usd as cost_usd')
-      .groupBy('agent_id');
-
-    const by_agent = agentCostRows.map((r) => ({
-      agent_id: r.agent_id,
-      cost_usd: parseFloat(r.cost_usd ?? 0),
-    }));
+    const by_agent = [...(await listAgentCostsForSession(db, session.id))].map(
+      ([agent_id, cost_usd]) => ({ agent_id, cost_usd })
+    );
 
     return { totals, breakdown, by_agent };
   }
@@ -1276,8 +1327,12 @@ export class SessionsService extends KnexService {
       const user = await this.app.service('users').get(session.user_id, {});
       const auth = await sessionGitAuth(this.app, session, user);
       const branch = data.branch || session.remote_branch || session.local_branch;
+      const sourceBranch =
+        typeof data?.source_branch === 'string' && data.source_branch.trim()
+          ? data.source_branch.trim()
+          : null;
       if (branch) await gitFetch(cwd, auth, branch).catch(() => {});
-      return await gitLocalAndRemoteSha(cwd, branch || null);
+      return await gitLocalAndRemoteSha(cwd, branch || null, sourceBranch);
     } catch (err) {
       return { localSha: null, remoteSha: null, error: err.message };
     }
@@ -1371,10 +1426,16 @@ export class SessionsService extends KnexService {
     const session = params.resolvedSession;
     if (isGlobalSession(session)) throw new BadRequest('Global sessions cannot push');
     if (!session?.session_path) throw new BadRequest('Session has no worktree');
-    const pushEvent = { session_id: session.id, user_id: session.user_id };
+    const requestId = data?.request_id ?? null;
+    const pushEvent = {
+      session_id: session.id,
+      user_id: session.user_id,
+      ...(requestId ? { request_id: requestId } : {}),
+    };
     this.emit('push:start', pushEvent);
     let pushOk = false;
     let pushFailure = null;
+    let imageAttachmentFailures = [];
     try {
       const cwd = resolveDataDirRelativePath(session.session_path);
       const user = await this.app.service('users').get(session.user_id, {});
@@ -1387,27 +1448,60 @@ export class SessionsService extends KnexService {
       const forceMode = data?.forceMode ?? (data?.force ? 'lease' : null);
       const forceGit = forceMode === 'lease' || forceMode === 'force';
       const branch = data?.branch || session.remote_branch || session.local_branch || null;
+      const requestedBranch = data?.branch ?? null;
+      const sessionBranch = session.remote_branch || session.local_branch || null;
+      const pushToAlternateBranch =
+        requestedBranch != null &&
+        requestedBranch !== sessionBranch &&
+        (session.remote_branch == null || requestedBranch !== session.remote_branch);
+      // Only governs creating a *new* PR; an existing PR is synced unless syncPr is false.
+      const createPr = data?.createPr !== false;
+      const syncPr = data?.syncPr !== false;
+      const sourceBranch =
+        typeof data?.source_branch === 'string' && data.source_branch.trim()
+          ? data.source_branch.trim()
+          : null;
       let commitsToPush = 0;
       if (!forceGit) {
-        ({ commitsToPush } = await computeSessionGitStatus(session));
+        if (sourceBranch && branch) {
+          commitsToPush = await gitCommitsToPush(cwd, branch, {
+            missingOriginRefMeansUnpushed: true,
+            localRef: sourceBranch,
+          });
+        } else if (pushToAlternateBranch && branch) {
+          commitsToPush = await gitCommitsToPush(cwd, branch, {
+            missingOriginRefMeansUnpushed: true,
+          });
+        } else {
+          ({ commitsToPush } = await computeSessionGitStatus(session));
+        }
       }
-      const needsMetadataSync = sessionNeedsPrMetadataSync(session);
+      const needsMetadataSync = syncPr && sessionNeedsPrMetadataSync(session);
       let pushedBranch = branch || session.remote_branch || session.local_branch;
+      const isSessionBranchPush = session.remote_branch
+        ? branch === session.remote_branch
+        : branch === session.local_branch;
+      if (sourceBranch && isSessionBranchPush) {
+        await sessionPushWorktree.fastForwardWorktreeToSourceBranch(cwd, sourceBranch);
+      }
       if (forceGit || commitsToPush > 0) {
         try {
           const result = await gitPush(cwd, auth, {
             branch,
+            ...(sourceBranch ? { sourceBranch } : {}),
             force: forceMode === 'lease',
             forceOverwrite: forceMode === 'force',
           });
           pushedBranch = result.branch;
-          await this.app
-            .service('sessions')
-            .patch(
-              session.id,
-              { remote_branch: pushedBranch },
-              { provider: undefined, user: { id: session.user_id } }
-            );
+          if (isSessionBranchPush) {
+            await this.app
+              .service('sessions')
+              .patch(
+                session.id,
+                { remote_branch: pushedBranch },
+                { provider: undefined, user: { id: session.user_id } }
+              );
+          }
         } catch (err) {
           if (err.rejected) {
             const conflict = new BadRequest('Push failed due to a conflict');
@@ -1418,15 +1512,21 @@ export class SessionsService extends KnexService {
         }
       } else if (
         !needsMetadataSync &&
-        !(session.label || session.pr_description != null || session.pr_number)
+        !session.pr_number &&
+        !(createPr && (session.label || session.pr_description != null))
       ) {
         pushOk = true;
         return { ok: true };
       }
-      if (token && (session.label || session.pr_description != null || session.pr_number)) {
+      if (
+        token &&
+        syncPr &&
+        (session.pr_number || (createPr && (session.label || session.pr_description != null)))
+      ) {
         const head = pushedBranch || session.remote_branch || session.local_branch;
         let userPrefix = '';
         let currentBaseBranch;
+        let existingPrBody = '';
         if (session.pr_number) {
           try {
             const existingPr = await getOpenPRByNumber(
@@ -1434,7 +1534,8 @@ export class SessionsService extends KnexService {
               session.repo_full_name,
               session.pr_number
             );
-            userPrefix = splitPrBody(existingPr?.body ?? '').userPrefix;
+            existingPrBody = existingPr?.body ?? '';
+            userPrefix = splitPrBody(existingPrBody).userPrefix;
             currentBaseBranch = existingPr?.base?.ref;
           } catch {
             // non-fatal — proceed without user prefix
@@ -1445,15 +1546,27 @@ export class SessionsService extends KnexService {
           : null;
         const previewUrl = getSessionPreviewUrl(session, baguetteConfig);
         const usageLines = await loadSessionFooterUsageLines(this.app.get('db'), session);
+        const title = session.label || session.repo_full_name;
+        let body = buildPrBody(
+          userPrefix,
+          withDescriptionLink(session.id, session.pr_description ?? ''),
+          buildSessionFooter(session, { previewUrl, usageLines })
+        );
+        const hasImagePlaceholders = hasSessionImagePlaceholders(body);
+        if (hasImagePlaceholders && session.pr_number) {
+          ({ body, failures: imageAttachmentFailures } = await this.resolvePrImagePlaceholders(
+            session,
+            token,
+            session.pr_number,
+            body,
+            existingPrBody
+          ));
+        }
         const pr = await upsertPR(token, {
           repoFullName: session.repo_full_name,
           prNumber: session.pr_number,
-          title: session.label || session.repo_full_name,
-          body: buildPrBody(
-            userPrefix,
-            session.pr_description ?? '',
-            buildSessionFooter(session, { previewUrl, usageLines })
-          ),
+          title,
+          body,
           head: session.pr_number ? undefined : head,
           baseBranch: session.base_branch,
           currentBaseBranch,
@@ -1466,6 +1579,26 @@ export class SessionsService extends KnexService {
               { pr_url: pr.url, pr_number: pr.number, pr_status: 'open' },
               { provider: undefined, user: { id: session.user_id } }
             );
+          if (hasImagePlaceholders) {
+            // Images could only be attached once the PR existed — swap and sync one more time.
+            const { body: resolvedBody, failures } = await this.resolvePrImagePlaceholders(
+              session,
+              token,
+              pr.number,
+              body,
+              body
+            );
+            imageAttachmentFailures = failures;
+            if (resolvedBody !== body) {
+              await upsertPR(token, {
+                repoFullName: session.repo_full_name,
+                prNumber: pr.number,
+                title,
+                body: resolvedBody,
+                baseBranch: session.base_branch,
+              });
+            }
+          }
         }
       }
       await this.app
@@ -1488,8 +1621,80 @@ export class SessionsService extends KnexService {
           message: pushFailure.message,
           conflict: Boolean(pushFailure.data?.conflict),
         }),
+        ...(imageAttachmentFailures.length && { image_failures: imageAttachmentFailures }),
       });
+      if (requestId) {
+        try {
+          const outcome = pushOk ? 'pushed' : 'failed';
+          await persistGitPushApprovalOutcome(this.app, session, {
+            requestId,
+            outcome,
+            errorMessage: pushFailure?.message ?? null,
+          });
+        } catch (err) {
+          logger.warn(
+            { err: err.message, sessionId: session.id, requestId },
+            'Failed to persist GitPush approval outcome after push'
+          );
+        }
+      }
     }
+  }
+
+  async recordGitPushApprovalOutcome(data, params) {
+    const session = params.resolvedSession;
+    const requestId = data?.request_id;
+    const outcome = data?.outcome;
+    if (!requestId || typeof requestId !== 'string') {
+      throw new BadRequest('request_id is required');
+    }
+    if (!['canceled', 'pushed', 'failed'].includes(outcome)) {
+      throw new BadRequest('outcome must be canceled, pushed, or failed');
+    }
+    const result = await persistGitPushApprovalOutcome(this.app, session, {
+      requestId,
+      outcome,
+      errorMessage: data?.error_message ?? null,
+    });
+    return { ok: true, ...result };
+  }
+
+  /**
+   * Resolves `{{image:…}}` placeholders the body still references and swaps
+   * them for image URLs (GitHub-hosted asset URLs when image attach is
+   * enabled, public image URLs otherwise). Unresolvable placeholders stay in
+   * the body so the next push retries them. Returns the swapped body plus any
+   * resolution failures so push can surface them.
+   */
+  async resolvePrImagePlaceholders(session, token, prNumber, bodyWithPlaceholders, existingPrBody) {
+    let resolution = null;
+    try {
+      resolution = await this.app.service('session-images').resolveForPush(
+        {
+          session: { ...session, pr_number: prNumber },
+          token,
+          bodyWithPlaceholders,
+          existingPrBody,
+        },
+        { user: { id: session.user_id }, provider: undefined }
+      );
+    } catch (err) {
+      logger.warn({ err, session_id: session.id }, 'Resolving session image placeholders failed');
+      return { body: bodyWithPlaceholders, failures: [] };
+    }
+    const failures = resolution?.failures ?? [];
+    if (failures.length) {
+      logger.warn(
+        { session_id: session.id, failures },
+        'Some session images could not be resolved for the PR'
+      );
+    }
+    const resolvedById = resolution?.resolved ?? {};
+    const body = interpolateSessionImagePlaceholders(
+      bodyWithPlaceholders,
+      (imageSlug) => resolvedById[imageSlug] ?? null
+    );
+    return { body, failures };
   }
 
   async getPrDetails(data, params) {
@@ -1500,6 +1705,46 @@ export class SessionsService extends KnexService {
     if (!token) throw new BadRequest('No GitHub token configured');
     const pr = await getOpenPRByNumber(token, session.repo_full_name, session.pr_number);
     return { title: pr.title, body: pr.body ?? '' };
+  }
+
+  /**
+   * Limited description projection for the standalone description page
+   * (`/session/:id/description`, linked from the GitHub PR body).
+   *
+   * Any signed-in user may read it: the content mirrors the public PR body
+   * (label, pr_description, and the images the description references are all
+   * published on GitHub), so viewing does not require the session to be
+   * shared. Returns only description fields — never worktree paths, agent
+   * identity, or other session internals. `session_accessible` reports
+   * whether the viewer may also open the full session (owner or shared).
+   */
+  async getDescription(data, params) {
+    const rawId = data != null && typeof data === 'object' ? data.id : data;
+    const sessionId = Number.parseInt(rawId, 10);
+    if (!Number.isInteger(sessionId)) throw new NotFound('Session not found');
+    const db = this.app.get('db');
+    const session = await db('sessions').where({ id: sessionId }).first();
+    if (!session) throw new NotFound('Session not found');
+
+    const prDescription = session.pr_description ?? '';
+    const imageSlugs = findSessionImagePlaceholders(prDescription);
+    const images = imageSlugs.length
+      ? await db('session_images')
+          .where({ session_id: session.id })
+          .whereIn('image_slug', imageSlugs)
+          .select('id', 'image_slug', 'file_ext', 'alt_text', 'github_url')
+      : [];
+
+    const viewerId = params?.user?.id ?? null;
+    return {
+      id: session.id,
+      label: session.label,
+      repo_full_name: session.repo_full_name,
+      pr_description: prDescription,
+      session_accessible:
+        viewerId != null && (session.user_id === viewerId || Boolean(session.is_shared)),
+      images,
+    };
   }
 
   async restore(data, params) {
@@ -1739,7 +1984,218 @@ export class SessionsService extends KnexService {
     }
   }
 
+  /**
+   * A subscription limit (or the session's usage limit) ended an agent turn.
+   * Persists a status row, then per `usage_limit_action`: `stop` (and `continue`, once its
+   * credits are spent) leaves the session stopped, `wait` schedules a "continue" message just
+   * after the limit resets. Each resumed turn re-enters this path at the next limit, so a
+   * waiting session keeps going through as many windows as the work needs.
+   *
+   * Never throws: the turn is already over, so a failure here is logged and the session just
+   * stays stopped.
+   *
+   * @param {{label: string, sdk: string, reason: string, reset_at_ms?: number | null}} limit
+   * @returns {Promise<{action: string, resume_at: string | null} | null>}
+   */
+  async onUsageLimit(sessionId, agentId, limit) {
+    try {
+      const db = this.app.get('db');
+      const session = await db('sessions').where({ id: sessionId }).first();
+      const agent = agentId != null ? await getAgentById(db, agentId) : null;
+      if (!session || !agent) return null;
+
+      const resetAtMs = limit.reset_at_ms ?? null;
+      // `continue` also ends as `stop` here: it only gets this far once its credits are spent.
+      let action = session.usage_limit_action === 'wait' ? 'wait' : 'stop';
+      let resumeAtMs = null;
+      let gaveUp = false;
+      if (action === 'wait') {
+        // No reset time: back off between retries and stop after a few, so a weekly limit
+        // days from resetting does not start an agent turn every half hour.
+        const attempt = resetAtMs == null ? (this.usageLimitRetries.get(sessionId) ?? 0) : 0;
+        if (attempt >= MAX_UNKNOWN_RESET_RETRIES) {
+          this.usageLimitRetries.delete(sessionId);
+          action = 'stop';
+          gaveUp = true;
+        } else {
+          if (resetAtMs == null) this.usageLimitRetries.set(sessionId, attempt + 1);
+          else this.usageLimitRetries.delete(sessionId);
+          resumeAtMs = computeResumeAtMs(resetAtMs, Date.now(), Math.random, attempt);
+          try {
+            await this.scheduleUsageLimitResume(session, agent, limit.sdk, resumeAtMs);
+          } catch (err) {
+            // Without a schedule the notice must not promise a resume.
+            logger.warn(
+              { sessionId, err: err?.message },
+              'sessions: failed to schedule limit resume'
+            );
+            action = 'stop';
+            resumeAtMs = null;
+          }
+        }
+      }
+
+      const status = usageLimitStatusText({
+        label: limit.label,
+        reason: limit.reason,
+        action,
+        resetAtMs,
+      });
+      const notice = gaveUp
+        ? `${status} Gave up waiting: the reset time is unknown after ${MAX_UNKNOWN_RESET_RETRIES} retries.`
+        : status;
+      await this.app.service('messages').create(
+        {
+          session_id: sessionId,
+          type: 'system',
+          subtype: 'status',
+          message_json: JSON.stringify({
+            type: 'system',
+            subtype: 'status',
+            status: notice,
+            usage_limit_resume_at: resumeAtMs ? new Date(resumeAtMs).toISOString() : undefined,
+          }),
+          ...sessionMessageIdentity(agent, { agent_sdk: limit.sdk }),
+        },
+        { provider: undefined, user: { id: session.user_id } }
+      );
+      // Patch the session so open sidebars pick up `usage_limit_resume_at` right away.
+      if (resumeAtMs) await this.onActivity(session);
+      return { action, resume_at: resumeAtMs ? new Date(resumeAtMs).toISOString() : null };
+    } catch (err) {
+      logger.warn({ sessionId, err: err?.message }, 'sessions: usage limit handling failed');
+      return null;
+    }
+  }
+
+  /**
+   * Is the plan's session/weekly window used up for a session that must not spend paid
+   * overage (`stop` / `wait`)? Providers keep serving requests on overage once a window is
+   * full, so this check — before a turn starts and periodically during one — is what keeps
+   * those sessions from silently spending credits. `continue` sessions are never blocked
+   * here (their dollar cap is enforced by the agent's usage guard).
+   *
+   * Fails open: an unreadable limits lookup returns null rather than blocking the agent.
+   * Not an API method (it is not listed in `methods`).
+   *
+   * @param {{agentConfigId?: number | null, fresh?: boolean}} [options]
+   *   `fresh` always re-reads, bypassing the ~55s limits cache.
+   * @returns {Promise<{label: string, sdk: string, reason: string, reset_at_ms: number | null} | null>}
+   */
+  async checkUsageLimitGate(sessionId, agentId, { agentConfigId = null, fresh = false } = {}) {
+    try {
+      const db = this.app.get('db');
+      const session = await db('sessions').where({ id: sessionId }).first();
+      if (!session) return null;
+      const agent = agentId != null ? await getAgentById(db, agentId) : null;
+      const sdk = agent?.agent_sdk;
+      const plugin = sdk ? getSdkPlugin(sdk) : null;
+      if (typeof plugin?.fetchSubscriptionLimits !== 'function') return null;
+      const configId = agentConfigId ?? session.agent_config_id ?? null;
+      const key = `${session.user_id}:${sdk}:${configId ?? ''}`;
+      const fetcher = () =>
+        plugin.fetchSubscriptionLimits({
+          app: this.app,
+          userId: session.user_id,
+          agentConfigId: configId,
+        });
+      // Reads are cached (~55s) because a read can spawn a CLI process. A reading that is
+      // close to full is re-read before it is trusted — in either direction.
+      let result = await getCachedSubscriptionLimits(key, fetcher, { refresh: fresh });
+      if (!fresh && nearlyFull(result)) {
+        result = await getCachedSubscriptionLimits(key, fetcher, { refresh: true });
+      }
+      const blocking = blockingLimitWindow(result);
+      if (allowsOverage(session.usage_limit_action)) {
+        await this.noteOverageCrossing(session, agent, plugin.label ?? sdk, Boolean(blocking));
+        return null;
+      }
+      if (!blocking) return null;
+      return {
+        label: plugin.label ?? sdk,
+        sdk,
+        reason: 'rejected',
+        reset_at_ms: blocking.resetAtMs,
+      };
+    } catch (err) {
+      logger.warn({ sessionId, err: err?.message }, 'sessions: usage limit check failed');
+      return null;
+    }
+  }
+
+  /**
+   * `continue` sessions keep running past a full plan window on overage credits. Say so once,
+   * when the plan is seen going from under its limit to over it while the session is live —
+   * not on every check, and not for a session that starts out already over the limit.
+   * In-memory (a server restart just forgets), and never throws.
+   */
+  async noteOverageCrossing(session, agent, label, overLimit) {
+    try {
+      const state = this.overageCrossings.get(session.id) ?? { sawBelow: false, notified: false };
+      this.overageCrossings.set(session.id, state);
+      if (!overLimit) {
+        state.sawBelow = true;
+        state.notified = false;
+        return;
+      }
+      if (!state.sawBelow || state.notified) return;
+      state.notified = true;
+      await this.app.service('messages').create(
+        {
+          session_id: session.id,
+          type: 'system',
+          subtype: 'status',
+          message_json: JSON.stringify({
+            type: 'system',
+            subtype: 'status',
+            status: `${label} usage limit reached, continuing using overage credits.`,
+          }),
+          ...sessionMessageIdentity(agent, { agent_sdk: agent.agent_sdk }),
+        },
+        { provider: undefined, user: { id: session.user_id } }
+      );
+    } catch (err) {
+      logger.warn({ sessionId: session.id, err: err?.message }, 'sessions: overage notice failed');
+    }
+  }
+
+  /**
+   * Drop the pending limit resume(s) of a session, when the user turns `wait` off.
+   * Not an API method: it is not listed in `methods`.
+   */
+  async cancelUsageLimitResume(sessionId) {
+    this.usageLimitRetries.delete(sessionId);
+    return this.app
+      .get('db')('queued_messages')
+      .where({
+        session_id: sessionId,
+        kind: 'scheduled',
+        message_json: buildUserTurnMessageJson(USAGE_LIMIT_RESUME_PROMPT),
+      })
+      .delete();
+  }
+
+  /** One pending "continue" message per agent: a newer limit hit replaces the earlier one. */
+  async scheduleUsageLimitResume(session, agent, sdk, resumeAtMs) {
+    const message_json = buildUserTurnMessageJson(USAGE_LIMIT_RESUME_PROMPT);
+    await this.app
+      .get('db')('queued_messages')
+      .where({ session_id: session.id, agent_id: agent.id, kind: 'scheduled', message_json })
+      .delete();
+    await this.app.service('queued-messages').schedule(
+      {
+        session_id: session.id,
+        message_json,
+        send_at: new Date(resumeAtMs).toISOString(),
+        ...sessionMessageIdentity(agent, { agent_sdk: sdk }),
+      },
+      { user: { id: session.user_id } }
+    );
+  }
+
   async onTurnComplete(sessionId, agentId = null) {
+    // A turn that finished normally ends any run of limit hits with an unknown reset time.
+    this.usageLimitRetries.delete(sessionId);
     const db = this.app.get('db');
     const session = await db('sessions').where({ id: sessionId }).first();
     if (!session) return;
@@ -1795,7 +2251,7 @@ export class SessionsService extends KnexService {
   /** Push and sync the PR after a builder turn when auto-push is enabled (usage already recorded). */
   async maybeAutoPushAfterTurn(session, agent) {
     if (!session?.auto_push || isGlobalSession(session) || !session.session_path) return;
-    if (agent && (!agent.is_primary || agent.agent_type === 'subagent')) return;
+    if (agent && agent.agent_type !== 'builder') return;
     if (await sessionRepoIsLocal(this.app, session)) return;
     const user = await this.app.service('users').get(session.user_id, {});
     const auth = await sessionGitAuth(this.app, session, user);
@@ -1898,6 +2354,23 @@ function coerceIsSharedOnWrite(context) {
   if ('is_shared' in (context.data || {})) {
     context.data.is_shared = context.data.is_shared ? 1 : 0;
   }
+  return context;
+}
+
+/** Turning `wait` off must also drop the resume it already scheduled. */
+async function cancelResumeWhenNotWaiting(context) {
+  if (!context.data || !('usage_limit_action' in context.data)) return context;
+  if (context.result?.usage_limit_action === 'wait') return context;
+  if (context.result?.id != null) await context.service.cancelUsageLimitResume(context.result.id);
+  return context;
+}
+
+/** Validate the usage-limit policy fields `usage_limit_action` and `usage_limit` on write. */
+function normalizeUsageLimitOnWrite(context) {
+  // `usage_limit_spent` is server bookkeeping: a client must not reset its own budget.
+  if (context.params.provider && context.data) delete context.data.usage_limit_spent;
+  const error = usageLimitFieldsError(context.data || {});
+  if (error) throw new BadRequest(error);
   return context;
 }
 
@@ -2048,6 +2521,36 @@ function defaultSessionLabelWithoutPrompt(sessionId) {
   return `New session #${sessionId}`;
 }
 
+/**
+ * Generate the session label + branch name for provisioning. The user's utility
+ * model (Settings → Agent) wins when configured — naming is a small job that should
+ * not pay for, or depend on, the session's builder model. Without one the primary
+ * builder's SDK and session model generate the completion as before. The label and
+ * branch slug are derived from one shared title prompt (services/session-metadata.js).
+ */
+async function generateSessionMetadataForProvisioning(app, session, user) {
+  const utility = await getUtilityModelService(app, user?.id);
+  if (utility) {
+    return completeSessionMetadata(utility.service, {
+      taskPrompt: session.initial_prompt,
+      userId: user?.id ?? null,
+      agentConfigId: utility.agent_config_id,
+      model: utility.model,
+      modelParams: utility.model_params,
+      shortId: session.short_id,
+    });
+  }
+  const builderService = await getAgentServiceForSession(app, session);
+  return completeSessionMetadata(builderService, {
+    taskPrompt: session.initial_prompt,
+    userId: user?.id ?? null,
+    agentConfigId: session.agent_config_id ?? null,
+    model: session.model ?? null,
+    modelParams: session.model_params ?? null,
+    shortId: session.short_id,
+  });
+}
+
 function taskBranchForShortId(branchPrefix, shortId) {
   return `${branchPrefix}task-${shortId}`;
 }
@@ -2063,14 +2566,7 @@ async function provisionGlobalSession(app, session, params) {
     patch.label = params.label;
   } else if (hasInitialPrompt(session.initial_prompt)) {
     try {
-      const metadataAgent = await getAgentServiceForSession(app, session);
-      const result = await metadataAgent.generateSessionMetadata(
-        session.initial_prompt,
-        session.short_id,
-        params.user,
-        null,
-        session
-      );
+      const result = await generateSessionMetadataForProvisioning(app, session, params.user);
       if (result.label) patch.label = result.label;
     } catch (err) {
       logger.error(err, 'Metadata generation error (non-fatal)');
@@ -2159,14 +2655,7 @@ async function provisionSessionEnvironment(app, session, params) {
       patch.label = params.label;
     } else if (hasInitialPrompt(session.initial_prompt)) {
       try {
-        const metadataAgent = await getAgentServiceForSession(app, session);
-        const result = await metadataAgent.generateSessionMetadata(
-          session.initial_prompt,
-          shortId,
-          user,
-          repo,
-          session
-        );
+        const result = await generateSessionMetadataForProvisioning(app, session, user);
         if (result.label) patch.label = result.label;
         if (!requestedBranchName && !session.remote_branch) {
           remoteName = result.branchName ? `${branchPrefix}${result.branchName}` : fallbackBranch;
@@ -2264,10 +2753,16 @@ async function finalizeSessionAfterProvision(app, session, params) {
 /** Direct DB update so setup failure clears `provisioning` even when Feathers patch fails. */
 async function markSessionSetupFailed(app, sessionId) {
   const db = app.get('db');
+  // Only a still-provisioning row may become 'failed': a user stop ('stopped') or an
+  // in-flight archive ('archiving') must never be clobbered by a late setup error.
   try {
-    await db('sessions').where({ id: sessionId }).update({ status: 'failed', session_path: null });
+    await db('sessions')
+      .where({ id: sessionId, status: PROVISIONING_STATUS })
+      .update({ status: 'failed', session_path: null });
   } catch {
-    await db('sessions').where({ id: sessionId }).update({ status: 'failed' });
+    await db('sessions')
+      .where({ id: sessionId, status: PROVISIONING_STATUS })
+      .update({ status: 'failed' });
   }
   const updated = await db('sessions').where({ id: sessionId }).first();
   if (updated) app.service('sessions').emit('patched', withoutShortId(updated));
@@ -2420,14 +2915,15 @@ async function withHasWebserver(session, { forExternalClient = false } = {}) {
   const absoluteSessionPath = resolvedPath
     ? await fs.realpath(resolvedPath).catch(() => resolvedPath)
     : resolvedPath;
-  const config = session.session_path ? await loadBaguetteConfig(session.session_path) : null;
-  const hasPreview = sessionHasPreviewConfig(config);
+  const loadedConfig = session.session_path ? await loadBaguetteConfig(session.session_path) : null;
+  const config = loadedConfig?.error ? null : loadedConfig;
   const previewServices =
-    hasPreview && session.short_id ? getPreviewServiceDefinitions(config, session.short_id) : null;
+    config && session.short_id ? getPreviewServiceDefinitions(config, session.short_id) : null;
+  const hasPreview = (previewServices?.length ?? 0) > 0;
   const shaped = {
     ...session,
     absolute_session_path: absoluteSessionPath ?? null,
-    preview_url: hasPreview && getSessionPreviewUrl(session, config),
+    preview_url: hasPreview ? getSessionPreviewUrl(session, config) : null,
     preview_services: previewServices,
     is_preview_public: hasPreview ? !!session.is_preview_public : false,
     is_preview_ip_public: hasPreview ? !!session.is_preview_ip_public : false,
@@ -2435,12 +2931,37 @@ async function withHasWebserver(session, { forExternalClient = false } = {}) {
     is_global: Boolean(session.is_global),
     mcp_servers: parseMcpServersMap(session.mcp_servers),
     is_shared: Boolean(session.is_shared),
+    auto_load_skills: parseAutoLoadSkillLabels(session.auto_load_skills),
     codeserver_url:
       absoluteSessionPath && !isGlobalSession(session)
         ? getCodeserverUrl(absoluteSessionPath)
         : null,
   };
   return forExternalClient ? withoutShortId(shaped) : shaped;
+}
+
+/**
+ * Rows of sessions waiting out a usage limit get `usage_limit_resume_at`: the send time of
+ * their pending resume message (one query for the whole page).
+ */
+async function attachUsageLimitResume(context) {
+  const result = context.result;
+  if (!result) return context;
+  let sessions = [result];
+  if (Array.isArray(result.data)) sessions = result.data;
+  else if (Array.isArray(result)) sessions = result;
+  const ids = sessions.map((s) => s.id).filter((id) => id != null);
+  if (!ids.length) return context;
+  const pending = await context.app
+    .get('db')('queued_messages')
+    .whereIn('session_id', ids)
+    .where({ kind: 'scheduled', message_json: buildUserTurnMessageJson(USAGE_LIMIT_RESUME_PROMPT) })
+    .groupBy('session_id')
+    .select('session_id')
+    .min('send_at as send_at');
+  const resumeBySession = new Map(pending.map((r) => [r.session_id, r.send_at]));
+  for (const s of sessions) s.usage_limit_resume_at = resumeBySession.get(s.id) ?? null;
+  return context;
 }
 
 async function addHasWebserver(context) {
@@ -2491,6 +3012,23 @@ function serializePlugins(context) {
   } else if (plugins == null) {
     delete context.data.plugins;
   }
+  return context;
+}
+
+function serializeAutoLoadSkills(context) {
+  const { auto_load_skills: labels } = context.data;
+  if (labels === null) {
+    context.data.auto_load_skills = null;
+    return context;
+  }
+  if (labels === undefined) {
+    delete context.data.auto_load_skills;
+    return context;
+  }
+  if (!Array.isArray(labels)) {
+    throw new BadRequest('auto_load_skills must be an array of skill labels');
+  }
+  context.data.auto_load_skills = serializeAutoLoadSkillLabels(labels);
   return context;
 }
 
@@ -2594,7 +3132,9 @@ async function mergeSessionAgentFields(context) {
     const builder = await getPrimaryBuilderAgent(db, session.id);
     const reviewer = await getReviewerAgent(db, session.id);
     const agentRows = await listAgentsForSession(db, session.id);
+    const agentCosts = await listAgentCostsForSession(db, session.id);
     const out = { ...session };
+    // Sidebar agent tree: provider icon, model label, cost, nesting, relative time.
     out.agents = agentRows.map((a) => ({
       id: a.id,
       ref: a.ref,
@@ -2602,6 +3142,12 @@ async function mergeSessionAgentFields(context) {
       agent_type: a.agent_type,
       status: a.status,
       is_primary: a.is_primary,
+      agent_config_id: a.agent_config_id,
+      agent_sdk: a.agent_sdk,
+      model: a.model,
+      cost_usd: agentCosts.get(a.id) ?? null,
+      parent_agent_id: a.parent_agent_id,
+      updated_at: a.updated_at,
     }));
     if (builder) {
       out.agent_config_id = builder.agent_config_id;
@@ -2722,6 +3268,7 @@ export function registerSessionsService(app, path = 'sessions') {
       'remove',
       'stop',
       'commands',
+      'recipes',
       'baguetteYaml',
       'diff',
       'changedFiles',
@@ -2735,9 +3282,11 @@ export function registerSessionsService(app, path = 'sessions') {
       'merge',
       'setPrDraft',
       'push',
+      'recordGitPushApprovalOutcome',
       'archive',
       'restore',
       'getPrDetails',
+      'getDescription',
       'previewStatus',
       'startPreviewService',
     ],
@@ -2810,11 +3359,15 @@ const sessionsHooks = {
     create: [
       scopeByUser,
       coerceIsSharedOnWrite,
+      applyUserDefaultUsageLimitsOnCreate,
+      normalizeUsageLimitOnWrite,
       ensureShortId,
       seedLastActivityOnCreate,
       validateSessionCreate,
       assertAgentConfigOnCreate,
       serializePlugins,
+      applyUserDefaultAutoLoadSkillsOnCreate,
+      serializeAutoLoadSkills,
       snapshotMcpServers,
       extractInitialFiles,
       normalizeModelFields,
@@ -2824,14 +3377,17 @@ const sessionsHooks = {
       handleSessionLastViewedPatch,
       requireOwnSession,
       coerceIsSharedOnWrite,
+      normalizeUsageLimitOnWrite,
       clampAutoPushForLocalRepo,
       touchPrMetadataUpdatedAtOnPatch,
       redirectAgentFieldsOnSessionPatch,
+      serializeAutoLoadSkills,
       snapshotMcpServers,
       normalizeModelFields,
     ],
     stop: [resolveSessionFromData],
     commands: [resolveSessionFromData],
+    recipes: [resolveSessionFromData],
     baguetteYaml: [resolveSessionFromData],
     diff: [resolveSessionFromData],
     changedFiles: [resolveSessionFromData],
@@ -2849,6 +3405,7 @@ const sessionsHooks = {
     merge: [resolveSessionFromData, requireOwnResolvedSession],
     setPrDraft: [resolveSessionFromData, requireOwnResolvedSession],
     push: [resolveSessionFromData, requireOwnResolvedSession],
+    recordGitPushApprovalOutcome: [resolveSessionFromData, requireOwnResolvedSession],
     archive: [resolveSessionFromData, requireOwnResolvedSession],
     restore: [resolveSessionFromData, requireOwnResolvedSession],
     getPrDetails: [resolveSessionFromData],
@@ -2856,12 +3413,19 @@ const sessionsHooks = {
     startPreviewService: [resolveSessionFromData, requireOwnResolvedSession],
   },
   after: {
-    find: [attachOwners, attachViewerLastViewed, mergeSessionAgentFields, addHasWebserver],
+    find: [
+      attachOwners,
+      attachViewerLastViewed,
+      mergeSessionAgentFields,
+      attachUsageLimitResume,
+      addHasWebserver,
+    ],
     get: [
       attachOwners,
       attachViewerLastViewed,
       refreshPrStatusAfterGet,
       mergeSessionAgentFields,
+      attachUsageLimitResume,
       addHasWebserver,
     ],
     create: [
@@ -2876,6 +3440,8 @@ const sessionsHooks = {
       attachViewerLastViewed,
       mergeSessionAgentFields,
       syncSessionSettingsAfterPatch,
+      cancelResumeWhenNotWaiting,
+      attachUsageLimitResume,
       addHasWebserver,
       stampWasShared,
     ],

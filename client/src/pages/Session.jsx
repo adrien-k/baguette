@@ -3,6 +3,7 @@ import { useParams, useNavigate, useSearchParams, useLocation } from 'react-rout
 import { Loader2 } from 'lucide-react';
 import { fileToContentBlock } from '../utils/fileToContentBlock.js';
 import { useSessionsContext } from '../context/SessionsContext.jsx';
+import { PushApprovalUiProvider } from '../context/PushApprovalUiContext.jsx';
 import { useRepoContext, ALL_REPOS, GLOBAL_SCOPE, SHARED_SCOPE } from '../context/RepoContext.jsx';
 import toast from 'react-hot-toast';
 import { toastError, toastFeathersError } from '../utils/toastError.jsx';
@@ -12,6 +13,7 @@ import {
   sessionActivityAt,
   sessionNeedsLastViewedUpdate,
 } from '@baguette/shared/session-unread.js';
+import { countsTowardReviewTab } from '@baguette/shared/session-issues.js';
 import { useGetSession } from '../hooks/useGetSession.js';
 import { useGetMessages } from '../hooks/useGetMessages.js';
 import { useSessionAgents } from '../hooks/useSessionAgents.js';
@@ -22,7 +24,9 @@ import { useSessionCommitsToPush } from '../hooks/useSessionCommitsToPush.js';
 import { useSessionPushInProgress } from '../hooks/useSessionPushInProgress.js';
 import { useSessionChangedFiles } from '../hooks/useSessionChangedFiles.js';
 import { useSessionDiff } from '../hooks/useSessionDiff.js';
+import { useSessionFileFilters } from '../hooks/useSessionFileFilters.js';
 import { useSessionConfigCommands } from '../hooks/useSessionConfigCommands.js';
+import { usePersistentState } from '../hooks/usePersistentState.js';
 import { taskConfirmStateFromCommand } from '../utils/taskPanelGrouping.js';
 import { modelPatchFromConfigDefault } from '../utils/agentConfigDefaultModel.js';
 import ChatView from './session/ChatView.jsx';
@@ -35,7 +39,6 @@ import LoopWorkspaceBody from './session/LoopWorkspaceBody.jsx';
 import { useLoopWorkspace } from '../hooks/useLoopWorkspace.js';
 import { useWorkspaceHeaderEntity } from '../hooks/useWorkspaceHeaderEntity.js';
 import SessionSidePanel from './session/SessionSidePanel.jsx';
-import SessionMainViewFooter from './session/SessionMainViewFooter.jsx';
 import SessionListRail from './session/SessionListRail.jsx';
 import SessionWorkspaceHeader from './session/SessionWorkspaceHeader.jsx';
 import SessionStatusBanners from './session/SessionStatusBanners.jsx';
@@ -46,6 +49,7 @@ import { SESSION_VIEWS } from './session/sessionViews.js';
 import { nextVisibleSession } from './session/sessionListDisplay.js';
 import { resolveSidePanelTab, SIDE_PANEL_TAB_IDS } from './session/sessionSidePanelTabs.js';
 import { enrichChatMessages } from '../utils/enrichChatMessages.js';
+import { mergeAgentsWithSessionEmbeds } from '../utils/sessionAgents.js';
 import { useSessionColumnLayout } from '../hooks/useSessionColumnLayout.js';
 import { useCursorModelPrefs } from '../hooks/useAgentPreferences.js';
 import {
@@ -119,7 +123,7 @@ export default function Session() {
     isNewLoopRoute: isLoopsView && isNewLoopRoute,
     loops,
   });
-  const loopTabActive = isNewLoopRoute ? 'edit' : loopWorkspace.activeTab;
+  const loopTabActive = isNewLoopRoute ? 'edit' : loopWorkspace.activeTab || 'overview';
   const {
     session: sessionFromHook,
     loading: sessionLoading,
@@ -131,15 +135,26 @@ export default function Session() {
     return Number.isFinite(parsed) ? parsed : null;
   }, [isNewSessionRoute, routeSessionId]);
   const { agents, loading: agentsLoading, primaryBuilder, reviewer } = useSessionAgents(sessionId);
+  const agentsForChat = useMemo(
+    () => mergeAgentsWithSessionEmbeds(agents, sessionFromHook?.agents),
+    [agents, sessionFromHook?.agents]
+  );
+  const primaryBuilderForChat = useMemo(
+    () =>
+      agentsForChat.find((a) => a.is_primary) ??
+      agentsForChat.find((a) => a.agent_type === 'builder') ??
+      primaryBuilder,
+    [agentsForChat, primaryBuilder]
+  );
   const agentParam = searchParams.get('agent');
   const activeAgent = useMemo(() => {
-    if (!agents.length) return null;
+    if (!agentsForChat.length) return null;
     const parsedId = agentParam ? Number(agentParam) : null;
-    if (parsedId != null && agents.some((a) => a.id === parsedId)) {
-      return agents.find((a) => a.id === parsedId) ?? null;
+    if (parsedId != null && agentsForChat.some((a) => a.id === parsedId)) {
+      return agentsForChat.find((a) => a.id === parsedId) ?? null;
     }
-    return primaryBuilder ?? agents[0] ?? null;
-  }, [agents, agentParam, primaryBuilder]);
+    return primaryBuilderForChat ?? agentsForChat[0] ?? null;
+  }, [agentsForChat, agentParam, primaryBuilderForChat]);
   const {
     messages: hookMessages,
     loading: messagesLoading,
@@ -152,11 +167,11 @@ export default function Session() {
   const chatViewOpen = activeView === 'chat';
   const agentLabelById = useMemo(() => {
     const map = new Map();
-    for (const agent of agents) {
+    for (const agent of agentsForChat) {
       map.set(agent.id, { name: agent.name, agent_type: agent.agent_type });
     }
     return map;
-  }, [agents]);
+  }, [agentsForChat]);
   const { tasks: tasksFromHook } = useGetTasks({ sessionId, skip: !sessionId });
   const shouldLoadSessionIssues = activeView === 'review';
   const { issues: sessionIssues, loading: sessionIssuesLoading } = useGetSessionIssues(sessionId, {
@@ -181,7 +196,7 @@ export default function Session() {
   });
   const openIssuesTabCount = useMemo(() => {
     if (shouldLoadSessionIssues) {
-      return sessionIssues.filter((i) => i.status === 'opened').length;
+      return sessionIssues.filter(countsTowardReviewTab).length;
     }
     return session?.open_issues_count ?? 0;
   }, [shouldLoadSessionIssues, sessionIssues, session?.open_issues_count]);
@@ -208,6 +223,8 @@ export default function Session() {
   const [lastSidePanelTab, setLastSidePanelTab] = useState('tasks');
   const [scrollToDiffFile, setScrollToDiffFile] = useState(null);
   const [selectedDiffFile, setSelectedDiffFile] = useState(null);
+  /** Include/exclude regex filters shared by the files panel list and the diff view. */
+  const fileFilters = useSessionFileFilters();
   /** File path chosen from the sidebar while the diff request is still in flight. */
   const [pendingSidebarDiffFile, setPendingSidebarDiffFile] = useState(null);
   const diffCommitParam = searchParams.get('commit');
@@ -291,18 +308,20 @@ export default function Session() {
           const next = new URLSearchParams(prev);
           next.set('agent', String(agent.id));
           next.set('view', 'chat');
-          next.set('panel', 'agents');
+          next.delete('panel');
           return next;
         },
         { replace: true }
       );
-      setShowTasks(true);
     },
-    [setSearchParams, setShowTasks]
+    [setSearchParams]
   );
   const handleReviewerCleared = useCallback(() => {
-    if (primaryBuilder) selectAgent(primaryBuilder);
-  }, [primaryBuilder, selectAgent]);
+    if (activeView === 'review') return;
+    if (activeAgent?.agent_type === 'reviewer' && primaryBuilder) {
+      selectAgent(primaryBuilder);
+    }
+  }, [activeView, activeAgent, primaryBuilder, selectAgent]);
   const [creatingSession, setCreatingSession] = useState(false);
   const [createSessionError, setCreateSessionError] = useState(null);
   const [newSessionFormKey, setNewSessionFormKey] = useState(0);
@@ -417,15 +436,55 @@ export default function Session() {
     return () => sessionsService.off('app:error', onAppError);
   }, [sessionId]);
 
-  useEffect(() => {
-    const onPushRequest = ({ sessionId: sid, branch, forceMode }) => {
-      if (sid !== sessionId) return;
-      setPushRequest({ branch, forceMode });
+  const applyPushRequest = useCallback(
+    ({
+      sessionId: sid,
+      branch,
+      source_branch: sourceBranch,
+      forceMode,
+      reason,
+      autoPushOff,
+      auto_push_off: autoPushOffSnake,
+      agentRequest,
+      request_id: requestId,
+    }) => {
+      if (sid != null && sessionId != null && String(sid) !== String(sessionId)) return;
+      const nextRequest = {
+        branch,
+        sourceBranch: sourceBranch || '',
+        forceMode: forceMode || null,
+        reason: reason ?? null,
+        autoPushOff: autoPushOff === true || autoPushOffSnake === true,
+        agentRequest: agentRequest !== false,
+        requestId: requestId ?? null,
+      };
+      const nextRequestId = requestId ?? null;
+      setPushRequest((prev) => {
+        if (prev?.agentRequest && prev.requestId && prev.requestId !== nextRequestId && sessionId) {
+          sessionsService
+            .recordGitPushApprovalOutcome({
+              id: sessionId,
+              request_id: prev.requestId,
+              outcome: 'canceled',
+            })
+            .catch((err) => toastError('Failed to record push cancellation', err));
+          sessionsService.emit('push:approval-cancelled', {
+            session_id: sessionId,
+            request_id: prev.requestId,
+          });
+        }
+        return nextRequest;
+      });
       setShowPushModal(true);
-    };
+    },
+    [sessionId]
+  );
+
+  useEffect(() => {
+    const onPushRequest = (payload) => applyPushRequest(payload);
     sessionsService.on('push:request', onPushRequest);
     return () => sessionsService.off('push:request', onPushRequest);
-  }, [sessionId]);
+  }, [applyPushRequest]);
 
   useEffect(() => {
     if (isNewSessionRoute || !routeSessionId || sessionLoading || sessionFromHook) return;
@@ -455,6 +514,18 @@ export default function Session() {
       })
       .catch(() => {});
   }, [isNewSessionRoute, sessionLoading, sessionFromHook, routeSessionId]);
+
+  // Last-opened session id (persisted): on the mobile session list it decides
+  // which entry auto-expands its agent tree — desktop ignores it (selected-only).
+  const listPersist = usePersistentState('session-list');
+  const [lastOpenedSessionId, setLastOpenedSessionId] = listPersist.useState(
+    'last-opened-id',
+    null
+  );
+  useEffect(() => {
+    if (isNewSessionRoute || !routeSessionId) return;
+    setLastOpenedSessionId(String(routeSessionId));
+  }, [isNewSessionRoute, routeSessionId, setLastOpenedSessionId]);
 
   // Sync selectedRepo from URL so RepoPicker displays the current repo
   const sessionRepo = sessionFromHook?.repo_full_name;
@@ -679,16 +750,32 @@ export default function Session() {
 
   const handlePush = () => {
     if (!session?.id || pushing) return;
+    setPushRequest(null);
     setShowPushModal(true);
   };
 
-  const handlePushConfirmed = async ({ forceMode, branch } = {}) => {
+  const handlePushConfirmed = async ({
+    forceMode,
+    branch,
+    sourceBranch,
+    createPr,
+    syncPr,
+  } = {}) => {
     if (!session?.id || pushing) return;
+    const approvalRequestId = pushRequest?.requestId ?? null;
     setShowPushModal(false);
     setPushRequest(null);
     beginLocalPush();
     try {
-      await sessionsService.push({ id: session.id, forceMode, branch });
+      await sessionsService.push({
+        id: session.id,
+        forceMode,
+        branch,
+        ...(sourceBranch ? { source_branch: sourceBranch } : {}),
+        createPr,
+        ...(syncPr === false ? { syncPr: false } : {}),
+        ...(approvalRequestId ? { request_id: approvalRequestId } : {}),
+      });
       await refreshCommitsToPush();
       toast.success('Pushed successfully');
     } catch (err) {
@@ -847,7 +934,10 @@ export default function Session() {
     createNewBranch,
     branchName,
     autoPush,
+    usageLimitAction,
+    usageLimit,
     plugins,
+    autoLoadSkills,
     mcpServers,
     agentConfigId,
     isShared,
@@ -868,11 +958,18 @@ export default function Session() {
             repos.find((r) => r.full_name === repoFullName)
           ),
         };
+    if (usageLimitAction) {
+      params.usage_limit_action = usageLimitAction;
+      if (usageLimitAction === 'continue') {
+        params.usage_limit = usageLimit ?? null;
+      }
+    }
     if (agentConfigId) params.agent_config_id = agentConfigId;
     if (model) params.model = model;
     if (modelParams) params.model_params = modelParams;
     if (!isGlobal && branchName) params.branch_name = branchName;
     if (plugins?.length) params.plugins = plugins;
+    if (autoLoadSkills?.length) params.auto_load_skills = autoLoadSkills;
     if (mcpServers && typeof mcpServers === 'object') params.mcp_servers = mcpServers;
     if (isShared) params.is_shared = true;
     if (files?.length) {
@@ -1116,375 +1213,397 @@ export default function Session() {
   }
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col">
-      {showWorkspaceHeader && (
-        <SessionWorkspaceHeader
-          isLoopsView={isLoopsView}
-          routeLoopId={routeLoopId}
-          loopWorkspace={loopWorkspace}
-          isNewLoopRoute={isNewLoopRoute}
-          loopsHomeUrl={loopsHomeUrl}
-          showRepoDetails={showRepoDetails}
-          isNewSessionRoute={isNewSessionRoute}
-          homeUrl={homeUrl}
-          headerSession={headerSession}
-          isMdUp={isMdUp}
-          loopEditUrl={loopEditUrl}
-          handlePush={handlePush}
-          pushing={pushing}
-          commitsToPush={commitsToPush}
-          pushToolReadonly={pushToolReadonly}
-          session={session}
-          prInfo={prInfo}
-        />
-      )}
-
-      <SessionStatusBanners
-        session={session}
-        isArchiving={isArchiving}
-        isReadonly={isReadonly}
-        error={error}
-        onDismissError={() => setError(null)}
-      />
-
-      {/* Sidebar (full height) + main column (tabs + views + tasks) */}
-      <div className="flex flex-1 min-h-0 overflow-hidden relative">
-        <SessionListRail
-          sessionsSidebarElRef={sessionsSidebarElRef}
-          mobilePreferList={mobilePreferList}
-          sessionsSidebarResizing={sessionsSidebarResizing}
-          showSidebar={showSidebar}
-          isSidebarOpen={isSidebarOpen}
-          sessionsSidebarWidth={sessionsSidebarWidth}
-          isSidebarOpenForResize={isSidebarOpen}
-          onSessionsSidebarResizeStart={(event) =>
-            handleSessionsSidebarResizeStart(event, sessionsSidebarWidth, setSessionsSidebarWidth)
-          }
-          homeUrl={homeUrl}
-          loopsHomeUrl={loopsHomeUrl}
-          isLoopsView={isLoopsView}
-          highlightNewCreate={highlightNewCreate}
-          onNewLoop={() => navigate(loopNewUrl())}
-          onNewSession={() => {
-            setCreateSessionError(null);
-            navigate(sessionNewUrl());
-          }}
-          loopsLoaded={loopsLoaded}
-          loops={loops}
-          routeLoopId={routeLoopId}
-          isNewLoopRoute={isNewLoopRoute}
-          mobilePreferListForHighlight={mobilePreferList}
-          reloadLoops={reloadLoops}
-          onDeleteLoop={loopWorkspace.handleDeleteLoop}
-          sidebarSessions={sidebarSessions}
-          routeSessionId={routeSessionId}
-          isNewSessionRoute={isNewSessionRoute}
-          hideSessionListRepo={hideSessionListRepo}
-          suppressOpenSessionUnread={suppressOpenSessionUnread}
-          hasMoreSessions={hasMoreSessions}
-          sessionsLength={sessions.length}
-          onLoadMoreSessions={loadMoreSessions}
-          listScope={listScope}
-        />
-
-        <div
-          className={`${mobilePreferList ? 'hidden' : 'flex'} min-h-0 min-w-0 flex-1 flex-col md:min-w-[var(--session-main-min-w)]`}
-          style={{ '--session-main-min-w': `${SESSION_MAIN_MIN_WIDTH}px` }}
-        >
-          <SessionViewTabs
+    <PushApprovalUiProvider pushModalOpen={showPushModal} openAgentPushApproval={applyPushRequest}>
+      <div className="flex-1 min-h-0 flex flex-col">
+        {showWorkspaceHeader && (
+          <SessionWorkspaceHeader
             isLoopsView={isLoopsView}
-            isSidebarOpen={isSidebarOpen}
-            onToggleSidebar={() => setShowSidebar(!isSidebarOpen)}
-            loopTabActive={loopTabActive}
+            routeLoopId={routeLoopId}
+            loopWorkspace={loopWorkspace}
             isNewLoopRoute={isNewLoopRoute}
-            onLoopTabChange={loopWorkspace.setLoopTab}
-            viewTabsScrollRef={viewTabsScrollRef}
-            activeViewTabRef={activeViewTabRef}
-            globalSessionViewDisabled={globalSessionViewDisabled}
+            loopsHomeUrl={loopsHomeUrl}
+            showRepoDetails={showRepoDetails}
             isNewSessionRoute={isNewSessionRoute}
-            activeView={activeView}
-            onViewTabClick={handleViewTabClick}
-            openIssuesTabCount={openIssuesTabCount}
-            toggleSidePanel={toggleSidePanel}
-            showTasks={showTasks}
-            reviewer={reviewer}
+            homeUrl={homeUrl}
+            headerSession={headerSession}
+            isMdUp={isMdUp}
+            loopEditUrl={loopEditUrl}
+            handlePush={handlePush}
+            pushing={pushing}
+            commitsToPush={commitsToPush}
+            pushToolReadonly={pushToolReadonly}
+            session={session}
+            prInfo={prInfo}
+          />
+        )}
+
+        <SessionStatusBanners
+          session={session}
+          isArchiving={isArchiving}
+          isReadonly={isReadonly}
+          error={error}
+          onDismissError={() => setError(null)}
+        />
+
+        {/* Sidebar (full height) + main column (tabs + views + tasks) */}
+        <div className="flex flex-1 min-h-0 overflow-hidden relative">
+          <SessionListRail
+            sessionsSidebarElRef={sessionsSidebarElRef}
+            mobilePreferList={mobilePreferList}
+            sessionsSidebarResizing={sessionsSidebarResizing}
+            showSidebar={showSidebar}
+            isSidebarOpen={isSidebarOpen}
+            sessionsSidebarWidth={sessionsSidebarWidth}
+            isSidebarOpenForResize={isSidebarOpen}
+            onSessionsSidebarResizeStart={(event) =>
+              handleSessionsSidebarResizeStart(event, sessionsSidebarWidth, setSessionsSidebarWidth)
+            }
+            homeUrl={homeUrl}
+            loopsHomeUrl={loopsHomeUrl}
+            isLoopsView={isLoopsView}
+            highlightNewCreate={highlightNewCreate}
+            onNewLoop={() => navigate(loopNewUrl())}
+            onNewSession={() => {
+              setCreateSessionError(null);
+              navigate(sessionNewUrl());
+            }}
+            loopsLoaded={loopsLoaded}
+            loops={loops}
+            routeLoopId={routeLoopId}
+            isNewLoopRoute={isNewLoopRoute}
+            mobilePreferListForHighlight={mobilePreferList}
+            reloadLoops={reloadLoops}
+            onDeleteLoop={loopWorkspace.handleDeleteLoop}
+            sidebarSessions={sidebarSessions}
+            routeSessionId={routeSessionId}
+            // Session highlight fills the title and agent tree; the open agent
+            // border contrasts on that fill (review/diff: session fill only).
+            routeAgentId={chatViewOpen ? (activeAgent?.id ?? null) : null}
+            autoExpandId={lastOpenedSessionId}
+            isMobileList={!isMdUp}
+            isNewSessionRoute={isNewSessionRoute}
+            hideSessionListRepo={hideSessionListRepo}
+            suppressOpenSessionUnread={suppressOpenSessionUnread}
+            hasMoreSessions={hasMoreSessions}
+            sessionsLength={sessions.length}
+            onLoadMoreSessions={loadMoreSessions}
+            listScope={listScope}
           />
 
-          <div className="relative flex min-h-0 flex-1 overflow-hidden">
-            {isLoopsView && (
-              <LoopWorkspaceBody
-                workspaceOpen={loopWorkspace.workspaceOpen}
-                loopLoading={loopWorkspace.loopLoading}
-                loopLoadFailed={loopWorkspace.loopLoadFailed}
-                onRetryLoadLoop={loopWorkspace.retryLoadLoop}
-                isNewLoopRoute={isNewLoopRoute}
-                activeTab={loopWorkspace.activeTab}
-                loop={loopWorkspace.loop}
-                editingLoop={loopWorkspace.editingLoop}
-                saving={loopWorkspace.saving}
-                builderIsGlobal={loopWorkspace.builderIsGlobal}
-                builderRepoFullName={loopWorkspace.builderRepoFullName}
-                builderAllowRepoChoice={loopWorkspace.builderAllowRepoChoice}
-                onCreateLoop={loopWorkspace.handleCreateLoop}
-                onUpdateLoop={loopWorkspace.handleUpdateLoop}
-                onDeleteLoop={() => loopWorkspace.handleDeleteLoop()}
-                runSessions={loopWorkspace.runSessions}
-                runsLoading={loopWorkspace.runsLoading}
-                runsLoaded={loopWorkspace.runsLoaded}
-              />
-            )}
-            {!isLoopsView && isNewSessionRoute && (
-              <SessionCreateBody
-                creatingSession={creatingSession}
-                createSessionError={createSessionError}
-                onDismissCreateError={() => setCreateSessionError(null)}
-                newSessionFormKey={newSessionFormKey}
-                builderAllowRepoChoice={builderAllowRepoChoice}
-                builderRepoFullName={builderRepoFullName}
-                onSubmit={handleCreateSession}
-                loading={creatingSession}
-                isGlobal={builderIsGlobal}
-              />
-            )}
-            {!isLoopsView && awaitingSession && (
-              <div className="flex flex-1 min-h-0 items-center justify-center bg-page">
-                <Loader2
-                  className="w-8 h-8 animate-spin text-accent"
-                  aria-label="Loading session"
-                />
-              </div>
-            )}
-            {!isLoopsView &&
-              !isNewSessionRoute &&
-              !awaitingSession &&
-              session &&
-              activeView === 'chat' && (
-                <ChatView
-                  key={session.id}
-                  messages={messages}
-                  loading={chatLoading}
-                  loadMore={loadMore}
-                  loadingMore={loadingMore}
-                  hasMore={hasMore}
-                  session={session}
-                  activeAgent={activeAgent}
-                  agents={agents}
-                  onSelectAgent={selectAgent}
-                  tasks={tasks}
-                  onSelectTask={selectTask}
-                  systemPrompt={systemPrompt}
-                  onViewChange={setView}
-                  readonly={isReadonly}
-                  onModelChange={handleModelChange}
-                  onAgentConfigChange={handleAgentConfigChangeRequest}
-                  onAutoPushChange={handleAutoPushChange}
-                  autoPushDisabled={sessionIsLocalRepo}
-                  autoPush={sessionAutoPushOn}
-                  cursorModelPrefs={cursorModelPrefs}
-                  onCursorModelPrefChange={setCursorModelPref}
-                  commitsToPush={commitsToPush}
-                  onPush={handlePush}
-                  pushing={pushing}
-                  onDeletePermanently={handleSessionDeletedPermanently}
+          <div
+            className={`${mobilePreferList ? 'hidden' : 'flex'} min-h-0 min-w-0 flex-1 flex-col md:min-w-[var(--session-main-min-w)]`}
+            style={{ '--session-main-min-w': `${SESSION_MAIN_MIN_WIDTH}px` }}
+          >
+            <SessionViewTabs
+              isLoopsView={isLoopsView}
+              isSidebarOpen={isSidebarOpen}
+              onToggleSidebar={() => setShowSidebar(!isSidebarOpen)}
+              loopTabActive={loopTabActive}
+              isNewLoopRoute={isNewLoopRoute}
+              onLoopTabChange={loopWorkspace.setLoopTab}
+              viewTabsScrollRef={viewTabsScrollRef}
+              activeViewTabRef={activeViewTabRef}
+              globalSessionViewDisabled={globalSessionViewDisabled}
+              isNewSessionRoute={isNewSessionRoute}
+              activeView={activeView}
+              onViewTabClick={handleViewTabClick}
+              openIssuesTabCount={openIssuesTabCount}
+              toggleSidePanel={toggleSidePanel}
+              showTasks={showTasks}
+              reviewer={reviewer}
+            />
+
+            <div className="relative flex min-h-0 flex-1 overflow-hidden">
+              {isLoopsView && (
+                <LoopWorkspaceBody
+                  workspaceOpen={loopWorkspace.workspaceOpen}
+                  loopLoading={loopWorkspace.loopLoading}
+                  loopLoadFailed={loopWorkspace.loopLoadFailed}
+                  onRetryLoadLoop={loopWorkspace.retryLoadLoop}
+                  isNewLoopRoute={isNewLoopRoute}
+                  activeTab={loopWorkspace.activeTab}
+                  loop={loopWorkspace.loop}
+                  editingLoop={loopWorkspace.editingLoop}
+                  saving={loopWorkspace.saving}
+                  builderIsGlobal={loopWorkspace.builderIsGlobal}
+                  builderRepoFullName={loopWorkspace.builderRepoFullName}
+                  builderAllowRepoChoice={loopWorkspace.builderAllowRepoChoice}
+                  onCreateLoop={loopWorkspace.handleCreateLoop}
+                  onUpdateLoop={loopWorkspace.handleUpdateLoop}
+                  onDeleteLoop={() => loopWorkspace.handleDeleteLoop()}
+                  runSessions={loopWorkspace.runSessions}
+                  runsLoading={loopWorkspace.runsLoading}
+                  runsLoaded={loopWorkspace.runsLoaded}
+                  onRunLoop={loopWorkspace.handleRunLoop}
+                  runningLoop={loopWorkspace.runningLoop}
                 />
               )}
-            {!isLoopsView &&
-              !isNewSessionRoute &&
-              !awaitingSession &&
-              session &&
-              activeView === 'review' && (
-                <ReviewView
-                  key={session.id}
-                  session={session}
-                  readonly={isReadonly}
-                  issues={sessionIssues}
-                  issuesLoading={sessionIssuesLoading}
-                  onOpenReviewerChat={selectAgent}
-                  onReviewerCleared={handleReviewerCleared}
+              {!isLoopsView && isNewSessionRoute && (
+                <SessionCreateBody
+                  creatingSession={creatingSession}
+                  createSessionError={createSessionError}
+                  onDismissCreateError={() => setCreateSessionError(null)}
+                  newSessionFormKey={newSessionFormKey}
+                  builderAllowRepoChoice={builderAllowRepoChoice}
+                  builderRepoFullName={builderRepoFullName}
+                  onSubmit={handleCreateSession}
+                  loading={creatingSession}
+                  isGlobal={builderIsGlobal}
                 />
               )}
-            {!isLoopsView &&
-              !isNewSessionRoute &&
-              !awaitingSession &&
-              session &&
-              activeView === 'diff' && (
-                <DiffView
-                  key={session.id}
-                  session={session}
-                  selectedCommit={selectedDiffCommit}
-                  commits={branchCommits}
-                  onSelectedCommitChange={handleDiffCommitChange}
-                  onRefreshCommits={refreshBranchCommits}
-                  onRefreshChangedFiles={refreshChangedFiles}
-                  commitsLoading={branchCommitsLoading}
-                  changedFilesLoading={changedFilesLoading}
-                  diff={sessionDiff}
-                  diffLoading={sessionDiffLoading}
-                  diffError={sessionDiffError}
-                  diffStale={sessionDiffStale}
-                  diffHasFetched={sessionDiffHasFetched}
-                  onRefreshDiff={refreshSessionDiff}
-                  fileByFile={sessionDiffFileByFile}
-                  changedFiles={diffFiles ?? []}
-                  selectedFile={diffSelectorFile}
-                  onSelectedFileChange={setSelectedDiffFile}
-                  scrollToFile={scrollToDiffFile}
-                  onScrolledToFile={clearScrollToDiffFile}
-                  readonly={isReadonly}
-                  onModelChange={handleModelChange}
-                  onAgentConfigChange={handleAgentConfigChangeRequest}
-                  cursorModelPrefs={cursorModelPrefs}
-                  onCursorModelPrefChange={setCursorModelPref}
-                />
+              {!isLoopsView && awaitingSession && (
+                <div className="flex flex-1 min-h-0 items-center justify-center bg-page">
+                  <Loader2
+                    className="w-8 h-8 animate-spin text-accent"
+                    aria-label="Loading session"
+                  />
+                </div>
               )}
-            {!isLoopsView &&
-              !isNewSessionRoute &&
-              !awaitingSession &&
-              session &&
-              activeView === 'preview' && (
-                <PreviewView
-                  key={session.id}
-                  session={session}
-                  readonly={isReadonly}
-                  onViewLogs={handleViewTaskLogs}
-                />
-              )}
-            {!isLoopsView &&
-              !isNewSessionRoute &&
-              !awaitingSession &&
-              session &&
-              activeView === 'plan' && (
-                <PlanView key={session.id} session={session} readonly={isReadonly} />
-              )}
-            {!isLoopsView &&
-              !isNewSessionRoute &&
-              !awaitingSession &&
-              session &&
-              activeView === 'details' && (
-                <DetailsView
-                  key={session.id}
-                  session={session}
-                  readonly={isReadonly}
-                  onSessionUpdate={setSession}
-                />
-              )}
+              {!isLoopsView &&
+                !isNewSessionRoute &&
+                !awaitingSession &&
+                session &&
+                activeView === 'chat' && (
+                  <ChatView
+                    key={session.id}
+                    messages={messages}
+                    loading={chatLoading}
+                    loadMore={loadMore}
+                    loadingMore={loadingMore}
+                    hasMore={hasMore}
+                    session={session}
+                    activeAgent={activeAgent}
+                    agents={agentsForChat}
+                    onSelectAgent={selectAgent}
+                    tasks={tasks}
+                    onSelectTask={selectTask}
+                    onShowTasks={() => setSidePanelTab('tasks')}
+                    systemPrompt={systemPrompt}
+                    onViewChange={setView}
+                    readonly={isReadonly}
+                    onModelChange={handleModelChange}
+                    onAgentConfigChange={handleAgentConfigChangeRequest}
+                    onAutoPushChange={handleAutoPushChange}
+                    autoPushDisabled={sessionIsLocalRepo}
+                    autoPush={sessionAutoPushOn}
+                    cursorModelPrefs={cursorModelPrefs}
+                    onCursorModelPrefChange={setCursorModelPref}
+                    commitsToPush={commitsToPush}
+                    onPush={handlePush}
+                    pushing={pushing}
+                    onDeletePermanently={handleSessionDeletedPermanently}
+                  />
+                )}
+              {!isLoopsView &&
+                !isNewSessionRoute &&
+                !awaitingSession &&
+                session &&
+                activeView === 'review' && (
+                  <ReviewView
+                    key={session.id}
+                    session={session}
+                    readonly={isReadonly}
+                    issues={sessionIssues}
+                    issuesLoading={sessionIssuesLoading}
+                    onOpenReviewerChat={selectAgent}
+                    onReviewerCleared={handleReviewerCleared}
+                  />
+                )}
+              {!isLoopsView &&
+                !isNewSessionRoute &&
+                !awaitingSession &&
+                session &&
+                activeView === 'diff' && (
+                  <DiffView
+                    key={session.id}
+                    session={session}
+                    selectedCommit={selectedDiffCommit}
+                    commits={branchCommits}
+                    onSelectedCommitChange={handleDiffCommitChange}
+                    onRefreshCommits={refreshBranchCommits}
+                    onRefreshChangedFiles={refreshChangedFiles}
+                    commitsLoading={branchCommitsLoading}
+                    changedFilesLoading={changedFilesLoading}
+                    diff={sessionDiff}
+                    diffLoading={sessionDiffLoading}
+                    diffError={sessionDiffError}
+                    diffStale={sessionDiffStale}
+                    diffHasFetched={sessionDiffHasFetched}
+                    onRefreshDiff={refreshSessionDiff}
+                    fileByFile={sessionDiffFileByFile}
+                    changedFiles={diffFiles ?? []}
+                    selectedFile={diffSelectorFile}
+                    onSelectedFileChange={setSelectedDiffFile}
+                    scrollToFile={scrollToDiffFile}
+                    onScrolledToFile={clearScrollToDiffFile}
+                    readonly={isReadonly}
+                    onModelChange={handleModelChange}
+                    onAgentConfigChange={handleAgentConfigChangeRequest}
+                    cursorModelPrefs={cursorModelPrefs}
+                    onCursorModelPrefChange={setCursorModelPref}
+                    fileFilters={fileFilters}
+                  />
+                )}
+              {!isLoopsView &&
+                !isNewSessionRoute &&
+                !awaitingSession &&
+                session &&
+                activeView === 'preview' && (
+                  <PreviewView
+                    key={session.id}
+                    session={session}
+                    readonly={isReadonly}
+                    onViewLogs={handleViewTaskLogs}
+                  />
+                )}
+              {!isLoopsView &&
+                !isNewSessionRoute &&
+                !awaitingSession &&
+                session &&
+                activeView === 'plan' && (
+                  <PlanView
+                    key={session.id}
+                    session={session}
+                    readonly={isReadonly}
+                    runPlanAgentId={primaryBuilder?.id ?? null}
+                  />
+                )}
+              {!isLoopsView &&
+                !isNewSessionRoute &&
+                !awaitingSession &&
+                session &&
+                activeView === 'details' && (
+                  <DetailsView
+                    key={session.id}
+                    session={session}
+                    readonly={isReadonly}
+                    onSessionUpdate={setSession}
+                  />
+                )}
+            </div>
           </div>
 
-          {!isNewSessionRoute && (
-            <SessionMainViewFooter
-              session={session}
-              onShowTasks={() => setSidePanelTab('tasks')}
-              onShowAgents={() => setSidePanelTab('agents')}
+          {/* Task / files / reviewer panel — drawer below md, inline column md+ */}
+          {showTasks && !isNewSessionRoute && (
+            <div
+              className="md:hidden fixed inset-0 z-30 bg-black/50"
+              onClick={hideSidePanel}
+              aria-hidden={false}
             />
+          )}
+          {isSidePanelOpen && (
+            <div
+              ref={sidePanelElRef}
+              className="flex min-h-0 shrink-0 flex-col overflow-hidden border-l border-line bg-nav fixed inset-y-0 right-0 z-40 w-[85vw] max-w-sm md:relative md:inset-auto md:z-auto md:w-[var(--side-panel-w)] md:max-w-[min(85vw,100%)]"
+              style={{ '--side-panel-w': `${sidePanelWidth}px` }}
+            >
+              <div
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize side panel"
+                onPointerDown={(event) =>
+                  handleSidePanelResizeStart(event, sidePanelWidth, setSidePanelWidth)
+                }
+                className="hidden md:block absolute left-0 top-0 bottom-0 z-10 w-1.5 -translate-x-1/2 cursor-col-resize touch-none hover:bg-brand/50 active:bg-brand/70"
+              />
+              <SessionSidePanel
+                key={sessionId}
+                sidePanelTab={sidePanelTab}
+                onSidePanelTabChange={setSidePanelTab}
+                onClose={hideSidePanel}
+                session={session}
+                isGlobal={isGlobalSession(session)}
+                readonly={isReadonly}
+                sidePanelOpen={isSidePanelOpen}
+                diffFiles={diffFiles}
+                changedFilesLoading={changedFilesLoading}
+                onRefreshChangedFiles={refreshChangedFiles}
+                onSelectDiffFile={handleSelectDiffFile}
+                selectedDiffFilePath={
+                  diffViewActive && sessionDiffFileByFile ? diffSelectorFile : null
+                }
+                fileFilters={fileFilters}
+                branchCommits={branchCommits}
+                branchCommitsLoading={branchCommitsLoading}
+                onRefreshBranchCommits={refreshBranchCommits}
+                selectedDiffCommit={selectedDiffCommit}
+                diffViewActive={diffViewActive}
+                onSelectCommit={handleSelectCommitFromSidebar}
+                tasks={tasks}
+                configCommands={configCommands}
+                onStartTask={handleTaskStart}
+                onRunCommand={handleCommandRun}
+                onKill={handleTaskKill}
+                onDelete={handleTaskDelete}
+                onRetry={handleTaskRetry}
+                onViewLogs={handleViewTaskLogs}
+                onViewBaguetteConfig={handleViewBaguetteConfig}
+                showBaguetteConfigLink={!isGlobalSession(session)}
+                rawMessages={rawMessages}
+                loadMore={loadMore}
+                loadingMore={loadingMore}
+                hasMore={hasMore}
+                chatOpen={chatViewOpen}
+                agentLabelById={agentLabelById}
+                sessionId={sessionId}
+              />
+            </div>
           )}
         </div>
 
-        {/* Task / files / reviewer panel — drawer below md, inline column md+ */}
-        {showTasks && !isNewSessionRoute && (
-          <div
-            className="md:hidden fixed inset-0 z-30 bg-black/50"
-            onClick={hideSidePanel}
-            aria-hidden={false}
-          />
-        )}
-        {isSidePanelOpen && (
-          <div
-            ref={sidePanelElRef}
-            className="flex min-h-0 shrink-0 flex-col overflow-hidden border-l border-line bg-nav fixed inset-y-0 right-0 z-40 w-[85vw] max-w-sm md:relative md:inset-auto md:z-auto md:w-[var(--side-panel-w)] md:max-w-[min(85vw,100%)]"
-            style={{ '--side-panel-w': `${sidePanelWidth}px` }}
-          >
-            <div
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="Resize side panel"
-              onPointerDown={(event) =>
-                handleSidePanelResizeStart(event, sidePanelWidth, setSidePanelWidth)
+        <SessionWorkspaceModals
+          pendingAgentConfigId={pendingAgentConfigId}
+          session={session}
+          configOptions={configOptions}
+          switchingAgentSdk={switchingAgentSdk}
+          onAgentSdkSwitchConfirm={handleAgentSdkSwitchConfirm}
+          onAgentSdkSwitchCancel={handleAgentSdkSwitchCancel}
+          pendingTaskConfirm={pendingTaskConfirm}
+          onTaskConfirmCancel={() => setPendingTaskConfirm(null)}
+          onTaskConfirm={() => {
+            runConfiguredTask(pendingTaskConfirm.taskKey, {
+              closeTaskLogModal: pendingTaskConfirm.closeTaskLogModal,
+            });
+            setPendingTaskConfirm(null);
+          }}
+          showPushModal={showPushModal}
+          repos={repos}
+          commitsToPush={commitsToPush}
+          pushRequest={pushRequest}
+          sessionAutoPushOn={sessionAutoPushOn}
+          sessionIsLocalRepo={sessionIsLocalRepo}
+          onAutoPushChange={handleAutoPushChange}
+          onPushConfirmed={handlePushConfirmed}
+          onPushCancel={() => {
+            if (pushRequest?.agentRequest && session?.id) {
+              const cancelPayload = {
+                session_id: session.id,
+                ...(pushRequest.requestId ? { request_id: pushRequest.requestId } : {}),
+              };
+              if (pushRequest.requestId) {
+                sessionsService
+                  .recordGitPushApprovalOutcome({
+                    id: session.id,
+                    request_id: pushRequest.requestId,
+                    outcome: 'canceled',
+                  })
+                  .catch((err) => toastError('Failed to record push cancellation', err));
               }
-              className="hidden md:block absolute left-0 top-0 bottom-0 z-10 w-1.5 -translate-x-1/2 cursor-col-resize touch-none hover:bg-brand/50 active:bg-brand/70"
-            />
-            <SessionSidePanel
-              key={sessionId}
-              sidePanelTab={sidePanelTab}
-              onSidePanelTabChange={setSidePanelTab}
-              onClose={hideSidePanel}
-              session={session}
-              isGlobal={isGlobalSession(session)}
-              readonly={isReadonly}
-              sidePanelOpen={isSidePanelOpen}
-              diffFiles={diffFiles}
-              changedFilesLoading={changedFilesLoading}
-              onRefreshChangedFiles={refreshChangedFiles}
-              onSelectDiffFile={handleSelectDiffFile}
-              selectedDiffFilePath={
-                diffViewActive && sessionDiffFileByFile ? diffSelectorFile : null
-              }
-              branchCommits={branchCommits}
-              branchCommitsLoading={branchCommitsLoading}
-              onRefreshBranchCommits={refreshBranchCommits}
-              selectedDiffCommit={selectedDiffCommit}
-              diffViewActive={diffViewActive}
-              onSelectCommit={handleSelectCommitFromSidebar}
-              tasks={tasks}
-              configCommands={configCommands}
-              onStartTask={handleTaskStart}
-              onRunCommand={handleCommandRun}
-              onKill={handleTaskKill}
-              onDelete={handleTaskDelete}
-              onRetry={handleTaskRetry}
-              onViewLogs={handleViewTaskLogs}
-              onViewBaguetteConfig={handleViewBaguetteConfig}
-              showBaguetteConfigLink={!isGlobalSession(session)}
-              rawMessages={rawMessages}
-              loadMore={loadMore}
-              loadingMore={loadingMore}
-              hasMore={hasMore}
-              chatOpen={chatViewOpen}
-              agentLabelById={agentLabelById}
-              sessionId={sessionId}
-              selectedAgentId={activeAgent?.id}
-              onSelectAgent={selectAgent}
-              onReviewerCleared={handleReviewerCleared}
-            />
-          </div>
-        )}
+              sessionsService.emit('push:approval-cancelled', cancelPayload);
+            }
+            setShowPushModal(false);
+            setPushRequest(null);
+          }}
+          activeTaskModal={activeTaskModal}
+          tasks={tasks}
+          onTaskKill={handleTaskKill}
+          onTaskRetry={handleTaskRetry}
+          onCloseTaskLog={() => setActiveTaskModal(null)}
+          readonly={isReadonly}
+          showBaguetteConfigModal={showBaguetteConfigModal}
+          onCloseBaguetteConfig={() => setShowBaguetteConfigModal(false)}
+        />
       </div>
-
-      <SessionWorkspaceModals
-        pendingAgentConfigId={pendingAgentConfigId}
-        session={session}
-        configOptions={configOptions}
-        switchingAgentSdk={switchingAgentSdk}
-        onAgentSdkSwitchConfirm={handleAgentSdkSwitchConfirm}
-        onAgentSdkSwitchCancel={handleAgentSdkSwitchCancel}
-        pendingTaskConfirm={pendingTaskConfirm}
-        onTaskConfirmCancel={() => setPendingTaskConfirm(null)}
-        onTaskConfirm={() => {
-          runConfiguredTask(pendingTaskConfirm.taskKey, {
-            closeTaskLogModal: pendingTaskConfirm.closeTaskLogModal,
-          });
-          setPendingTaskConfirm(null);
-        }}
-        showPushModal={showPushModal}
-        repos={repos}
-        commitsToPush={commitsToPush}
-        pushRequest={pushRequest}
-        sessionAutoPushOn={sessionAutoPushOn}
-        sessionIsLocalRepo={sessionIsLocalRepo}
-        onAutoPushChange={handleAutoPushChange}
-        onPushConfirmed={handlePushConfirmed}
-        onPushCancel={() => {
-          setShowPushModal(false);
-          setPushRequest(null);
-        }}
-        activeTaskModal={activeTaskModal}
-        tasks={tasks}
-        onTaskKill={handleTaskKill}
-        onTaskRetry={handleTaskRetry}
-        onCloseTaskLog={() => setActiveTaskModal(null)}
-        readonly={isReadonly}
-        showBaguetteConfigModal={showBaguetteConfigModal}
-        onCloseBaguetteConfig={() => setShowBaguetteConfigModal(false)}
-      />
-    </div>
+    </PushApprovalUiProvider>
   );
 }

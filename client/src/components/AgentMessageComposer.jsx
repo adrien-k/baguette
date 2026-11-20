@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Bot, Loader2 } from 'lucide-react';
 import SessionModelSelect from './SessionModelSelect.jsx';
 import ComposerTextarea from './ComposerTextarea.jsx';
 import { CHAT_COLUMN_CLASS } from './ChatMessagesViewport.jsx';
@@ -9,11 +9,12 @@ import LightChipDropdown from './LightChipDropdown.jsx';
 import AgentTypeIcon from './AgentTypeIcon.jsx';
 import Tooltip from './Tooltip.jsx';
 import {
-  activeAgentsRunningLabel,
   agentDisplayTitle,
   agentMenuOptionLabel,
   agentSwitcherDropdownSections,
+  isAgentTurnActive,
   isSubagentBuilder,
+  otherAgentsRunningLabel,
 } from '../utils/sessionAgents.js';
 
 const COMPOSER_SUBMIT_SUBTITLE_CLASS =
@@ -23,6 +24,11 @@ const COMPOSER_SUBMIT_BUTTON_PADDING = 'px-2.5 sm:px-3 md:px-4';
 
 const TEXTAREA_CLASS =
   'block w-full bg-transparent px-2 sm:px-3 py-2.5 text-sm text-fg placeholder-faint focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed rounded-t-lg';
+
+function runningTasksLabel(count) {
+  if (count === 1) return '1 task running';
+  return `${count} tasks running`;
+}
 
 function composerAgentSwitcherBadgeClass(agent) {
   if (isSubagentBuilder(agent)) {
@@ -34,18 +40,74 @@ function composerAgentSwitcherBadgeClass(agent) {
   return 'bg-brand/15 border-brand/40 text-accent hover:enabled:bg-brand/25 hover:enabled:border-brand/50';
 }
 
-function RunningAgentsIndicator({ count }) {
+/** Spinner after the agent title — only while the currently selected agent is running. */
+function SelectedAgentRunningSpinner({ agent }) {
+  if (!isAgentTurnActive(agent?.status)) return null;
+  return <Loader2 className="h-3 w-3 shrink-0 animate-spin" aria-hidden />;
+}
+
+/**
+ * Count of agents still running besides the selected one: blinking robot icon
+ * + number. Always the robot icon — the count spans every agent type. Hidden
+ * when the selected agent is the only one running.
+ */
+function OtherRunningAgentsCount({ count }) {
   if (!count || count <= 0) return null;
-  const label = activeAgentsRunningLabel(count);
+  const label = otherAgentsRunningLabel(count);
   return (
     <Tooltip content={label}>
       <span
         className="flex items-center gap-0.5 shrink-0 tabular-nums text-[11px] opacity-80"
         aria-label={label}
       >
-        <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+        <span className="motion-safe:animate-pulse inline-flex shrink-0" aria-hidden>
+          <Bot className="w-3.5 h-3.5 shrink-0 text-accent" strokeWidth={2} />
+        </span>
         {count}
       </span>
+    </Tooltip>
+  );
+}
+
+/**
+ * Running-tasks count beside the selector: pulsing dot + number. Opens the
+ * tasks side panel when `onShowTasks` is provided (session chat only).
+ */
+function RunningTasksCount({ count, onShowTasks }) {
+  if (!count || count <= 0) return null;
+  const label = runningTasksLabel(count);
+  const content = (
+    <>
+      <span
+        className="w-1.5 h-1.5 rounded-full bg-ok motion-safe:animate-pulse shrink-0"
+        aria-hidden
+      />
+      {count}
+    </>
+  );
+  if (!onShowTasks) {
+    return (
+      <Tooltip content={label}>
+        <span
+          className="flex items-center gap-1 shrink-0 tabular-nums text-[11px] text-secondary"
+          aria-label={label}
+        >
+          {content}
+        </span>
+      </Tooltip>
+    );
+  }
+  return (
+    <Tooltip content={label}>
+      <button
+        type="button"
+        onClick={onShowTasks}
+        aria-label={label}
+        title={label}
+        className="flex items-center gap-1 shrink-0 rounded px-0.5 py-0.5 tabular-nums text-[11px] text-secondary hover:bg-control/50 transition-colors"
+      >
+        {content}
+      </button>
     </Tooltip>
   );
 }
@@ -84,6 +146,7 @@ export default function AgentMessageComposer({
   submitLabel = 'Send',
   submitSubtitle,
   submitTooltip,
+  showSubmitButton = true,
   toolbarExtra,
   sendAddon,
   autoFocus = false,
@@ -99,6 +162,8 @@ export default function AgentMessageComposer({
   agentOptionCostLabel,
   agentHeaderEnd,
   runningAgentCount = 0,
+  runningTasksCount = 0,
+  onShowTasks,
   mcpReadOnly = false,
 }) {
   const handleChange = (e) => {
@@ -127,14 +192,26 @@ export default function AgentMessageComposer({
       : null;
   const headerAgent =
     agentFromList ?? (agentName || agentType ? { name: agentName, agent_type: agentType } : null);
+  // Hide the count when the selected agent is the only one running.
+  const otherRunningAgentCount = Math.max(
+    0,
+    runningAgentCount - (isAgentTurnActive(headerAgent?.status) ? 1 : 0)
+  );
   const showAgentSwitcher = Boolean(
     sessionAgents.length > 1 && onSelectAgent && selectedAgentId != null
   );
-  /** Switcher + caret only when 2+ session agents; static label when `agents` is not passed (e.g. review start). */
-  const showAgentHeader =
+  /**
+   * Switcher + caret only when 2+ session agents; static label when `agents` is
+   * not passed (e.g. review start). The header row also hosts the running-tasks
+   * indicator, so it renders whenever there is agent chrome or tasks to show.
+   */
+  const showAgentChrome = Boolean(
     headerAgent &&
     (headerAgent.agent_type || headerAgent.name) &&
-    (showAgentSwitcher || sessionAgents.length === 0 || mcpReadOnly);
+    (showAgentSwitcher || sessionAgents.length === 0 || mcpReadOnly)
+  );
+  const showRunningTasks = Boolean(runningTasksCount > 0);
+  const showAgentHeader = showAgentChrome || (showRunningTasks && onShowTasks != null);
 
   const agentTitleNode = (
     <span className="text-xs font-medium text-heading truncate">
@@ -174,48 +251,51 @@ export default function AgentMessageComposer({
       }`}
     >
       <div className="flex items-center gap-2 min-w-0 flex-1">
-        {showAgentSwitcher ? (
-          <LightChipDropdown
-            layout="list"
-            disabled={agentSwitcherDisabled}
-            value={String(selectedAgentId)}
-            onChange={(value) => {
-              const picked = sessionAgents.find((a) => String(a.id) === value);
-              if (picked) onSelectAgent(picked);
-            }}
-            options={agentSwitcherOptions}
-            sections={agentSwitcherSections ?? undefined}
-            selectedDisplay={{
-              icon: (
-                <AgentTypeIcon
-                  agentType={headerAgent.agent_type}
-                  subagent={isSubagentBuilder(headerAgent)}
-                />
-              ),
-              content: (
-                <span className="flex items-center gap-1.5 min-w-0 max-w-full">
-                  {agentTitleNode}
-                  <RunningAgentsIndicator count={runningAgentCount} />
-                </span>
-              ),
-            }}
-            ariaLabel="Switch agent"
-            triggerAriaLabel="Switch agent"
-            shrinkableTrigger
-            triggerClassName={`gap-1.5 rounded-md border px-2 py-1 text-xs font-medium transition-colors !h-auto min-h-0 max-w-full ${composerAgentSwitcherBadgeClass(
-              headerAgent
-            )}`}
-          />
-        ) : (
-          <>
-            <AgentTypeIcon
-              agentType={headerAgent.agent_type}
-              subagent={isSubagentBuilder(headerAgent)}
+        {showAgentChrome &&
+          (showAgentSwitcher ? (
+            <LightChipDropdown
+              layout="list"
+              disabled={agentSwitcherDisabled}
+              value={String(selectedAgentId)}
+              onChange={(value) => {
+                const picked = sessionAgents.find((a) => String(a.id) === value);
+                if (picked) onSelectAgent(picked);
+              }}
+              options={agentSwitcherOptions}
+              sections={agentSwitcherSections ?? undefined}
+              selectedDisplay={{
+                icon: (
+                  <AgentTypeIcon
+                    agentType={headerAgent.agent_type}
+                    subagent={isSubagentBuilder(headerAgent)}
+                  />
+                ),
+                content: (
+                  <span className="flex items-center gap-1.5 min-w-0 max-w-full">
+                    {agentTitleNode}
+                    <SelectedAgentRunningSpinner agent={headerAgent} />
+                  </span>
+                ),
+              }}
+              ariaLabel="Switch agent"
+              triggerAriaLabel="Switch agent"
+              shrinkableTrigger
+              triggerClassName={`gap-1.5 rounded-md border px-2 py-1 text-xs font-medium transition-colors !h-auto min-h-0 max-w-full ${composerAgentSwitcherBadgeClass(
+                headerAgent
+              )}`}
             />
-            {agentTitleNode}
-            <RunningAgentsIndicator count={runningAgentCount} />
-          </>
-        )}
+          ) : (
+            <>
+              <AgentTypeIcon
+                agentType={headerAgent.agent_type}
+                subagent={isSubagentBuilder(headerAgent)}
+              />
+              {agentTitleNode}
+              <SelectedAgentRunningSpinner agent={headerAgent} />
+            </>
+          ))}
+        <OtherRunningAgentsCount count={otherRunningAgentCount} />
+        <RunningTasksCount count={runningTasksCount} onShowTasks={onShowTasks} />
       </div>
       {agentHeaderEnd ? <div className="shrink-0 ml-auto">{agentHeaderEnd}</div> : null}
     </div>
@@ -303,7 +383,7 @@ export default function AgentMessageComposer({
         {!mcpReadOnly ? (
           <div className="flex shrink-0 items-center justify-end gap-1">
             {toolbarExtra}
-            {sendControl}
+            {showSubmitButton ? sendControl : null}
           </div>
         ) : null}
       </div>

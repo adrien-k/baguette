@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { ok, fail } from '../lib/result.js';
 import { requireOwnedSessionById } from '../lib/session-resolution.js';
 import { resolveSubagentInSession, formatSubagentSummary } from '../lib/subagent-resolution.js';
+import { notifyParentAgentIds } from '../../agents-db.js';
+import { hydrateAgentFailureErrors } from '../../agent-error-message.js';
 
 export function createStopSubagentTool(ctx) {
   const { app, userId, userParams, callerSession } = ctx;
@@ -9,8 +11,8 @@ export function createStopSubagentTool(ctx) {
     name: 'StopSubagent',
     description:
       'Stop a running subagent turn (and any active child subagents it spawned). ' +
-      'Use when a subagent is stuck or after AwaitSubagent times out with no progress (GetSessionMessages first). ' +
-      'Identify the subagent by agent_id or agent_ref from ListSubagents.',
+      'Use when a subagent is stuck or after AwaitAgent times out with no progress (GetAgentMessages first). ' +
+      'Identify the subagent by agent_id or agent_ref from ListAgents.',
     schema: {
       session_id: z
         .number()
@@ -23,7 +25,7 @@ export function createStopSubagentTool(ctx) {
         .int()
         .min(1)
         .optional()
-        .describe('Session-relative agent ref from ListSubagents'),
+        .describe('Session-relative agent ref from ListAgents'),
     },
     handler: async ({ session_id, agent_id, agent_ref }) => {
       let targetSessionId = callerSession?.id ?? null;
@@ -47,9 +49,11 @@ export function createStopSubagentTool(ctx) {
       try {
         await app.service('agents').stop({ agent_id: agent.id }, userParams);
         const fresh = await resolveSubagentInSession(db, targetSessionId, { agent_id: agent.id });
+        await hydrateAgentFailureErrors(db, [fresh]);
+        const watching = await notifyParentAgentIds(db, [agent.id]);
         return ok({
           stopped: true,
-          subagent: formatSubagentSummary(fresh),
+          subagent: formatSubagentSummary(fresh, { notifyParent: watching.has(agent.id) }),
         });
       } catch (err) {
         return fail(err.message);

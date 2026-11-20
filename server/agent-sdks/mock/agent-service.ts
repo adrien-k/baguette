@@ -14,6 +14,7 @@ import { getSdkPlugin, registerAgentSdk, registerSdkPlugin } from '../registry.j
 import { claudeBuildToolCallStart, claudeBuildToolCallComplete } from '../claude/mapping.ts';
 import { requireAgentConfigId } from '../../lib/usage-snapshot.js';
 import { runMockAgentTurn, runMockReviewerTurn } from './mock-agent-turn.js';
+import { recordMockTurnUsage } from './record-turn-usage.js';
 import { getReviewAgentTurn, reviewTurnKey } from '../../services/review-agent-turn.js';
 import { issueAgentMetadataFromTurn } from '../../services/session-issues.js';
 import { builderChatActiveKey, resolveAgentRowForMessage } from '../../services/agents-db.js';
@@ -23,6 +24,7 @@ import {
   setAgentTurnRunning,
   setAgentTurnTerminal,
 } from '../../services/agent-turn-patch.js';
+import { prepareAgentTurnStart } from '../../services/agent-turn-prelude.js';
 import type {
   AgentApp,
   AgentRow,
@@ -172,6 +174,10 @@ class MockAgentService {
     const isReview = channel === 'review';
     let turnFinishedOk = false;
     try {
+      await prepareAgentTurnStart(this.app, session, agent, {
+        channel,
+        agentSdk: MOCK_AGENT_SDK,
+      });
       if (!isReview) {
         await setAgentTurnRunning(this.app, agent, userId);
         await this.app.service('sessions').onTurnStart(sessionId);
@@ -208,6 +214,7 @@ class MockAgentService {
           app: this.app,
           userId,
           turnId,
+          agent,
         });
         turnFinishedOk = true;
         const terminalStatus = turnMeta?.awaitingUser ? 'approval' : 'completed';
@@ -224,9 +231,12 @@ class MockAgentService {
         if (isReview) {
           await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'failed', {
             sdk: MOCK_AGENT_SDK,
+            error_message: (err as Error).message,
           });
         } else {
-          await setAgentTurnTerminal(this.app, agent, userId, 'failed');
+          await setAgentTurnTerminal(this.app, agent, userId, 'failed', {
+            error_message: (err as Error).message,
+          });
         }
         this.app.service('sessions').emit('app:error', {
           sessionId,
@@ -237,6 +247,20 @@ class MockAgentService {
     } finally {
       await clearAgentActiveTurnId(this.app, agent, userId).catch(() => {});
       this._activeSessions.delete(activeKey);
+    }
+
+    if (turnFinishedOk) {
+      await this.recordTurnUsage(session, {
+        turnModel,
+        patchSessionCost: true,
+        agentConfigId: meta.turnAgentConfigId,
+        agentId: agent.id,
+      }).catch((err: Error) =>
+        logger.warn(
+          { sessionId, err: (err as Error).message },
+          'mock-agent: failed to record turn usage'
+        )
+      );
     }
 
     if (turnFinishedOk && isReview) {
@@ -257,6 +281,22 @@ class MockAgentService {
     }
   }
 
+  /**
+   * One completed mock turn: fixed fake tokens + fixed fake USD cost, recorded
+   * like the real SDKs so usage UIs (sidebar cost tooltip, Usage page) light up.
+   */
+  async recordTurnUsage(
+    session: AgentSessionRow,
+    opts: {
+      turnModel?: { model?: string | null; modelParams?: unknown };
+      patchSessionCost?: boolean;
+      agentConfigId?: number | null;
+      agentId?: number;
+    } = {}
+  ): Promise<number> {
+    return recordMockTurnUsage(this.app, session, opts);
+  }
+
   async stopSession(sessionId: number) {
     await this.stopTurn(sessionId);
   }
@@ -273,13 +313,13 @@ class MockAgentService {
     return this._activeSessions.get(id) ?? null;
   }
 
-  async generateSessionMetadata(
-    _initialPrompt: string,
-    shortId = '',
-    _user: unknown = null,
-    _repo: unknown = null
-  ): Promise<{ label: string; branchName: string }> {
-    return { label: '', branchName: `task-${shortId}` };
+  /**
+   * One-shot completion primitive (shared contract — see services/session-metadata.js).
+   * The mock SDK has no model to run: an empty string makes callers fall back to
+   * their default label and `task-<shortId>` branch.
+   */
+  async completeText(_prompt: string, _opts?: Record<string, unknown>): Promise<string> {
+    return '';
   }
 
   async isInterruptedSessionResumable(
@@ -304,7 +344,7 @@ export function registerMockAgentService(app: AgentApp, path = MOCK_AGENT_SERVIC
       'handleTableMessageCreated',
       'stopSession',
       'stopTurn',
-      'generateSessionMetadata',
+      'completeText',
       'isInterruptedSessionResumable',
     ],
   });

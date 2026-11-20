@@ -5,8 +5,15 @@ export const ISSUE_SEVERITIES = ISSUE_SEVERITY_ORDER;
 
 const SEVERITY_RANK = Object.fromEntries(ISSUE_SEVERITY_ORDER.map((s, i) => [s, i]));
 
-/** Non-ignored: opened on top, then submitted, then resolved. Ignored sorts last. */
-const STATUS_RANK = { opened: 0, submitted: 1, resolved: 2, ignored: 3 };
+/** Non-ignored: needs_decision first, then opened, submitted, resolved. Ignored sorts last. */
+const STATUS_RANK = { needs_decision: 0, opened: 1, submitted: 2, resolved: 3, ignored: 4 };
+
+/** Statuses that increment the Review tab badge (user still needs to act). */
+export const REVIEW_TAB_ISSUE_STATUSES = ['needs_decision', 'opened'];
+
+export function countsTowardReviewTab(issue) {
+  return REVIEW_TAB_ISSUE_STATUSES.includes(issue?.status);
+}
 
 /** @param {{ severity?: string, status?: string, id?: number, ref?: number }} a @param {{ severity?: string, status?: string, id?: number, ref?: number }} b */
 export function compareIssuesBySeverity(a, b) {
@@ -29,11 +36,16 @@ export function sortIssuesBySeverity(issues) {
   return [...issues].sort(compareIssuesBySeverity);
 }
 
+function selectedApproachSentence(issue) {
+  if (!issue?.selected_option_id) return '';
+  return ' The user already selected an approach — implement it (see ReadIssue).';
+}
+
 /** User message text when asking the builder to fix a single review issue (body comes from ReadIssue). */
 export function issueFixAgentPrompt(issue, sessionId) {
   return (
     `Fix session review issue #${issue.ref}.\n\n` +
-    `Call ReadIssue with ref ${issue.ref} and session_id ${sessionId} for details. ` +
+    `Call ReadIssue with ref ${issue.ref} and session_id ${sessionId} for details.${selectedApproachSentence(issue)} ` +
     `This issue is now submitted. When the fix is complete, call UpdateIssueStatus with ref ${issue.ref}, session_id ${sessionId}, and status "resolved".`
   );
 }
@@ -43,6 +55,7 @@ export function issuesFixAllAgentPrompt(sessionId) {
   return (
     `Fix all submitted session review issues on this session.\n\n` +
     `Start by calling ListIssues with status "submitted" (session_id ${sessionId}). ` +
+    `Issues with status "needs_decision" are excluded — they are waiting for the user to choose an approach. ` +
     `For each issue: call ReadIssue for details, implement the fix, then call UpdateIssueStatus with status "resolved" before moving on to the next issue. ` +
     `Prefer one separate git commit per issue; combine multiple issues into a single commit only when they can be fixed together easily in one change.`
   );
