@@ -1666,6 +1666,45 @@ describe('Sessions service - find, get, create', () => {
       expect(ids[ids.length - 1]).toBe(archivedId);
     });
 
+    it('honors $sort instead of default list ordering', async () => {
+      const olderId = await insertTestSession(db, {
+        user_id: userId1,
+        repo_id: repoId,
+        repo_full_name: 'test/repo',
+        base_branch: 'main',
+        initial_prompt: 'Older create',
+        short_id: 'oldcrt',
+        status: 'completed',
+        created_at: '2026-01-01T00:00:00.000Z',
+        last_activity_at: '2026-05-01T00:00:00.000Z',
+      });
+      const newerId = await insertTestSession(db, {
+        user_id: userId1,
+        repo_id: repoId,
+        repo_full_name: 'test/repo',
+        base_branch: 'main',
+        initial_prompt: 'Newer create',
+        short_id: 'newcrt',
+        status: 'completed',
+        created_at: '2026-03-01T00:00:00.000Z',
+        last_activity_at: '2026-01-01T00:00:00.000Z',
+      });
+
+      const byActivity = await app.service('sessions').find({
+        query: { $limit: 20 },
+        ...params({ id: userId1 }),
+      });
+      const activityIds = (byActivity.data ?? byActivity).map((s) => s.id);
+      expect(activityIds.indexOf(olderId)).toBeLessThan(activityIds.indexOf(newerId));
+
+      const byCreated = await app.service('sessions').find({
+        query: { $sort: { created_at: -1 }, $limit: 20 },
+        ...params({ id: userId1 }),
+      });
+      const createdIds = (byCreated.data ?? byCreated).map((s) => s.id);
+      expect(createdIds.indexOf(newerId)).toBeLessThan(createdIds.indexOf(olderId));
+    });
+
     it('excludes archived sessions when include_archived is false', async () => {
       await db('sessions').where({ id: sessId1 }).update({
         archived_at: '2026-04-01T00:00:00.000Z',

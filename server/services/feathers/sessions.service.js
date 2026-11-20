@@ -3203,12 +3203,12 @@ function applySessionListFilters(context) {
 }
 
 function applyGroupSort(context) {
-  if (context.params.knex) {
-    delete context.params.query?.$sort;
-    context.params.knex = context.params.knex
-      .orderByRaw('CASE WHEN archived_at IS NOT NULL THEN 1 ELSE 0 END ASC')
-      .orderBy('last_activity_at', 'desc');
-  }
+  if (!context.params.knex) return context;
+  // Dashboard list uses a fixed sort; callers that pass $sort own ordering (e.g. last-created lookup).
+  if (context.params.query?.$sort != null) return context;
+  context.params.knex = context.params.knex
+    .orderByRaw('CASE WHEN archived_at IS NOT NULL THEN 1 ELSE 0 END ASC')
+    .orderBy('last_activity_at', 'desc');
   return context;
 }
 

@@ -10,8 +10,10 @@ import {
   agentConfigsService,
   mcpServersService,
   pluginsService,
+  sessionsService,
   skillsService,
 } from '../feathers.js';
+import { feathersFindPage } from '../queries/feathersFinders.js';
 import { useCurrentUser } from '../context/CurrentUserContext.jsx';
 import { localStateFromConfigDefault } from '../utils/agentConfigDefaultModel.js';
 import { useAgentConfigs } from '../hooks/useAgentConfigs.js';
@@ -58,9 +60,9 @@ function parseRepoFullName(full) {
 }
 
 // Form settings are only captured to localStorage while the prompt has text, so idle visits and
-// empty-prompt "just open a session" runs never overwrite the last composed snapshot. The only
-// exemption is targetScope below: it records which repo the form is pointed at — navigation
-// state, not composition state — so an empty-prompt "open a session" visit reopens the same repo.
+// empty-prompt "just open a session" runs never overwrite the last composed snapshot. targetScope
+// is persisted only after the user changes the repo picker — server defaults stay in memory so each
+// All-sessions visit can load the latest created repo session again unless the user chose a repo.
 const hasPromptText = (store) => Boolean((store.prompt ?? '').trim());
 
 /** How a one-shot session starts (Start button); menu picks mode without submitting. */
@@ -120,21 +122,57 @@ export default function BuilderForm({
   const seededDefaultSkillsRef = useRef(false);
   /** Last repo/global scope we applied lastUsed() for — avoids clobbering manual picks on user/config refetches. */
   const lastSeededScopeRef = useRef(null);
+  // True once the user picks a repo, or this mount restored a saved pick. Server defaults stay
+  // in memory so the next visit can fetch the latest created repo session again.
+  const userChoseTargetScopeRef = useRef(
+    Boolean(persistKey && Object.hasOwn(persistentState.store, 'targetScope'))
+  );
   const { repos, loading: loadingRepos } = useRepoContext();
+  const { currentUser: userSettings } = useCurrentUser();
   const { cursorModelPrefs, setCursorModelPref } = useCursorModelPrefs();
   const defaultTarget = editingLoop
     ? editingLoop.is_global
       ? GLOBAL_SCOPE
       : editingLoop.repo_full_name
     : allowRepoChoice
-      ? (repos[0]?.full_name ?? GLOBAL_SCOPE)
+      ? GLOBAL_SCOPE
       : isGlobalProp
         ? GLOBAL_SCOPE
         : repoFullNameProp;
-  const [targetScope, setTargetScope] = persistentState.useState(
+  const [targetScope, setTargetScopeMemory] = persistentState.useState(
     'targetScope',
-    defaultTarget || GLOBAL_SCOPE
+    defaultTarget || GLOBAL_SCOPE,
+    {
+      persistWhen: () => userChoseTargetScopeRef.current,
+    }
   );
+  const setTargetScopeFromUser = (next) => {
+    userChoseTargetScopeRef.current = true;
+    setTargetScopeMemory(next);
+  };
+  useEffect(() => {
+    if (!allowRepoChoice || editingLoop || loadingRepos || userChoseTargetScopeRef.current) return;
+    let cancelled = false;
+    feathersFindPage(sessionsService, {
+      include_archived: true,
+      $sort: { created_at: -1 },
+      $limit: 1,
+    })
+      .then(({ rows }) => {
+        if (cancelled || userChoseTargetScopeRef.current) return;
+        const latest = rows[0];
+        if (!latest?.repo_id || latest.is_global) {
+          setTargetScopeMemory(GLOBAL_SCOPE);
+          return;
+        }
+        const linkedRepo = repos.find((r) => String(r.id) === String(latest.repo_id));
+        setTargetScopeMemory(linkedRepo?.full_name ?? GLOBAL_SCOPE);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [allowRepoChoice, editingLoop, loadingRepos, repos, setTargetScopeMemory]);
   const isGlobal = allowRepoChoice ? targetScope === GLOBAL_SCOPE : isGlobalProp;
   const repoFullName = allowRepoChoice ? (isGlobal ? null : targetScope) : repoFullNameProp;
   const linkedRepo = repos.find((r) => r.full_name === repoFullName);
@@ -172,7 +210,6 @@ export default function BuilderForm({
   useEffect(() => {
     if (localRepo) setAutoPush(false);
   }, [localRepo, setAutoPush]);
-  const { currentUser: userSettings } = useCurrentUser();
   const [agentConfigId, setAgentConfigIdRaw] = persistentState.useState(
     'agentConfigId',
     editingLoop?.agent_config_id ? String(editingLoop.agent_config_id) : '',
@@ -482,7 +519,7 @@ export default function BuilderForm({
   const clearForm = () => {
     const keepTarget = allowRepoChoice ? targetScope : null;
     persistentState.clear();
-    if (keepTarget) setTargetScope(keepTarget);
+    if (keepTarget) setTargetScopeMemory(keepTarget);
     setFiles([]);
     setFileError(null);
     setLoopName('');
@@ -780,7 +817,7 @@ export default function BuilderForm({
                 matchTriggerWidth
                 triggerClassName="bg-control border border-strong rounded-md px-3 py-2 text-fg hover:text-fg justify-between focus:outline-none focus:ring-2 focus:ring-brand/50 focus:border-transparent"
                 value={targetScope}
-                onChange={setTargetScope}
+                onChange={setTargetScopeFromUser}
               />
             </div>
           )}
