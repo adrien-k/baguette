@@ -5,8 +5,10 @@
  * user already exists (skipped unless `force` is set).
  */
 import { execFile } from 'node:child_process';
+import { writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import path from 'node:path';
+import * as yaml from 'js-yaml';
 import { DATA_DIR, REPOS_DIR, normalizeRepoPathForStorage, storedRepoPath } from '../config.js';
 import { initLocalRepo } from '../services/github.js';
 import { insertTestAgentConfig } from '../test-utils/agent-configs.js';
@@ -21,6 +23,7 @@ import { stringifyModelParamsForStorage } from '../../shared/agent-session-defau
 import { USER_STATUS_APPROVED } from '../../shared/user-status.js';
 import { accountAgentConfigLabel } from '../../shared/agent-config-labels.js';
 import { encrypt } from './encrypt.js';
+import { serializeAutoLoadSkillLabels } from '../services/skill-resolution.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -30,6 +33,49 @@ export const DEV_REPO_FULL_NAME = 'local-repo-example';
 export const DEV_REPO_STRIPPED = 'local-repo-example';
 
 const LIVE_SDKS = ['claude', 'cursor', 'pi'];
+
+export const DEV_SEED_RECIPE_PLAN_LABEL = 'Plan from template';
+
+/** Custom chat recipes committed on `local-repo-example` for composer dropdown dogfooding. */
+const DEV_SEED_RECIPES = [
+  {
+    label: DEV_SEED_RECIPE_PLAN_LABEL,
+    description: 'Kick off a small implementation plan in this sample repo',
+    prompt:
+      'Draft a short plan for improving the README in this repo, then create an interactive plan for my review.',
+  },
+  {
+    label: 'Run hello task',
+    description: 'Exercise ListProjectCommands and RunTask against this repo config',
+    prompt:
+      'Call ListProjectCommands, then RunTask with label "hello" and detach false. Reply HELLO_OK when the task succeeds.',
+  },
+];
+
+const DEV_SEED_SKILLS = [
+  {
+    label: 'Dev workflow notes',
+    description: 'Reminders for local Baguette dogfooding',
+    content: [
+      '# Dev workflow notes',
+      '',
+      '- Prefer mock agent sessions for UI work.',
+      '- Use the Recipes dropdown in the composer for one-click prompts.',
+      '- Run `pnpm run fix` before committing.',
+    ].join('\n'),
+  },
+  {
+    label: 'PR hygiene',
+    description: 'Lightweight checklist before opening or updating a PR',
+    content: [
+      '# PR hygiene',
+      '',
+      '1. Re-read the diff against the base branch.',
+      '2. Confirm CI is green or explain failures.',
+      '3. Update the PR description when scope changes.',
+    ].join('\n'),
+  },
+];
 
 const INTEGRATION_PRESET_DESCRIPTION = {
   claude: 'Claude (integration test)',
@@ -172,6 +218,61 @@ async function applyDevUserDefaults(db, userId, configs) {
     subagent_default_config_id: null,
     subagent_default_model: null,
   });
+}
+
+async function gitCommitDevRepo(cwd, message) {
+  await execFileAsync('git', ['add', '-A'], { cwd, stdio: 'pipe' });
+  const gitEnv = {
+    ...process.env,
+    GIT_AUTHOR_NAME: 'Baguette Dev Seed',
+    GIT_AUTHOR_EMAIL: 'dev-seed@baguette.local',
+    GIT_COMMITTER_NAME: 'Baguette Dev Seed',
+    GIT_COMMITTER_EMAIL: 'dev-seed@baguette.local',
+  };
+  await execFileAsync('git', ['commit', '-m', message], {
+    cwd,
+    stdio: 'pipe',
+    env: gitEnv,
+  });
+}
+
+async function seedLocalRepoExampleConfig(repo) {
+  const config = {
+    config: {
+      recipes: DEV_SEED_RECIPES,
+      tasks: {
+        hello: {
+          run: 'echo hello from local-repo-example',
+          description: 'Smoke task for dev seed recipes',
+        },
+      },
+    },
+  };
+  const text = yaml.dump(config, { lineWidth: -1 });
+  const configPath = path.join(repo.mainAbs, '.baguette.yaml');
+  await writeFile(configPath, text, 'utf8');
+  await writeFile(
+    path.join(repo.mainAbs, 'README.md'),
+    '# local-repo-example\n\nSample local repository seeded for Baguette dev preview.\n',
+    'utf8'
+  );
+  await gitCommitDevRepo(repo.mainAbs, 'dev seed: baguette config and recipes');
+}
+
+async function seedUserSkills(db, userId) {
+  const now = new Date().toISOString();
+  for (const skill of DEV_SEED_SKILLS) {
+    await db('skills').insert({
+      user_id: userId,
+      label: skill.label,
+      description: skill.description,
+      content: skill.content,
+      created_at: now,
+      updated_at: now,
+    });
+  }
+  const autoLoad = serializeAutoLoadSkillLabels([DEV_SEED_SKILLS[0].label]);
+  await db('users').where({ id: userId }).update({ default_auto_load_skills: autoLoad });
 }
 
 async function ensureDevRepo(db, userId) {
@@ -403,6 +504,8 @@ export async function seedDevEnvironment(db, opts = {}) {
   }
 
   const repo = await ensureDevRepo(db, userId);
+  await seedLocalRepoExampleConfig(repo);
+  await seedUserSkills(db, userId);
 
   if (userScopedConfigs.has('mock')) {
     await seedShowcaseSession(db, userId, repo, userScopedConfigs);

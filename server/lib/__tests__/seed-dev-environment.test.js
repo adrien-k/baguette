@@ -7,8 +7,10 @@ import {
   DEV_REPO_FULL_NAME,
   DEV_REPO_STRIPPED,
   DEV_SEED_EMAIL,
+  DEV_SEED_RECIPE_PLAN_LABEL,
   seedDevEnvironment,
 } from '../seed-dev-environment.js';
+import { parseAutoLoadSkillLabels } from '../../services/skill-resolution.js';
 import { MOCK_STANDARD_MODEL_ID } from '../../../shared/mock-agent-sdk.js';
 import { parseAgentDefaultModelJson } from '../../../shared/agent-default-model.js';
 
@@ -50,6 +52,15 @@ describe('seedDevEnvironment', () => {
 
     const repo = await db('repos').where({ full_name: DEV_REPO_FULL_NAME }).first();
     expect(repo?.access_mode).toBe('local');
+    const baguetteYaml = await fs.readFile(
+      path.join(DATA_DIR, repo.repo_path, '.baguette.yaml'),
+      'utf8'
+    );
+    expect(baguetteYaml).toContain(DEV_SEED_RECIPE_PLAN_LABEL);
+
+    const skills = await db('skills').where({ user_id: user.id });
+    expect(skills.length).toBeGreaterThanOrEqual(2);
+    expect(parseAutoLoadSkillLabels(user.default_auto_load_skills)).toContain('Dev workflow notes');
 
     const userRepo = await db('user_repos').where({ user_id: user.id, repo_id: repo.id }).first();
     expect(Number(userRepo?.show_in_all_sessions)).toBe(1);
