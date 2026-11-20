@@ -456,11 +456,11 @@ async function seedShowcaseSession(db, userId, repo, configs) {
 
   await insertExtraAgent(db, sessionId, primary, {
     ref: 6,
-    name: 'Running worker',
+    name: 'Awaiting approval',
     agent_type: 'subagent',
-    status: 'running',
+    status: 'approval',
     parent_agent_id: primary.id,
-    initial_prompt: 'Simulated in-flight subagent for navbar counts.',
+    initial_prompt: 'Subagent paused for user approval (survives server restart).',
   });
 
   await insertExtraAgent(db, sessionId, primary, {
