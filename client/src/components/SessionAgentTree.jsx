@@ -138,9 +138,11 @@ function AgentTreePin({ agent, canManage, renaming, pinnedAgentId, pinSaving, on
         e.stopPropagation();
         onTogglePin(agent);
       }}
-      className={`shrink-0 p-0.5 rounded ${
-        isPinned ? 'text-accent' : 'text-faint hover:text-fg'
-      } disabled:opacity-40`}
+      className={`shrink-0 p-0.5 rounded transition-opacity disabled:opacity-40 ${
+        isPinned
+          ? 'text-accent'
+          : `text-faint hover:text-fg md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100`
+      }`}
     >
       <Pin className={`w-3 h-3 ${isPinned ? 'fill-current' : ''}`} aria-hidden />
     </button>
