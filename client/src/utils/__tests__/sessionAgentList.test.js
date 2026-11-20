@@ -16,17 +16,17 @@ describe('buildSessionAgentList', () => {
     expect(list.map((a) => a.id)).toEqual([1, 2, 3]);
   });
 
-  it('places the session-pinned agent second when it is not the primary', () => {
+  it('places the session-pinned agent in the primary slot when it is not the primary', () => {
     const agents = [
       agent(1, { is_primary: 1, updated_at: '2024-01-01T23:00:00Z' }),
       agent(2, { agent_type: 'builder', is_primary: 0, updated_at: '2024-01-01T10:00:00Z' }),
       agent(3, { agent_type: 'subagent', updated_at: '2024-01-01T20:00:00Z' }),
     ];
     const list = buildSessionAgentList(agents, 2);
-    expect(list.map((a) => a.id)).toEqual([1, 2, 3]);
+    expect(list.map((a) => a.id)).toEqual([2, 1, 3]);
   });
 
-  it('ignores pinned_agent_id when it matches the primary', () => {
+  it('uses the pinned agent as head when it matches the primary', () => {
     const agents = [
       agent(1, { is_primary: 1, updated_at: '2024-01-01T00:00:00Z' }),
       agent(2, { agent_type: 'subagent', updated_at: '2024-01-01T20:00:00Z' }),

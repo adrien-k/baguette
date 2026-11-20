@@ -104,7 +104,7 @@ function AgentTreeEdit({ agent, canManage, renaming, onRequestRename }) {
 }
 
 function AgentTreePin({ agent, canManage, renaming, pinnedAgentId, pinSaving, onTogglePin }) {
-  if (!canManage || renaming) return null;
+  if (!canManage || renaming || isPrimaryAgent(agent)) return null;
   const isPinned =
     pinnedAgentId != null && pinnedAgentId !== '' && Number(pinnedAgentId) === agent.id;
   const title = isPinned ? 'Unpin agent' : 'Pin agent';
@@ -119,7 +119,7 @@ function AgentTreePin({ agent, canManage, renaming, pinnedAgentId, pinSaving, on
         e.stopPropagation();
         onTogglePin(agent);
       }}
-      className={`shrink-0 p-0.5 rounded transition-opacity md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100 ${
+      className={`shrink-0 p-0.5 rounded ${
         isPinned ? 'text-accent' : 'text-faint hover:text-fg'
       } disabled:opacity-40`}
     >
@@ -144,7 +144,7 @@ function AgentTreeCaret({ expanded, onToggle, collapseLocked = false }) {
       aria-expanded={expanded}
       aria-disabled={locked || undefined}
       aria-label={agentTreeCaretLabel(expanded, locked)}
-      title={locked ? 'Open the primary agent to hide the others' : undefined}
+      title={locked ? 'Open the default agent to hide the others' : undefined}
       onClick={locked ? undefined : onToggle}
       className={`shrink-0 -my-1 p-0.5 transition-colors ${
         locked ? 'cursor-default text-faint/40' : 'text-faint hover:text-fg'
@@ -346,10 +346,10 @@ export default function SessionAgentTree({
 
   if (!list.length) return null;
 
-  const primary = list.find(isPrimaryAgent) ?? null;
-  const others = primary ? list.filter((a) => a.id !== primary.id) : list;
-  const grouped = Boolean(primary);
-  const collapseLocked = isAgentTreeCollapseLocked(list, currentAgentId);
+  const headAgent = list[0] ?? null;
+  const others = headAgent ? list.slice(1) : list;
+  const grouped = Boolean(headAgent) && others.length > 0;
+  const collapseLocked = isAgentTreeCollapseLocked(list, currentAgentId, headAgent?.id);
   const expanded = collapseLocked || (manuallyExpanded ?? autoExpanded);
   const caret =
     grouped && others.length > 0
@@ -425,17 +425,9 @@ export default function SessionAgentTree({
     sessionHighlighted,
   };
 
-  const pinnedAmongOthers =
-    pinnedAgentId != null && pinnedAgentId !== ''
-      ? others.find((a) => a.id === Number(pinnedAgentId))
-      : null;
-  const restOthers = pinnedAmongOthers
-    ? others.filter((a) => a.id !== pinnedAmongOthers.id)
-    : others;
   const visibleAgents = [
-    ...(primary ? [primary] : []),
-    ...(pinnedAmongOthers ? [pinnedAmongOthers] : []),
-    ...(!grouped || expanded ? restOthers : []),
+    ...(headAgent ? [headAgent] : []),
+    ...(!grouped || expanded ? others : []),
   ];
 
   return (
