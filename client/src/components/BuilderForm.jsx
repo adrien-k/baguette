@@ -223,7 +223,7 @@ export default function BuilderForm({
   useEffect(() => {
     if (!editingLoop) return;
     setLoopEnabled(!!editingLoop.enabled);
-  }, [editingLoop?.id, editingLoop?.enabled]);
+  }, [editingLoop]);
 
   useEffect(() => {
     if (editingLoop || userSettings == null) return;
@@ -241,9 +241,7 @@ export default function BuilderForm({
     seededUsageLimitsRef.current = true;
   }, [
     editingLoop,
-    userSettings?.default_usage_limit_action,
-    userSettings?.default_usage_limit,
-    userSettings?.id,
+    userSettings,
     persistKey,
     persistentState.store,
     setUsageLimitAction,
