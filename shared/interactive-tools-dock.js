@@ -3,6 +3,7 @@
  */
 
 import { baguetteMcpShortName, baguettePlanToolIsInteractive } from './baguette-mcp-tool-names.js';
+import { parseMcpJsonResult } from './parse-mcp-json-result.js';
 import { findLastTurnStartIndex } from './turn-model.js';
 import { hasHumanUserReplyAfter, toolCallViewId } from './tool-dock-ids.js';
 
@@ -16,11 +17,7 @@ function mcpToolShortName(msg) {
 }
 
 function mcpResultData(result) {
-  if (result == null) return null;
-  if (typeof result !== 'object') return null;
-  const data = result.data;
-  if (data != null && typeof data === 'object' && !Array.isArray(data)) return data;
-  return result;
+  return parseMcpJsonResult(result);
 }
 
 function planToolIsInteractive(msg) {
@@ -91,6 +88,15 @@ export function collectInteractiveToolsForDock(messages) {
   let latestGitPush = null;
   let latestGitPushIndex = -1;
 
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    if (msg.type !== 'tool_call') continue;
+    if (gitPushAwaitingApproval(msg)) {
+      latestGitPush = msg;
+      latestGitPushIndex = i;
+    }
+  }
+
   for (let i = turnStart; i < messages.length; i++) {
     const msg = messages[i];
     if (msg.type !== 'tool_call') continue;
@@ -102,10 +108,6 @@ export function collectInteractiveToolsForDock(messages) {
     if (askUserToolPending(msg, messages, i)) {
       latestAsk = msg;
       latestAskIndex = i;
-    }
-    if (gitPushAwaitingApproval(msg)) {
-      latestGitPush = msg;
-      latestGitPushIndex = i;
     }
   }
 
