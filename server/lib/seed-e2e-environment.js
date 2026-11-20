@@ -10,7 +10,7 @@ import { DEV_SEED_EMAIL, insertDevUser } from './seed-dev-environment.js';
  * @param {{ devGhKey?: string }} [opts]
  */
 export async function seedE2eEnvironment(db, opts = {}) {
-  const devGhKey = opts.devGhKey ?? process.env.DEV_USER_GH_KEY?.trim() ?? '';
+  const devGhKey = opts.devGhKey ?? '';
   const existing = await db('users').where({ email: DEV_SEED_EMAIL }).first();
   if (existing) {
     console.log('E2e dev user already seeded; skipping.');
