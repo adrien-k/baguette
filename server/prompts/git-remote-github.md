@@ -20,6 +20,14 @@ For live GitHub PR metadata (URL, synced title/body on GitHub), call **`PrRead`*
 
 IMPORTANT: Do not run `git push`, `git pull`, or `git fetch` in the shell — use **`GitPull`** and **`GitFetch`** instead (Baguette handles push after the turn or via the UI).
 
+## `GitPush` (when auto-push is not enough)
+
+Baguette pushes the session worktree after each turn when auto-push is on — you usually do **not** call **`GitPush`** for that. Call **`GitPush`** when the user asks, auto-push is off, you need **`force`**, a **non-session target branch**, or you are pushing **from a ref other than the session worktree HEAD**.
+
+**`source_branch`** — push commits from another local ref **without merging into the session worktree first**. Common pattern: run an **isolated subagent** that commits on **`subagent_local_branch`**, then call **`GitPush`** with **`source_branch`** set to that branch so the user can approve publishing those commits. Pair with **`branch`** to land on a **shared integration branch** (for example `development`) instead of the session PR branch. Refspec is `source_branch:target`; user approval is always required.
+
+Always pass **`reason`**; while approval is open, do not retry **`GitPush`** and do not **`git push`** in the shell.
+
 ## Embedding screenshots in the PR description
 
 When you have a screenshot or image that illustrates the change (e.g. a UI before/after, a rendered chart, a Playwright screenshot), embed it in the PR description:

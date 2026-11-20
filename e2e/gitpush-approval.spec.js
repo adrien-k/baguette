@@ -135,6 +135,29 @@ async function waitForGitPushCanceledOnCard(page, summaryText) {
   return gitPushChatCard(page);
 }
 
+async function waitForGitPushPushedOnCard(page, summaryText) {
+  let card = await waitForGitPushChatCard(page, summaryText);
+  await expect
+    .poll(
+      async () => {
+        card = gitPushChatCard(page);
+        if ((await card.getByText('pushed', { exact: true }).count()) > 0) return true;
+        if ((await card.getByText(/Waiting for the user/).count()) === 0) {
+          return (await card.getByText('pushed', { exact: true }).count()) > 0;
+        }
+        await page.reload();
+        await page
+          .getByPlaceholder(/Message /)
+          .waitFor({ state: 'visible', timeout: 30_000 })
+          .catch(() => {});
+        return false;
+      },
+      { timeout: 120_000, intervals: [1_500, 2_500] }
+    )
+    .toBe(true);
+  return gitPushChatCard(page);
+}
+
 test.describe('GitPush approval flow', () => {
   test('auto-push off: session-branch push asks for one-time confirmation, cancel shows chat card', async ({
     page,
@@ -174,7 +197,9 @@ test.describe('GitPush approval flow', () => {
     await saveE2eScreenshot(page, 'gitpush-session-branch-modal-autopush-off.png');
 
     const cardWithReason = gitPushChatCard(page);
-    await expect(cardWithReason.getByText(AUTO_PUSH_OFF_CONFIRM)).toBeVisible();
+    await expect(
+      cardWithReason.getByText(/Confirmation is required because auto-push is off/)
+    ).toBeVisible();
     await expect(cardWithReason.getByText('approval requested', { exact: true })).toBeVisible();
     await modal.evaluate((el) => {
       el.style.visibility = 'hidden';
@@ -192,6 +217,56 @@ test.describe('GitPush approval flow', () => {
 
     const card = await waitForGitPushCanceledOnCard(page, MOCK_E2E_GITPUSH_SESSION_SUMMARY);
     await expect(card.getByText('canceled', { exact: true })).toBeVisible();
+  });
+
+  test('auto-push off: Accept pushes session branch to bare origin (no GitHub network)', async ({
+    page,
+  }) => {
+    await page.setViewportSize(WIDE_VIEWPORT);
+    await stubRepoBranches(page);
+    await devLogin(page);
+    await grantFakeGithubToken(page);
+
+    const { repoId, originPath } = await seedGitPushOriginRepo(page);
+    await startMockBuilderSession(page, repoId, MOCK_E2E_QUICK_TURN_PROMPT);
+    const sessionId = parseSessionIdFromUrl(page.url());
+    expect(sessionId).toBeTruthy();
+    await waitForAgentTurnSettled(page);
+
+    const patched = await page.request.patch(`/api/sessions/${sessionId}`, {
+      data: { auto_push: false },
+    });
+    expect(patched.ok()).toBe(true);
+
+    const sessionBefore = await page.request
+      .get(`/api/sessions/${sessionId}`)
+      .then((r) => r.json());
+    const sessionBranch = sessionBefore.remote_branch || sessionBefore.local_branch || 'master';
+
+    const composer = page.getByPlaceholder(/Message /);
+    await composer.fill(MOCK_E2E_GITPUSH_SESSION_PROMPT);
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
+
+    const modal = pushModal(page);
+    await expect(modal).toBeVisible({ timeout: 120_000 });
+    await expect(modal.getByText('Why confirmation is required')).toBeVisible();
+    await expect(modal.getByText('Auto-push is off')).toBeVisible();
+    await expect(modal.getByRole('button', { name: 'Accept', exact: true })).toBeVisible();
+
+    await modal.getByRole('button', { name: 'Accept', exact: true }).click();
+    await expect(page.getByText('Pushed successfully')).toBeVisible({ timeout: 30_000 });
+
+    const [originSha, headSha] = await Promise.all([
+      gitSha(originPath, sessionBranch),
+      gitSha(await e2eSessionWorktreePath(sessionId), 'HEAD'),
+    ]);
+    expect(originSha).toBe(headSha);
+
+    const card = await waitForGitPushPushedOnCard(page, MOCK_E2E_GITPUSH_SESSION_SUMMARY);
+    await expect(card.getByText('pushed', { exact: true })).toBeVisible();
+
+    await settleForScreenshot(page);
+    await saveE2eLocatorScreenshot(card, 'gitpush-session-branch-accepted-card.png');
   });
 
   test('development target: source → origin line, approving pushes to origin', async ({ page }) => {
@@ -242,7 +317,41 @@ test.describe('GitPush approval flow', () => {
     await saveE2eLocatorScreenshot(card, 'gitpush-development-target-chat-card.png');
   });
 
-  test('force push request: --force approval detail shown, cancel leaves the remote untouched', async ({
+  test('force push: Accept force-updates development on bare origin', async ({ page }) => {
+    await page.setViewportSize(WIDE_VIEWPORT);
+    await stubRepoBranches(page);
+    await devLogin(page);
+    await grantFakeGithubToken(page);
+
+    const { repoId, originPath } = await seedGitPushOriginRepo(page);
+    await startMockBuilderSession(page, repoId, MOCK_E2E_GITPUSH_FORCE_PROMPT);
+    const sessionId = parseSessionIdFromUrl(page.url());
+    expect(sessionId).toBeTruthy();
+
+    const developmentBefore = await gitSha(originPath, 'development');
+
+    const modal = pushModal(page);
+    await expect(modal).toBeVisible({ timeout: 120_000 });
+    await expect(modal.getByText('Force push')).toBeVisible();
+    await expect(modal.getByText(/--force\s*overwrites remote history/)).toBeVisible();
+
+    await settleForScreenshot(page);
+    await saveE2eScreenshot(page, 'gitpush-force-accept-modal.png');
+
+    await modal.getByRole('button', { name: 'Accept', exact: true }).click();
+    await expect(page.getByText('Pushed successfully')).toBeVisible({ timeout: 30_000 });
+
+    const headSha = await gitSha(await e2eSessionWorktreePath(sessionId), 'HEAD');
+    const developmentAfter = await gitSha(originPath, 'development');
+    expect(developmentAfter).toBe(headSha);
+    expect(developmentAfter).not.toBe(developmentBefore);
+
+    const card = await waitForGitPushPushedOnCard(page, MOCK_E2E_GITPUSH_SUMMARY);
+    await settleForScreenshot(page);
+    await saveE2eLocatorScreenshot(card, 'gitpush-force-accepted-card.png');
+  });
+
+  test('force push request: --force approval detail shown, reject leaves the remote untouched', async ({
     page,
   }) => {
     await page.setViewportSize(WIDE_VIEWPORT);

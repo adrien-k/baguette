@@ -79,12 +79,12 @@ Two paths update the remote — they are independent.
 
 **MCP `GitPush`.** A **plain** session-branch push (no `force`, no `source_branch`, target is the session branch) with **auto-push on** runs **immediately** — the same as post-turn auto-push, so the agent should not call `GitPush` just to duplicate that. When **auto-push is off**, or the push is **not plain** (different target branch, `source_branch`, or `force`), `GitPush` **opens the Push approval modal** and waits for you to confirm.
 
-| `GitPush` argument | Behavior                                                                                             |
-| ------------------ | ---------------------------------------------------------------------------------------------------- |
-| (default)          | Push worktree **HEAD** to the session's remote branch (direct when auto-push is on; otherwise modal) |
-| `branch`           | Target branch on `origin` (default: session branch; a different branch always requires approval)     |
-| `source_branch`    | Local ref to push instead of HEAD; refspec is `source_branch:target` — always requires approval      |
-| `force`            | `lease` or `force`, both require approval in the modal                                               |
+| `GitPush` argument | Behavior                                                                                                                                                                |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| (default)          | Push worktree **HEAD** to the session's remote branch (direct when auto-push is on; otherwise modal)                                                                    |
+| `branch`           | Target branch on `origin` (default: session branch; a different branch always requires approval)                                                                        |
+| `source_branch`    | Local ref to push instead of HEAD (no merge into the session worktree first); e.g. isolated subagent branch → session or shared `development`; always requires approval |
+| `force`            | `lease` or `force`, both require approval in the modal                                                                                                                  |
 
 When **`source_branch`** is pushed onto the **session branch**, Baguette first tries to **fast-forward the session worktree** to that ref. It aborts if the worktree is dirty or the source ref is not a fast-forward of the current checkout. Pushing to a **different** target does **not** move the session checkout. **`sessions.remote_branch`** in the database updates **only** when the push target is the session branch.
 
