@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { gitPushApprovalTriggers, gitPushNeedsApproval } from '../gitPushCardHelpers.js';
+import {
+  buildGitPushApprovalRequestEvent,
+  gitPushApprovalTriggers,
+  gitPushNeedsApproval,
+} from '../gitPushCardHelpers.js';
 
 const SESSION = {
   remote_branch: 'feature/session',
@@ -36,6 +40,25 @@ describe('gitPushApprovalTriggers', () => {
       autoPushOff: true,
     });
     expect(triggers.map((t) => t.key)).toEqual(['source', 'auto_push_off']);
+  });
+
+  it('builds push:request payload to reopen the approval modal', () => {
+    const event = buildGitPushApprovalRequestEvent(
+      42,
+      { branch: 'development', reason: 'ship it' },
+      {
+        approval_requested: true,
+        request_id: 'req-1',
+        target_branch: 'development',
+        auto_push_off: false,
+      },
+      SESSION
+    );
+    expect(event.sessionId).toBe(42);
+    expect(event.branch).toBe('development');
+    expect(event.agentRequest).toBe(true);
+    expect(event.request_id).toBe('req-1');
+    expect(event.reason).toBe('ship it');
   });
 
   it('matches gitPushNeedsApproval for common cases', () => {

@@ -87,6 +87,46 @@ export function gitPushApprovalTriggers({
   return triggers;
 }
 
+/** Reconstruct `push:request` payload from a stored GitPush tool result (re-open modal). */
+export function buildGitPushApprovalRequestEvent(sessionId, args, mcpResult, session) {
+  const { targetBranch } = resolveGitPushBranches(args, mcpResult, session);
+  const forceFromResult = mcpResult?.force;
+  const forceFromArgs = args?.force;
+  const forceRaw = forceFromResult != null ? forceFromResult : forceFromArgs;
+  let forceMode = null;
+  if (forceRaw === 'lease' || forceRaw === 'force') forceMode = forceRaw;
+
+  const sourceFromResult =
+    typeof mcpResult?.source_branch === 'string' && mcpResult.source_branch.trim()
+      ? mcpResult.source_branch.trim()
+      : null;
+  const sourceFromArgs =
+    typeof args?.source_branch === 'string' && args.source_branch.trim()
+      ? args.source_branch.trim()
+      : null;
+
+  const argsReason =
+    typeof args?.reason === 'string' && args.reason.trim() ? args.reason.trim() : null;
+  const reason =
+    typeof mcpResult?.reason === 'string' && mcpResult.reason.trim()
+      ? mcpResult.reason.trim()
+      : argsReason;
+
+  return {
+    sessionId,
+    branch: targetBranch,
+    source_branch: sourceFromResult ?? sourceFromArgs,
+    forceMode,
+    reason,
+    autoPushOff: mcpResult?.auto_push_off === true,
+    agentRequest: true,
+    request_id:
+      typeof mcpResult?.request_id === 'string' && mcpResult.request_id
+        ? mcpResult.request_id
+        : null,
+  };
+}
+
 export function resolveGitPushBranches(args, mcpResult, session) {
   const argsBranch = typeof args?.branch === 'string' && args.branch ? args.branch : null;
   const resultBranch =
