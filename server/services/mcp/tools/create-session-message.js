@@ -10,7 +10,7 @@ export function createCreateSessionMessageTool(ctx) {
   return {
     name: 'CreateSessionMessage',
     description:
-      'IMPORTANT: Do not use this tool unless the user explicitly asks you to send or schedule a message to a session. ' +
+      'IMPORTANT: Do not use this tool unless the user explicitly asks you to send or schedule a message to a session — except to reach the session that started you (named in your first message): use it to report something important, ask a question you need answered, or answer one it sent you. ' +
       'Send a user message to a session now, or schedule it with send_at (ISO timestamp in the future). ' +
       'You may post to any of your sessions (session_id must belong to your account). ' +
       'Immediate sends while the agent is running are queued for the next turn, like the UI Send button. ' +

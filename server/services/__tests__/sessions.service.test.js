@@ -30,6 +30,8 @@ import {
   resolveSessionFromData,
 } from '../feathers/sessions.service.js';
 import { patchAgentInternal, registerAgentsService } from '../feathers/agents.service.js';
+import { slackGlobalSessionFilesDir, slackFilesDir, slackSessionFilesDir } from '../slack-files.js';
+import { insertSlackApp } from './slack-test-helpers.js';
 import * as sessionGitStatus from '../session-git-status.js';
 import * as sessionPushWorktree from '../session-push-worktree.js';
 import { registerMessagesService } from '../feathers/messages.service.js';
@@ -971,6 +973,47 @@ describe('Sessions service - custom methods', () => {
       expect(closePR).not.toHaveBeenCalled();
     });
 
+    describe('Slack files', () => {
+      const exists = (dir) =>
+        fs.promises.access(dir).then(
+          () => true,
+          () => false
+        );
+
+      const makeFile = async (dir) => {
+        await fs.promises.mkdir(dir, { recursive: true });
+        await fs.promises.writeFile(path.join(dir, 'a.png'), 'x');
+      };
+
+      it('deletes the files downloaded for the session', async () => {
+        await makeFile(slackSessionFilesDir(sessId));
+
+        await app.service('sessions').archive(sessId, params({ id: userId }));
+
+        expect(await exists(slackSessionFilesDir(sessId))).toBe(false);
+      });
+
+      it("deletes a global session's saved attachments too", async () => {
+        const slackAppId = await insertSlackApp(db);
+        await db('sessions').where({ id: sessId }).update({ slack_app_id: slackAppId });
+        const dir = slackFilesDir(slackAppId, userId, 'C1', '111.222');
+        await makeFile(dir);
+
+        await app.service('sessions').archive(sessId, params({ id: userId }));
+
+        expect(await exists(slackGlobalSessionFilesDir(slackAppId, userId))).toBe(false);
+      });
+
+      it('still archives when the files cannot be deleted', async () => {
+        const rm = vi.spyOn(fs, 'rm').mockRejectedValueOnce(new Error('EACCES'));
+
+        const result = await app.service('sessions').archive(sessId, params({ id: userId }));
+        rm.mockRestore();
+
+        expect(result.archived_at).toBeTruthy();
+      });
+    });
+
     it('stops agent, archives session, returns the session row', async () => {
       const result = await app.service('sessions').archive(sessId, params({ id: userId }));
 
@@ -987,7 +1030,7 @@ describe('Sessions service - custom methods', () => {
       expect(row.session_path).toBeNull();
     });
 
-    it('trims messages to user and assistant only when archiving', async () => {
+    it('trims messages to user and global session only when archiving', async () => {
       await db('session_messages').insert([
         {
           session_id: sessId,
@@ -3602,6 +3645,49 @@ describe('Sessions service - find, get, create', () => {
       createMessage.mockRestore();
     });
 
+    it('marks the first message with where the prompt came from (Slack)', async () => {
+      const createMessage = vi
+        .spyOn(app.service('messages'), 'create')
+        .mockResolvedValue({ id: 99 });
+      const meta = {
+        source: 'slack',
+        slack: {
+          user_id: 'U1',
+          user_name: 'Jan',
+          text: 'add tests',
+          suggestion: false,
+          untagged: false,
+        },
+      };
+
+      await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId, initial_prompt: 'add tests\n\nSlack context …' }), {
+          ...params({ id: userId1 }),
+          initialMessageMeta: meta,
+        });
+
+      const parsed = JSON.parse(
+        createMessage.mock.calls.find(([d]) => d.type === 'user')[0].message_json
+      );
+      expect(parsed).toMatchObject({ type: 'user', source: 'slack', slack: meta.slack });
+      expect(parsed.message.content).toBe('add tests\n\nSlack context …');
+    });
+
+    it('leaves an ordinary first message unmarked', async () => {
+      const createMessage = vi
+        .spyOn(app.service('messages'), 'create')
+        .mockResolvedValue({ id: 99 });
+      await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId, initial_prompt: 'Hello' }), params({ id: userId1 }));
+      const parsed = JSON.parse(
+        createMessage.mock.calls.find(([d]) => d.type === 'user')[0].message_json
+      );
+      expect(parsed.source).toBeUndefined();
+      expect(parsed.slack).toBeUndefined();
+    });
+
     it('does not create a first message when initial_prompt is empty', async () => {
       const createMessage = vi
         .spyOn(app.service('messages'), 'create')
@@ -3855,6 +3941,38 @@ describe('Sessions service - find, get, create', () => {
         .patch(created.id, { auto_push: true }, params({ id: userId1 }));
 
       expect(patched.auto_push).toBeFalsy();
+    });
+
+    it('uses a title given up front instead of asking the model to invent one', async () => {
+      const session = await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId, branch_name: 'fix-login' }), {
+          ...params({ id: userId1 }),
+          initialLabel: 'Fix the login test',
+        });
+
+      expect(completeText).not.toHaveBeenCalled();
+      expect(session.label).toBe('Fix the login test');
+    });
+
+    it('does the same for a global session', async () => {
+      const session = await app
+        .service('sessions')
+        .create(
+          { is_global: true, initial_prompt: 'Look across repos', ...testSessionAgentDefaults },
+          { ...params({ id: userId1 }), initialLabel: 'Look across repos' }
+        );
+
+      expect(completeText).not.toHaveBeenCalled();
+      expect(session.label).toBe('Look across repos');
+    });
+
+    it('still generates the title when none is given', async () => {
+      const session = await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
+      expect(completeText).toHaveBeenCalled();
+      expect(session.label).toBe('Test task');
     });
 
     it('passes the session so metadata generation uses its selected model', async () => {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Copy, GitBranch, Pencil } from 'lucide-react';
+import { Copy, GitBranch, Pencil, CircleHelp } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { isGlobalSession } from '@baguette/shared/session-scope.js';
 import {
@@ -13,6 +13,7 @@ import { toastError } from '../../utils/toastError.jsx';
 import CardRepoBadge from '../../components/CardRepoBadge.jsx';
 import CollapsibleMarkdown from '../../components/chat/CollapsibleMarkdown.tsx';
 import TextInput from '../../components/TextInput.jsx';
+import Tooltip from '../../components/Tooltip.jsx';
 import PrStatusBadge from '../../components/PrStatusBadge.jsx';
 import { SESSION_CONTENT_MAX_WIDTH_CLASS } from '../../components/ChatMessagesViewport.jsx';
 import { GHOST_BUTTON_CLASS, PRIMARY_BUTTON_SIZED } from '../../utils/buttonStyles.js';
@@ -33,6 +34,16 @@ function DetailsCard({ label, children }) {
       <h2 className={SECTION_HEADING_CLASS}>{label}</h2>
       {children}
     </div>
+  );
+}
+
+function SlackHelp({ help }) {
+  return (
+    <span className="ml-1 inline-block align-middle">
+      <Tooltip content={help} wrap placement="right">
+        <CircleHelp size={11} aria-label={help} className="cursor-help text-faint" />
+      </Tooltip>
+    </span>
   );
 }
 
@@ -68,6 +79,122 @@ function GitBranchRow({ label, value, emptyMessage }) {
         <span className="w-[1.625rem] shrink-0" aria-hidden />
       )}
     </div>
+  );
+}
+
+function SlackCard({ session, readonly }) {
+  const [slack, setSlack] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!session?.id) return undefined;
+    let cancelled = false;
+    sessionsService
+      .sessionSlack(session.id)
+      .then((data) => {
+        if (!cancelled) setSlack(data);
+      })
+      .catch(() => {
+        if (!cancelled) setSlack(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.id]);
+
+  if (!slack?.linked) return null;
+
+  const startEdit = () => {
+    setDraft(slack.allowed.join(', '));
+    setEditing(true);
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const usernames = draft.split(/[\s,]+/).filter(Boolean);
+      setSlack(await sessionsService.setSlackAllowedUsers({ id: session.id, usernames }));
+      setEditing(false);
+    } catch (err) {
+      toastError('Failed to update who the Slack global session listens to', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <DetailsCard label="Slack">
+      <div className="space-y-2 text-[11px] leading-snug">
+        <div className="flex items-center gap-1.5">
+          <span className="w-[6rem] shrink-0 text-faint">Workspace</span>
+          <span className="text-secondary">{slack.workspace}</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="w-[6rem] shrink-0 text-faint">Owner</span>
+          <span className="text-secondary">
+            {slack.owner ?? 'Unknown'}
+            <SlackHelp help="The Baguette user this Slack global session works as. Only they can change who else it listens to." />
+          </span>
+        </div>
+        <div className="flex items-start gap-1.5">
+          <span className="w-[6rem] shrink-0 text-faint">Also listens to</span>
+          {editing ? (
+            <div className="min-w-0 flex-1 space-y-2">
+              <TextInput
+                type="text"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSave();
+                  if (e.key === 'Escape') setEditing(false);
+                }}
+                disabled={saving}
+                placeholder="usernames, comma separated"
+                autoFocus
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={saving}
+                  className={PRIMARY_BUTTON_SIZED}
+                >
+                  {saving ? 'Saving…' : 'Save'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditing(false)}
+                  disabled={saving}
+                  className={GHOST_BUTTON_CLASS}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <span className="min-w-0 flex-1 break-words text-secondary">
+                {slack.allowed.length ? slack.allowed.join(', ') : '—'}
+                <SlackHelp help="Other people the owner allowed to talk to it in the threads it serves. Everyone else is ignored." />
+              </span>
+              {!readonly && (
+                <button
+                  type="button"
+                  onClick={startEdit}
+                  className="shrink-0 rounded p-1 text-faint hover:text-fg-muted hover:bg-control transition-colors"
+                  title="Edit who the Slack global session listens to"
+                  aria-label="Edit who the Slack global session listens to"
+                >
+                  <Pencil className="w-3 h-3" />
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </DetailsCard>
   );
 }
 
@@ -328,6 +455,8 @@ export default function DetailsView({ session, readonly, onSessionUpdate }) {
             </>
           )}
         </DetailsCard>
+
+        <SlackCard session={session} readonly={settingsLocked} />
 
         <DetailsCard label="MCP servers">
           <McpSessionServers

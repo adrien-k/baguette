@@ -91,6 +91,7 @@ export default function MiniSessionEntry({
                   <CardRepoBadge
                     show
                     isGlobal={isGlobalSession(s)}
+                    isSlack={Boolean(s.slack_app_id)}
                     repoFullName={s.repo_full_name}
                   />
                 </span>

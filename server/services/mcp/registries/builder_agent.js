@@ -4,6 +4,8 @@ import { createGitFetchTool } from '../tools/git-fetch.js';
 import { createGitPushTool } from '../tools/git-push.js';
 import { createCurrentSessionInfoMcpTool } from '../tools/current-session-info.js';
 import { createUpdateSessionTool } from '../tools/update-session.js';
+import { createSessionCostTool } from '../tools/session-cost.js';
+import { createSystemStatsTool } from '../tools/system-stats.js';
 import { createPrCommentsTool } from '../tools/pr-comments.js';
 import { createPrMarkCommentViewedTool } from '../tools/pr-mark-comment-viewed.js';
 import { createPrCommentTool } from '../tools/pr-comment.js';
@@ -24,6 +26,10 @@ import { createReadTaskOutputTool } from '../tools/read-task-output.js';
 import { createConfigRepoPromptTool } from '../tools/config-repo-prompt.js';
 import { createUploadImageTool } from '../tools/upload-image.js';
 import { createSlackPostMessageTool } from '../tools/slack-post-message.js';
+import { createSlackReadThreadTool } from '../tools/slack-read-thread.js';
+import { createSlackEditMessageTool } from '../tools/slack-edit-message.js';
+import { createSlackReadChannelTool } from '../tools/slack-read-channel.js';
+import { createSlackDownloadFileTool } from '../tools/slack-download-file.js';
 import { createIssueHandlers } from '../lib/issue-handlers.js';
 import { createCreateIssueTool } from '../tools/create-issue.js';
 import { createUpdateIssueTool } from '../tools/update-issue.js';
@@ -100,8 +106,17 @@ export function buildBuilderAgentTools(session, app, { slackApps = [], agent = n
     createStartReviewTool(ctx),
     createContinueReviewTool(ctx),
   ];
-  if (slackApps.length) {
-    tools.push(createSlackPostMessageTool(ctx));
+  if (slackApps.length) tools.push(createSlackPostMessageTool(ctx));
+  // Only Slack global session sessions read Slack and answer from it; other sessions skip the overhead.
+  if (session.slack_app_id) {
+    tools.push(
+      createSlackEditMessageTool(ctx),
+      createSlackReadThreadTool(ctx),
+      createSlackReadChannelTool(ctx),
+      createSlackDownloadFileTool(ctx),
+      createSessionCostTool(ctx),
+      createSystemStatsTool()
+    );
   }
   return tools;
 }

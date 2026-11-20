@@ -1,12 +1,86 @@
 # Slack integration
 
-Baguette can post to Slack on your behalf. The integration is configured under **Admin → Slack**;
-agents reach it through a `SlackPostMessage` tool on the built-in `baguette` MCP server.
+Baguette has a Slack global session you can talk to from any thread (it starts and follows sessions for you), and agents can post to Slack on your behalf.
+The integration is configured under **Admin → Slack**; agents post through a
+`SlackPostMessage` tool on the built-in `baguette` MCP server.
 
 You can register multiple Slack apps (for example one bot per workspace). The tool is only added to
-a session's tool list once at least one app is saved.
+a session's tool list once at least one app has a bot token.
 
-## Creating a Slack app
+## Talking to Baguette from Slack
+
+Every Baguette user who links their Slack account gets a **Slack global session**: one long-lived
+[global session](sessions-and-agents.md) they talk to from any thread. Tag the bot
+(`@baguette fix the flaky login test`) and it answers right away. It never does the work itself —
+it starts a session for the task (`CreateSession`), tells you so, and stays free for your next
+message. When that session finishes or needs an answer, the Slack global session is woken up and
+reports back in the thread you asked from: what happened, the pull request link, who it needs
+something from. The first tag creates it (it is titled "Slack global session" and listed under
+**Global**); after that every thread, in any channel, goes to the same one.
+
+- **Who it listens to.** Only the Slack global session's owner — a logged-in Baguette user who linked their
+  Slack account — and the people the owner allowed (session → **Details → Slack → Also listens
+  to**, edited by the owner only). Everyone else is ignored: no reply, nothing reaches the
+  agent. The one exception is a person without a linked Baguette account who tags the bot: they get
+  a private, visible-only-to-them "log in to Baguette" link — unless the thread already belongs to
+  someone's Slack global session, in which case they are ignored too. It runs as _its owner's_
+  Baguette account (repos, GitHub token, agent defaults), so allow people you trust. Messages from
+  allowed people are marked as such: it helps with the owner's work but never runs
+  dangerous or destructive actions on their word.
+- **When it listens.** To a tag, or a message that says "baguette". In a thread the Slack global session
+  already serves, the owner and allowed people can also just keep talking without a tag; the
+  global session answers only if the message is meant for it (otherwise it stays silent). Channel
+  chatter and DMs are ignored. Untagged messages need the `message.channels` and `message.groups`
+  bot events (README, step 4).
+- **Which model.** It works without any model setup. The Slack global session and the sessions it
+  starts use your default builder model (Settings → Agent) when you set one, otherwise the newest
+  Haiku, else Composer, from your agent configurations. The "Agent-created sessions and subagents"
+  policy (presets only, a fixed configuration…) is not applied to it, so an empty preset list never
+  blocks it. If you have no default and none of your configurations offers Haiku or Composer, the bot
+  says so and points to Settings → Agent; nothing is created.
+- **Which repos.** The global session picks the repository from what you wrote and asks when it is
+  unclear. Under **Settings → Integrations → Slack** an app can be limited to chosen repositories;
+  the Slack global session then only sees and starts sessions in those.
+- **Tone.** Friendly, casual and a little funny, calls people by name, and tags (`@name`) whoever it
+  needs an answer from.
+- **Answers and progress.** The Slack global session's reply to a message is posted in that message's thread, for up to 30 minutes after the message (so a turn that ends a little late still lands there).
+  A message that arrives while it is mid-turn gets an immediate answer. While it works, Slack's
+  native working status shows under the thread (needs `assistant:write` and **Agents & AI Apps**;
+  with the `agent_session_stopped` event it also has a **Stop** button that interrupts the Slack global session —
+  owner only).
+- **In the session chat.** Messages that come from Slack appear in the Slack global session's chat labelled
+  "Slack (name)" (with "allowed person" / "not tagged" notes); the Slack context the agent also
+  received is collapsed under the message.
+- **Full context with every message.** Whatever you send arrives with a "Slack context" block: who
+  wrote it (name and mention), the channel (name, topic, purpose), the thread (`channel` and
+  `thread_ts`, so the Slack global session can answer there later), the thread so far — or only what was said
+  since the bot's last reply — plus the last two channel messages before the thread (flagged as maybe
+  unrelated). Without the `users:read` scope it falls back to bare ids.
+- **Who people are.** The agent sees people's real names, handles and ids, and mentions in message
+  text are written out — "ask <@U2>" reaches it as "ask Eva Nováková (@eva · <@U2>)" — as are
+  channels (`#dev-team`), groups, `@here` and links.
+- **Reading Slack.** `SlackReadThread` reads a whole thread (or one you link), `SlackReadChannel`
+  the channel history a page at a time (20 by default, up to 100), `SlackDownloadFile` any file
+  in Slack. Channels the bot can see are only readable when they could be read by the owner: ones the
+  global session already serves, public ones, or private ones the owner (by their linked Slack account)
+  is a member of. These tools, `SlackEditMessage`, `SessionCost` and `SystemStats` exist only in
+  Slack global session sessions.
+- **Attachments.** Files attached to a message reach the agent: text-like files (json, txt, csv,
+  svg, md, logs, code…) inline (up to 20 KB each), everything else — images, PDFs, archives — saved
+  to disk, outside any repo. Up to five files per message, 25 MB each. Needs `files:read`.
+- **Nothing sensitive in Slack.** Slack is visible to everyone in the company, so the Slack global session is
+  told — as its most important rule — never to post secrets or anything sensitive: keys, tokens,
+  passwords, `.env` or config contents, credentials, personal data, files or logs that might contain
+  them. Even when asked to send such a file, it refuses and points to the session or pull request.
+  Baguette also checks every message the Slack global session posts: one that looks like it contains a secret
+  is blocked and replaced by that pointer.
+- **Formatting.** Replies use Slack's native Markdown block (headings, lists, code blocks, tables,
+  links), with a plain-text fallback.
+- Bot tokens are workspace-wide: any session can post as any configured app. Treat them as shared
+  credentials and scope each Slack app's channels accordingly.
+- Set `LOG_LEVEL=debug` to log every inbound Slack event while troubleshooting.
+
+## Setting up the app (token-only)
 
 1. Go to <https://api.slack.com/apps> and click **Create New App → From scratch**. Pick a name
    (e.g. `baguette`) and your workspace.
@@ -51,10 +125,3 @@ back to the session (`baguette#<id>`) with models used and total session cost wh
 
 Slack API failures (missing scope, bot not in channel, revoked token, …) are returned to the agent
 as tool errors with a recovery hint instead of interrupting the turn.
-
-## Notes
-
-- Bot tokens are workspace-wide: any session can post as any configured app. Treat them as shared
-  credentials and scope each Slack app's channels accordingly.
-- This integration is outbound only. Baguette does not receive Slack events or slash commands, so
-  Slack cannot trigger anything in Baguette.

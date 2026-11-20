@@ -6,7 +6,10 @@ import { getSdkPlugin } from '../../../agent-sdks/registry.js';
 import { ensureBuiltInSdkPluginsRegistered } from '../../../agent-sdks/ensure-builtins-registered.js';
 import { loadModelsForSdk } from '../../baguette-models-for-user.js';
 import { loadOwnedAgentConfig } from '../../agent-config-resolver.js';
-import { normalizeSubagentDefaultMode } from '../../../../shared/subagent-default-mode.js';
+import {
+  SUBAGENT_DEFAULT_INHERIT,
+  normalizeSubagentDefaultMode,
+} from '../../../../shared/subagent-default-mode.js';
 import { resolveMcpBuilderModel } from '../../agent-mcp-model-resolver.js';
 import { getPrimaryBuilderAgent, insertAgentObserver } from '../../agents-db.js';
 import {
@@ -14,6 +17,8 @@ import {
   agentCreatedModelSchemaFields,
 } from '../lib/agent-created-model-fields.js';
 import { ok, fail } from '../lib/result.js';
+import { createGlobalSessionModelResolver } from '../../slack-global-session-model.js';
+import { isRepoInSlackScope } from '../../slack-repo-scope.js';
 
 /** Merge optional `branch` with `base_branch` for CreateSession (stacked PR follow-ups). */
 export function resolveCreateSessionBaseBranch(baseBranch, branch) {
@@ -25,6 +30,19 @@ export function resolveCreateSessionBaseBranch(baseBranch, branch) {
     return { error: 'base_branch or branch is required unless is_global is true.' };
   }
   return { base_branch: resolved };
+}
+
+/**
+ * A session started by a session is told who started it, so it can report back or ask a question
+ * with CreateSessionMessage (the message arrives labelled with the sending session).
+ */
+function withParentNote(prompt, callerSession) {
+  if (callerSession?.id == null) return prompt;
+  return (
+    `${prompt}\n\n(Started by session #${callerSession.id}. To report something important or ask ` +
+    `a question you need answered, message it with CreateSessionMessage(session_id: ${callerSession.id}); ` +
+    'its answer arrives as a new message here.)'
+  );
 }
 
 function createSessionDescription(mode) {
@@ -50,7 +68,15 @@ export function createCreateSessionTool(ctx) {
     callerSession,
     callerAgent,
   } = ctx;
-  const mode = normalizeSubagentDefaultMode(user?.subagent_default_mode);
+  const isSlackGlobalSession = Boolean(callerSession?.slack_app_id);
+  // A Slack global session needs no model policy: it uses the owner's default or a cheap fallback
+  // (Haiku, Composer), so the preset list of the account cannot block it.
+  const mode = isSlackGlobalSession
+    ? SUBAGENT_DEFAULT_INHERIT
+    : normalizeSubagentDefaultMode(user?.subagent_default_mode);
+  const resolveBuilderModel =
+    ctx.resolveBuilderModel ??
+    (isSlackGlobalSession ? createGlobalSessionModelResolver(app) : resolveMcpBuilderModel);
   return {
     name: 'CreateSession',
     description: createSessionDescription(mode),
@@ -147,6 +173,11 @@ export function createCreateSessionTool(ctx) {
         if (!access) {
           return fail(`Repository ${repo_id} not found or not linked to your account.`);
         }
+        if (!(await isRepoInSlackScope(app, callerSession, repo_id))) {
+          return fail(
+            `Repository ${repo_id} is outside what this Slack global session may work in.`
+          );
+        }
         repoWithKeys = (await loadRepoWithKeys(repo_id)) ?? {
           id: access.id,
           full_name: access.full_name,
@@ -156,7 +187,7 @@ export function createCreateSessionTool(ctx) {
       const db = app.get('db');
       let resolved;
       try {
-        resolved = await resolveMcpBuilderModel(db, userId, {
+        resolved = await resolveBuilderModel(db, userId, {
           preset_model_id: preset_model_id ?? null,
           agent_config_id: agent_config_id ?? null,
           model: model ?? null,
@@ -200,7 +231,7 @@ export function createCreateSessionTool(ctx) {
       }
 
       const payload = {
-        initial_prompt,
+        initial_prompt: withParentNote(initial_prompt, callerSession),
         agent_config_id: resolved.agent_config_id,
         agent_sdk,
       };
@@ -217,11 +248,16 @@ export function createCreateSessionTool(ctx) {
       if (!is_global && branch_name) payload.branch_name = branch_name;
       if (plugins?.length) payload.plugins = plugins;
       if (is_shared) payload.is_shared = true;
+      if (ctx.slackAppId) payload.slack_app_id = ctx.slackAppId;
 
       try {
         const session = await app.service('sessions').create(payload, {
           ...userParams,
           user: fullUser,
+          // Set when the session is created for a chat integration (Slack): what the first
+          // message is labelled in the chat, and a fixed title that saves the naming LLM call.
+          ...(ctx.initialMessageMeta ? { initialMessageMeta: ctx.initialMessageMeta } : {}),
+          ...(ctx.initialLabel ? { initialLabel: ctx.initialLabel } : {}),
         });
         const message = `Session created: /sessions/${session.id}`;
         if (notify_parent) {

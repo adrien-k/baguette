@@ -117,4 +117,37 @@ describe('baguette-mcp-payload', () => {
     expect(packed.nextMessageId).toBe(1);
     expect(packed.hasMore).toBe(true);
   });
+
+  it('shortens tool call rows to the tool, status, timing and clipped arguments and result', () => {
+    const call = {
+      type: 'tool_call',
+      id: 'c1',
+      name: 'Read',
+      status: 'completed',
+      kind: 'generic',
+      started_at: '2026-01-01T00:00:00.000Z',
+      ended_at: '2026-01-01T00:00:01.000Z',
+      args: { path: 'a'.repeat(2000) },
+      result: { content: 'b'.repeat(5000) },
+    };
+    const { messages } = packSessionMessagesForMcp([
+      { id: 1, type: 'tool_call', created_at: 't', message_json: JSON.stringify(call) },
+    ]);
+    const packed = JSON.parse(messages[0].message_json);
+    expect(packed).toMatchObject({ type: 'tool_call', name: 'Read', status: 'completed' });
+    expect(packed.id).toBeUndefined();
+    expect(packed.args.length).toBeLessThanOrEqual(400);
+    expect(packed.result.length).toBeLessThanOrEqual(600);
+    expect(packed.result.endsWith('…')).toBe(true);
+  });
+
+  it('keeps a tool call without a result as it is, and tolerates an unreadable row', () => {
+    const running = { type: 'tool_call', name: 'Bash', status: 'running', args: { command: 'ls' } };
+    const { messages } = packSessionMessagesForMcp([
+      { id: 1, type: 'tool_call', message_json: JSON.stringify(running) },
+      { id: 2, type: 'tool_call', message_json: 'not json' },
+    ]);
+    expect(JSON.parse(messages[0].message_json)).toMatchObject({ status: 'running', result: null });
+    expect(messages[1].message_json).toBe('not json');
+  });
 });

@@ -1,6 +1,11 @@
 import { normalizeLegacyUserContentBlocks } from './user-message-content.js';
 import { isMcpMessageSender } from './mcp-message-sender.js';
 
+/** The fields that mark a user message as coming from Slack (see slack-user-message.js). */
+function slackFields(parsed) {
+  return parsed.source === 'slack' && parsed.slack ? { source: 'slack', slack: parsed.slack } : {};
+}
+
 /**
  * Normalize a user payload for storage.
  *
@@ -44,7 +49,7 @@ export function normalizeUserPayloadForStorage(parsed) {
     return parsed;
   }
   if (parsed?.type === 'user' && Array.isArray(parsed.content)) {
-    const out = { type: 'user', content: parsed.content };
+    const out = { type: 'user', content: parsed.content, ...slackFields(parsed) };
     if (parsed.source === 'baguette' || parsed.subtype === 'baguette') {
       out.source = 'baguette';
       if (parsed.title) out.title = parsed.title;
@@ -72,7 +77,7 @@ export function normalizeUserPayloadForStorage(parsed) {
     }
   }
 
-  const out = { type: 'user', content };
+  const out = { type: 'user', content, ...slackFields(parsed) };
   if (parsed.source === 'baguette' || parsed.subtype === 'baguette') {
     out.source = 'baguette';
     if (parsed.title) out.title = parsed.title;

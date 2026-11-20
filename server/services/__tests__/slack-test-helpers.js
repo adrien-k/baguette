@@ -1,0 +1,110 @@
+/**
+ * Fixtures for the Slack tests, on the real migrated schema (see test-utils/db.js).
+ */
+import { feathers } from 'feathers';
+import { encrypt } from '../../lib/encrypt.js';
+import { registerSlackService } from '../feathers/slack.service.js';
+import { registerSlackGlobalSessionsService } from '../feathers/slack-global-sessions.service.js';
+import { insertTestSession } from '../../test-utils/db.js';
+
+let counter = 0;
+const next = () => (counter += 1);
+
+export async function insertUser(db, overrides = {}) {
+  const n = next();
+  const [id] = await db('users').insert({
+    github_id: 1000 + n,
+    username: `user${n}`,
+    status: 'approved',
+    ...overrides,
+  });
+  return id;
+}
+
+export async function insertSlackApp(db, overrides = {}) {
+  const [id] = await db('slack_apps').insert({
+    name: `app${next()}`,
+    bot_token_encrypted: encrypt('xoxb-test'),
+    app_token_encrypted: encrypt('xapp-test'),
+    signing_secret_encrypted: encrypt('signing-secret'),
+    api_app_id: 'A1',
+    bot_user_id: 'UBOT',
+    ...overrides,
+  });
+  return id;
+}
+
+export const linkSlackUser = (db, slackAppId, slackUserId, userId) =>
+  db('slack_user_links').insert({
+    slack_app_id: slackAppId,
+    slack_user_id: slackUserId,
+    user_id: userId,
+  });
+
+/** A session with its builder agent; pass `status: 'running'` for a working agent. */
+export function insertSession(db, userId, overrides = {}) {
+  return insertTestSession(db, {
+    user_id: userId,
+    repo_full_name: 'acme/web',
+    base_branch: 'main',
+    initial_prompt: 'do things',
+    ...overrides,
+  });
+}
+
+/** A Slack global session session (global, typed with its Slack app) with its builder agent. */
+export function insertGlobalSession(db, userId, slackAppId, overrides = {}) {
+  return insertTestSession(db, {
+    user_id: userId,
+    repo_full_name: '',
+    base_branch: 'main',
+    is_global: 1,
+    slack_app_id: slackAppId,
+    initial_prompt: 'hello',
+    ...overrides,
+  });
+}
+
+/** Makes a global session serve a thread. */
+export const insertThread = (db, sessionId, fields = {}) =>
+  db('slack_session_threads').insert({
+    session_id: sessionId,
+    channel_id: 'C1',
+    thread_ts: '9.9',
+    ...fields,
+  });
+
+export async function insertAssistantMessage(db, sessionId, text, { agentId } = {}) {
+  const agent =
+    agentId ?? (await db('agents').where({ session_id: sessionId, is_primary: 1 }).first())?.id;
+  const [id] = await db('session_messages').insert({
+    session_id: sessionId,
+    agent_id: agent,
+    type: 'assistant',
+    message_json: JSON.stringify({ type: 'assistant', blocks: [{ type: 'text', text }] }),
+    agent_sdk: 'claude',
+    model: 'sonnet',
+  });
+  return id;
+}
+
+/** App rows as the admin/slack service returns them internally (decrypted). */
+export const decryptedApp = (overrides = {}) => ({
+  id: 1,
+  name: 'baguette',
+  bot_token: 'xoxb-test',
+  app_token: 'xapp-test',
+  bot_user_id: 'UBOT',
+  api_app_id: 'A1',
+  ...overrides,
+});
+
+/** A Feathers app with the real Slack services on the test database, plus any stub services. */
+export function slackTestApp(db, stubs = {}) {
+  const app = feathers();
+  app.set('db', db);
+  registerSlackService(app);
+  registerSlackGlobalSessionsService(app);
+  for (const [path, service] of Object.entries(stubs)) app.use(path, service);
+  return app;
+}

@@ -1,9 +1,11 @@
 import { Bot, FolderGit2 } from 'lucide-react';
 import GithubIcon from './svg/GithubIcon.jsx';
+import SlackIcon from './svg/SlackIcon.jsx';
 import { useRepoContext } from '../context/RepoContext.jsx';
 import { repoAccessMode, repoAccessModeLabel } from '../utils/repoDisplayName.js';
 
 function ModeIcon({ mode, className }) {
+  if (mode === 'slack') return <SlackIcon className={className} />;
   if (mode === 'global') return <Bot className={className} />;
   if (mode === 'local') return <FolderGit2 className={className} />;
   return <GithubIcon className={className} />;
@@ -13,6 +15,7 @@ function ModeIcon({ mode, className }) {
 export default function CardRepoBadge({
   show,
   isGlobal,
+  isSlack = false,
   repoFullName,
   truncate = true,
   nowrap = false,
@@ -21,8 +24,12 @@ export default function CardRepoBadge({
   const { uniqueLabel, repos } = useRepoContext();
   if (!show) return null;
   const repo = repos?.find((r) => r.full_name === repoFullName);
-  const mode = isGlobal ? 'global' : repoAccessMode(repo ?? repoFullName);
-  const label = isGlobal ? 'Global' : uniqueLabel(repoFullName);
+  let mode = repoAccessMode(repo ?? repoFullName);
+  let label = uniqueLabel(repoFullName);
+  if (isGlobal) {
+    mode = isSlack ? 'slack' : 'global';
+    label = isSlack ? 'Slack' : 'Global';
+  }
   if (!label) return null;
 
   let outerClass = 'flex w-full max-w-full items-start';

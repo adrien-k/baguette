@@ -15,10 +15,14 @@ function agentSdkForAgent(agent) {
   return agent.agent_sdk || 'claude';
 }
 
-/** Standard user turn payload stored in `message_json` (composer / plan buttons). */
-export function buildUserTurnMessageJson(content) {
+/**
+ * Standard user turn payload stored in `message_json` (composer / plan buttons). `meta` adds
+ * top-level fields that tell the UI where the message came from (e.g. Slack).
+ */
+export function buildUserTurnMessageJson(content, meta = {}) {
   return JSON.stringify({
     type: 'user',
+    ...meta,
     message: { role: 'user', content: String(content) },
   });
 }

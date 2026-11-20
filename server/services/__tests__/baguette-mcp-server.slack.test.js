@@ -75,7 +75,7 @@ const SESSION = {
 const ACME = { id: 1, name: 'acme', bot_token: 'xoxb-token' };
 const ENG = { id: 2, name: 'eng', bot_token: 'xoxb-eng' };
 
-async function buildTools({ slackApps = [ACME], usageRows = [] } = {}) {
+async function buildTools({ slackApps = [ACME], usageRows = [], sessionFields = {} } = {}) {
   const emptyUsageQuery = () => {
     const chain = {
       where: () => chain,
@@ -102,7 +102,7 @@ async function buildTools({ slackApps = [ACME], usageRows = [] } = {}) {
       return { patch: vi.fn(), get: async () => ({ id: 7, access_token: 'tok' }) };
     },
   };
-  const session = { ...SESSION };
+  const session = { ...SESSION, ...sessionFields };
   const slackAppsLoaded = await loadConfiguredSlackApps(app);
   claudeAgentSdkPlugin.adaptTools(
     await buildBaguetteToolList(session, app, { slackApps: slackAppsLoaded })
@@ -139,6 +139,25 @@ describe('tool registration', () => {
 
   it('exposes SlackPostMessage once an app is configured', async () => {
     expect((await buildTools()).map((t) => t.name)).toContain('SlackPostMessage');
+  });
+
+  const ASSISTANT_TOOLS = [
+    'SlackEditMessage',
+    'SlackReadThread',
+    'SlackReadChannel',
+    'SlackDownloadFile',
+    'SessionCost',
+    'SystemStats',
+  ];
+
+  it('keeps the Slack reading tools away from ordinary sessions', async () => {
+    const names = (await buildTools()).map((t) => t.name);
+    for (const name of ASSISTANT_TOOLS) expect(names).not.toContain(name);
+  });
+
+  it('gives a Slack global session session the tools to read and answer in Slack', async () => {
+    const names = (await buildTools({ sessionFields: { slack_app_id: 1 } })).map((t) => t.name);
+    for (const name of ASSISTANT_TOOLS) expect(names).toContain(name);
   });
 });
 

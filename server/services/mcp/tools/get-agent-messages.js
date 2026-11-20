@@ -11,7 +11,8 @@ export function createGetAgentMessagesTool(ctx) {
     description:
       'List messages for one agent in a session (paginated, 50 per page). Thinking blocks are omitted from assistant messages. ' +
       "Omit agent_id (or pass null) to read the session's primary builder. " +
-      'Pass afterMessage with the nextMessageId from the previous page to fetch the next page.',
+      'Pass afterMessage with the nextMessageId from the previous page to fetch the next page ' +
+      '(GetSessionStatus has pointers to the latest messages). ListAgents names the subagents to read with agent_id.',
     schema: {
       session_id: z.number().int().describe('Session numeric id'),
       agent_id: z
@@ -20,9 +21,11 @@ export function createGetAgentMessagesTool(ctx) {
         .nullish()
         .describe('Agent database id. Omit or pass null for the primary builder'),
       types: z
-        .array(z.enum(['user', 'assistant']))
+        .array(z.enum(['user', 'assistant', 'tool_call']))
         .optional()
-        .describe('Filter by message types (default: user and assistant)'),
+        .describe(
+          'Filter by message types (default: user and assistant). Add tool_call to see what the agent ran: tool, status, shortened arguments and result.'
+        ),
       afterMessage: z
         .number()
         .int()

@@ -1,5 +1,7 @@
 import {
+  getChannelInfo,
   getPermalink as slackGetPermalink,
+  isChannelMember,
   postMessage as slackPostMessage,
   resolveChannelId as slackResolveChannelId,
 } from '../../slack.js';
@@ -75,9 +77,99 @@ export function createSlackHelpers(ctx) {
     return `${text}\n\n_via <${sessionUrl(s)}|baguette#${s.id}> · ${details}_`;
   };
 
+  /** The Slack user id the session's owner has linked for this app, or null. */
+  const ownerSlackId = async (slackApp, sessionId) => {
+    const db = app.get('db');
+    const session = await db('sessions').where({ id: sessionId }).first();
+    if (!session) return null;
+    const link = await db('slack_user_links')
+      .where({ slack_app_id: slackApp.id, user_id: session.user_id })
+      .first();
+    return link?.slack_user_id ?? null;
+  };
+
+  /**
+   * Whether this session may read a Slack channel. The bot token sees every channel the bot is
+   * in, so reads are limited to what the session's owner could read themselves: the channel
+   * a channel the global session already serves, public channels, and private channels / DMs the owner
+   * (by their linked Slack account) is a member of. Anything unverifiable is refused.
+   */
+  const mayReadChannel = async (slackApp, channelId) => {
+    try {
+      const session = await getSession();
+      if (!session?.id) return false;
+      if (await app.service('slack-global-sessions').servesChannel(session.id, channelId))
+        return true;
+      const info = await getChannelInfo(slackApp.bot_token, channelId);
+      if (!info.isPrivate && !info.isDirect) return true;
+      const slackUser = await ownerSlackId(slackApp, session.id);
+      if (!slackUser) return false;
+      return await isChannelMember(slackApp.bot_token, channelId, slackUser);
+    } catch {
+      return false;
+    }
+  };
+
+  const channelRefusal = (channelId) =>
+    `I can't read ${channelId}: it is private and the session owner is not verifiably a member ` +
+    "(or the global session doesn't serve it). Ask them to paste what they mean here instead.";
+
+  const assertMayReadChannel = async (slackApp, channelId) => {
+    if (!(await mayReadChannel(slackApp, channelId))) throw new Error(channelRefusal(channelId));
+  };
+
+  /** A file is readable where its channel is, or by the person who uploaded it. */
+  const assertMayReadFile = async (slackApp, file) => {
+    for (const channelId of file.channel_ids ?? []) {
+      if (await mayReadChannel(slackApp, channelId)) return;
+    }
+    const session = await getSession();
+    const slackUser = session?.id ? await ownerSlackId(slackApp, session.id) : null;
+    if (slackUser && file.user_id === slackUser) return;
+    throw new Error(
+      "I can't download that file: it was not shared somewhere the session owner can read."
+    );
+  };
+
+  /** The Slack app to use: the named one, else the global session's own app, else the only one. */
+  const slackAppFor = async (appName) => {
+    const session = await getSession();
+    if (!appName && session?.slack_app_id) {
+      const apps = await loadConfiguredSlackApps(app);
+      const own = apps.find((a) => a.id === session.slack_app_id);
+      if (own) return own;
+    }
+    return resolveSlackApp(appName);
+  };
+
+  /**
+   * Where a Slack call lands: the given channel, else the Slack message the global session is
+   * answering right now (its channel and thread). Throws when neither is known.
+   */
+  const resolveTarget = async ({ channel, appName }) => {
+    const session = await getSession();
+    const reply = channel ? null : (app.get('slackBot')?.replyTarget(session?.id) ?? null);
+    if (!channel && !reply) {
+      throw new Error(
+        'channel is required: no Slack message is being answered right now. Pass the channel id (and thread_ts) from the message you are replying to.'
+      );
+    }
+    const slackApp = await slackAppFor(appName);
+    const channelId = reply
+      ? reply.channel
+      : await slackResolveChannelId(slackApp.bot_token, channel);
+    return { slackApp, channelId, threadTs: reply?.threadTs };
+  };
+
   return {
+    assertMayReadChannel,
+    assertMayReadFile,
+    sessionUrl,
     slackAppHint,
     resolveSlackApp,
+    loadSlackApps: () => loadConfiguredSlackApps(app),
+    slackAppFor,
+    resolveTarget,
     withSlackFooter,
     slackPostMessage,
     slackGetPermalink,

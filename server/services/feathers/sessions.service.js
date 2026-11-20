@@ -2,8 +2,9 @@ import crypto from 'crypto';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs/promises';
-import { NotFound, BadRequest } from 'feathers/errors';
+import { NotFound, BadRequest, Forbidden } from 'feathers/errors';
 import { KnexService } from '@feathersjs/knex';
+import { slackUserHandle, resolveSlackUsernames } from '../slack-users.js';
 const execFileAsync = promisify(execFile);
 import {
   loadBaguetteConfig,
@@ -43,6 +44,11 @@ import {
   withDescriptionLink,
   resolveRestoreWorktreeBranches,
 } from '../github.js';
+import {
+  removeSlackFileDirs,
+  slackGlobalSessionFilesDir,
+  slackSessionFilesDir,
+} from '../slack-files.js';
 import { trimSessionMessagesForArchive } from '../session-archive.js';
 import { persistGitPushApprovalOutcome } from '../git-push-approval-persistence.js';
 import * as sessionPushWorktree from '../session-push-worktree.js';
@@ -765,6 +771,19 @@ export class SessionsService extends KnexService {
     await this._finalizeRemoval(session.id);
   }
 
+  /** Deletes the Slack files saved for a session (a global session's attachments included). */
+  async _removeSlackFiles(session) {
+    try {
+      const dirs = [slackSessionFilesDir(session.id)];
+      if (session.slack_app_id) {
+        dirs.push(slackGlobalSessionFilesDir(session.slack_app_id, session.user_id));
+      }
+      await removeSlackFileDirs(dirs);
+    } catch (err) {
+      logger.warn({ err: err.message, sessionId: session.id }, 'Failed to remove Slack files');
+    }
+  }
+
   async _finalizeRemoval(sessionId) {
     const db = this.app.get('db');
     const session = await db('sessions').where({ id: sessionId }).first();
@@ -780,6 +799,7 @@ export class SessionsService extends KnexService {
         logger.warn({ err: err.message, sessionId }, 'Failed to remove session docker volume')
       );
     }
+    await this._removeSlackFiles(session);
     await this._deleteStrongLoopsTiedToSession(sessionId);
     const archivedAt = new Date().toISOString();
     // Only mark archived after the worktree is gone so a later create cannot
@@ -1181,6 +1201,45 @@ export class SessionsService extends KnexService {
     );
 
     return { totals, breakdown, by_agent };
+  }
+
+  /** Slack side of a global session session: its owner and the people it listens to besides them. */
+  async sessionSlack(_data, params) {
+    const session = params.resolvedSession;
+    if (!session.slack_app_id) return { linked: false };
+    const globalSessions = this.app.service('slack-global-sessions');
+    const slackApp = await this.app.service('admin/slack').get(session.slack_app_id, {});
+    const [ownerId, allowedIds] = await Promise.all([
+      globalSessions.slackIdOf(session.slack_app_id, session.user_id),
+      globalSessions.allowedSlackIds(session.id),
+    ]);
+    const handle = (id) => slackUserHandle(slackApp.bot_token, id);
+    return {
+      linked: true,
+      workspace: slackApp.team_name ?? slackApp.name,
+      owner: ownerId ? await handle(ownerId) : null,
+      allowed: await Promise.all(allowedIds.map(handle)),
+    };
+  }
+
+  /** Replaces the people the global session listens to (the owner is always one of them). */
+  async setSlackAllowedUsers(data, params) {
+    const session = params.resolvedSession;
+    if (!session.slack_app_id) throw new BadRequest('This session is not a Slack global session');
+    if (params.user?.id !== session.user_id) {
+      throw new Forbidden('Only the session owner can change who the global session listens to');
+    }
+    const usernames = Array.isArray(data?.usernames) ? data.usernames : [];
+    const globalSessions = this.app.service('slack-global-sessions');
+    const slackApp = await this.app.service('admin/slack').get(session.slack_app_id, {});
+    const { ids, unknown } = await resolveSlackUsernames(slackApp.bot_token, usernames);
+    if (unknown.length) throw new BadRequest(`Unknown Slack users: ${unknown.join(', ')}`);
+    const ownerId = await globalSessions.slackIdOf(session.slack_app_id, session.user_id);
+    await globalSessions.setAllowedSlackIds(
+      session.id,
+      ids.filter((id) => id !== ownerId)
+    );
+    return this.sessionSlack(data, params);
   }
 
   async branchCommits(_data, params) {
@@ -2456,7 +2515,9 @@ async function provisionGlobalSession(app, session, params) {
     auto_push: false,
     is_global: true,
   };
-  if (hasInitialPrompt(session.initial_prompt)) {
+  if (params.label) {
+    patch.label = params.label;
+  } else if (hasInitialPrompt(session.initial_prompt)) {
     try {
       const result = await generateSessionMetadataForProvisioning(app, session, params.user);
       if (result.label) patch.label = result.label;
@@ -2543,7 +2604,9 @@ async function provisionSessionEnvironment(app, session, params) {
     const fallbackBranch = taskBranchForShortId(branchPrefix, shortId);
     let remoteName =
       session.remote_branch || sanitizeBranchName(requestedBranchName, fallbackBranch);
-    if (hasInitialPrompt(session.initial_prompt)) {
+    if (params.label) {
+      patch.label = params.label;
+    } else if (hasInitialPrompt(session.initial_prompt)) {
       try {
         const result = await generateSessionMetadataForProvisioning(app, session, user);
         if (result.label) patch.label = result.label;
@@ -2616,6 +2679,7 @@ async function finalizeSessionAfterProvision(app, session, params) {
     params: {
       user: params.user,
       initialFiles: params.initialFiles,
+      initialMessageMeta: params.initialMessageMeta,
     },
   };
   await persistSystemPrompt(promptContext);
@@ -2735,6 +2799,9 @@ async function scheduleSessionProvisioning(context) {
   const params = {
     user: context.params.user,
     initialFiles: context.params.initialFiles,
+    initialMessageMeta: context.params.initialMessageMeta,
+    // A title given up front saves the LLM call that would otherwise invent one.
+    label: context.params.initialLabel,
     createNewBranch: context.params._createNewBranch ?? true,
     requestedBranchName: context.params._requestedBranchName,
   };
@@ -3160,6 +3227,8 @@ export function registerSessionsService(app, path = 'sessions') {
       'changedFiles',
       'sessionGitStatus',
       'sessionUsage',
+      'sessionSlack',
+      'setSlackAllowedUsers',
       'branchCommits',
       'shas',
       'createDefaultBuilderMessage',
@@ -3278,6 +3347,8 @@ const sessionsHooks = {
     changedFiles: [resolveSessionFromData],
     sessionGitStatus: [resolveSessionFromData],
     sessionUsage: [resolveSessionFromData],
+    sessionSlack: [resolveSessionFromData],
+    setSlackAllowedUsers: [resolveSessionFromData],
     branchCommits: [resolveSessionFromData],
     shas: [resolveSessionFromData],
     createDefaultBuilderMessage: [
@@ -3404,6 +3475,8 @@ async function createFirstMessage(context) {
       : initialPrompt;
     messageJson = JSON.stringify({
       type: 'user',
+      // Where the prompt came from (e.g. Slack), for the chat to show.
+      ...context.params.initialMessageMeta,
       message: { role: 'user', content },
     });
   }

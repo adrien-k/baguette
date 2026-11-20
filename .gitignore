@@ -13,9 +13,14 @@ e2e/screenshots/
 config/credentials/
 .kamal/.env
 fly.toml
-screenshots/
-
-# Claude Code local config
 .claude/
+.codex
+.vscode
+.antigravity
+.gemini
+screenshots/
 FINDINGS.md
 AUDIT.md
+
+# Local agent plans
+docs/superpowers/

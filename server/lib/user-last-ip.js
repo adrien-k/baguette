@@ -72,10 +72,10 @@ export function resolveUserCountry(ip, req) {
 
 function parseLastSeenMs(value) {
   if (value == null) return null;
-  // SQLite CURRENT_TIMESTAMP is UTC without a zone marker; Date would read it as local time.
-  const isZoneless =
-    typeof value === 'string' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value);
-  const ms = new Date(isZoneless ? value.replace(' ', 'T') + 'Z' : value).getTime();
+  // SQLite CURRENT_TIMESTAMP is UTC without a zone marker; parse it as UTC, not local time.
+  const text = String(value);
+  const hasZone = /(?:Z|[+-]\d{2}:?\d{2})$/.test(text);
+  const ms = new Date(hasZone ? text : `${text.replace(' ', 'T')}Z`).getTime();
   return Number.isNaN(ms) ? null : ms;
 }
 

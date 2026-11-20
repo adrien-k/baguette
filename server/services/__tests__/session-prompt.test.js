@@ -318,6 +318,22 @@ describe('buildSystemPromptAppend', () => {
     expect(noDb).not.toContain('## User MCP servers');
   });
 
+  it('adds the Slack global session prompt to a global session typed as one, and only to it', async () => {
+    const plain = await seedSession({ is_global: true, session_path: 'repos' });
+    expect(await buildSystemPromptAppend(plain)).not.toContain('You are the Slack global session');
+
+    const globalSession = await seedSession({
+      is_global: true,
+      session_path: 'repos',
+      slack_app_id: 1,
+      short_id: 'slack1',
+    });
+    const prompt = await buildSystemPromptAppend(globalSession);
+    expect(prompt).toContain('global session');
+    expect(prompt).toContain('You are the Slack global session');
+    expect(prompt).toContain('CreateSession(notify_parent: true)');
+  });
+
   it('uses the light global prompt for is_global sessions', async () => {
     const session = await seedSession({
       is_global: true,
