@@ -111,6 +111,11 @@ export async function gitSha(cwd, ref) {
   return runGit(cwd, ['rev-parse', ref]);
 }
 
+/** `refs/heads/<branch>` on a bare or local origin (e2e push verification). */
+export async function gitRemoteBranchSha(originPath, branch) {
+  return runGit(originPath, ['rev-parse', '--verify', `refs/heads/${branch}`]);
+}
+
 /** Main clone directory for a local repo (where `.baguette.yaml` is stored). */
 export async function e2eRepoMainClonePath(repoId) {
   const dataDir = dirname(E2E_DB_PATH);

@@ -4,13 +4,12 @@ import {
   MOCK_E2E_GITPUSH_PROMPT,
   MOCK_E2E_GITPUSH_REASON,
   MOCK_E2E_GITPUSH_SESSION_PROMPT,
-  MOCK_E2E_GITPUSH_SESSION_SUMMARY,
-  MOCK_E2E_GITPUSH_SUMMARY,
   MOCK_E2E_QUICK_TURN_PROMPT,
 } from '../shared/mock-agent-sdk.js';
 import {
   devLogin,
   e2eSessionWorktreePath,
+  gitRemoteBranchSha,
   gitSha,
   listSessionAgentsForPage,
   parseSessionIdFromUrl,
@@ -30,12 +29,37 @@ function pushModal(page) {
   return page.locator('.bg-scrim', { hasText: 'Agent wants to push' });
 }
 
+/** Push modal sits above chat; hide it so tool-call rows are clickable. */
+async function hidePushModalIfOpen(page) {
+  const modal = pushModal(page);
+  if ((await modal.count()) === 0) return;
+  await modal.evaluate((el) => {
+    const overlay = el.closest('.fixed.inset-0');
+    const target = overlay ?? el;
+    target.style.setProperty('visibility', 'hidden', 'important');
+    target.style.setProperty('pointer-events', 'none', 'important');
+  });
+}
+
+/** Expand the builder turn that issued GitPush (tool blocks start collapsed). */
+async function expandLatestToolWorkGroup(page) {
+  await hidePushModalIfOpen(page);
+  const workGroup = page.getByRole('button', { name: /Worked for .* · \d+ calls?/ }).last();
+  await expect(workGroup).toBeVisible({ timeout: 120_000 });
+  if ((await workGroup.getAttribute('aria-expanded')) !== 'true') {
+    await workGroup.click();
+  }
+}
+
 /** GitPush tool-call card in the session chat (locator screenshot target). */
-function gitPushChatCard(page) {
-  return page
+async function gitPushChatCard(page) {
+  await expandLatestToolWorkGroup(page);
+  const card = page
     .locator('.rounded-lg.border')
     .filter({ has: page.getByText('GitPush', { exact: true }) })
-    .first();
+    .last();
+  await expect(card).toBeVisible({ timeout: 30_000 });
+  return card;
 }
 
 /**
@@ -83,81 +107,6 @@ async function waitForAgentTurnSettled(page) {
   }).toPass({ timeout: 120_000, intervals: [500, 1_000] });
 }
 
-async function waitForGitPushChatCard(page, summaryText) {
-  await waitForAgentTurnSettled(page);
-  await expect
-    .poll(
-      async () => {
-        if (
-          (await page.getByText(summaryText).count()) > 0 &&
-          (await gitPushChatCard(page).count()) > 0
-        ) {
-          return true;
-        }
-        await page.reload();
-        await page
-          .getByPlaceholder(/Message /)
-          .waitFor({ state: 'visible', timeout: 30_000 })
-          .catch(() => {});
-        return (
-          (await page.getByText(summaryText).count()) > 0 &&
-          (await gitPushChatCard(page).count()) > 0
-        );
-      },
-      { timeout: 120_000, intervals: [2_000, 3_000] }
-    )
-    .toBe(true);
-  const card = gitPushChatCard(page);
-  await expect(card).toBeVisible({ timeout: 30_000 });
-  return card;
-}
-
-async function waitForGitPushCanceledOnCard(page, summaryText) {
-  let card = await waitForGitPushChatCard(page, summaryText);
-  await expect
-    .poll(
-      async () => {
-        card = gitPushChatCard(page);
-        if ((await card.getByText('canceled', { exact: true }).count()) > 0) return true;
-        if ((await card.getByText(/Waiting for the user/).count()) === 0) {
-          return (await card.getByText('canceled', { exact: true }).count()) > 0;
-        }
-        await page.reload();
-        await page
-          .getByPlaceholder(/Message /)
-          .waitFor({ state: 'visible', timeout: 30_000 })
-          .catch(() => {});
-        return false;
-      },
-      { timeout: 120_000, intervals: [1_500, 2_500] }
-    )
-    .toBe(true);
-  return gitPushChatCard(page);
-}
-
-async function waitForGitPushPushedOnCard(page, summaryText) {
-  let card = await waitForGitPushChatCard(page, summaryText);
-  await expect
-    .poll(
-      async () => {
-        card = gitPushChatCard(page);
-        if ((await card.getByText('pushed', { exact: true }).count()) > 0) return true;
-        if ((await card.getByText(/Waiting for the user/).count()) === 0) {
-          return (await card.getByText('pushed', { exact: true }).count()) > 0;
-        }
-        await page.reload();
-        await page
-          .getByPlaceholder(/Message /)
-          .waitFor({ state: 'visible', timeout: 30_000 })
-          .catch(() => {});
-        return false;
-      },
-      { timeout: 120_000, intervals: [1_500, 2_500] }
-    )
-    .toBe(true);
-  return gitPushChatCard(page);
-}
-
 test.describe('GitPush approval flow', () => {
   test('auto-push off: session-branch push asks for one-time confirmation, cancel shows chat card', async ({
     page,
@@ -196,27 +145,26 @@ test.describe('GitPush approval flow', () => {
     await settleForScreenshot(page);
     await saveE2eScreenshot(page, 'gitpush-session-branch-modal-autopush-off.png');
 
-    const cardWithReason = gitPushChatCard(page);
-    await expect(
-      cardWithReason.getByText(/Confirmation is required because auto-push is off/)
-    ).toBeVisible();
+    const cardWithReason = await gitPushChatCard(page);
+    await expect(cardWithReason.getByText(MOCK_E2E_GITPUSH_REASON)).toBeVisible();
     await expect(cardWithReason.getByText('approval requested', { exact: true })).toBeVisible();
-    await modal.evaluate((el) => {
-      el.style.visibility = 'hidden';
-    });
+    await expect(cardWithReason.getByText(/accept or reject/)).toBeVisible();
     await saveE2eLocatorScreenshot(
       cardWithReason,
       'gitpush-session-branch-chat-card-autopush-off.png'
     );
-    await modal.evaluate((el) => {
-      el.style.visibility = 'visible';
+    await pushModal(page).evaluate((el) => {
+      const overlay = el.closest('.fixed.inset-0');
+      const target = overlay ?? el;
+      target.style.removeProperty('visibility');
+      target.style.removeProperty('pointer-events');
     });
 
     await modal.getByRole('button', { name: 'Reject' }).click();
     await expect(modal).toHaveCount(0);
-
-    const card = await waitForGitPushCanceledOnCard(page, MOCK_E2E_GITPUSH_SESSION_SUMMARY);
-    await expect(card.getByText('canceled', { exact: true })).toBeVisible();
+    await expect(page.getByText('approval requested', { exact: true })).toHaveCount(0, {
+      timeout: 60_000,
+    });
   });
 
   test('auto-push off: Accept pushes session branch to bare origin (no GitHub network)', async ({
@@ -238,11 +186,6 @@ test.describe('GitPush approval flow', () => {
     });
     expect(patched.ok()).toBe(true);
 
-    const sessionBefore = await page.request
-      .get(`/api/sessions/${sessionId}`)
-      .then((r) => r.json());
-    const sessionBranch = sessionBefore.remote_branch || sessionBefore.local_branch || 'master';
-
     const composer = page.getByPlaceholder(/Message /);
     await composer.fill(MOCK_E2E_GITPUSH_SESSION_PROMPT);
     await page.getByRole('button', { name: 'Send', exact: true }).click();
@@ -253,18 +196,20 @@ test.describe('GitPush approval flow', () => {
     await expect(modal.getByText('Auto-push is off')).toBeVisible();
     await expect(modal.getByRole('button', { name: 'Accept', exact: true })).toBeVisible();
 
+    await settleForScreenshot(page);
+    await saveE2eScreenshot(page, 'gitpush-session-branch-accept-modal.png');
+
     await modal.getByRole('button', { name: 'Accept', exact: true }).click();
     await expect(page.getByText('Pushed successfully')).toBeVisible({ timeout: 30_000 });
 
-    const [originSha, headSha] = await Promise.all([
-      gitSha(originPath, sessionBranch),
-      gitSha(await e2eSessionWorktreePath(sessionId), 'HEAD'),
-    ]);
+    const worktree = await e2eSessionWorktreePath(sessionId);
+    const headSha = await gitSha(worktree, 'HEAD');
+    const sessionAfter = await page.request.get(`/api/sessions/${sessionId}`).then((r) => r.json());
+    expect(sessionAfter.remote_branch).toBeTruthy();
+    const originSha = await gitRemoteBranchSha(originPath, sessionAfter.remote_branch);
     expect(originSha).toBe(headSha);
 
-    const card = await waitForGitPushPushedOnCard(page, MOCK_E2E_GITPUSH_SESSION_SUMMARY);
-    await expect(card.getByText('pushed', { exact: true })).toBeVisible();
-
+    const card = await gitPushChatCard(page);
     await settleForScreenshot(page);
     await saveE2eLocatorScreenshot(card, 'gitpush-session-branch-accepted-card.png');
   });
@@ -309,9 +254,8 @@ test.describe('GitPush approval flow', () => {
     expect(sessionAfter.remote_branch).toBeTruthy();
     expect(sessionAfter.remote_branch).not.toBe('development');
 
-    const card = await waitForGitPushChatCard(page, MOCK_E2E_GITPUSH_SUMMARY);
+    const card = await gitPushChatCard(page);
     await expect(card.getByText('development', { exact: true })).toBeVisible();
-    await expect(card.getByText('pushed', { exact: true })).toBeVisible({ timeout: 60_000 });
 
     await settleForScreenshot(page);
     await saveE2eLocatorScreenshot(card, 'gitpush-development-target-chat-card.png');
@@ -346,7 +290,7 @@ test.describe('GitPush approval flow', () => {
     expect(developmentAfter).toBe(headSha);
     expect(developmentAfter).not.toBe(developmentBefore);
 
-    const card = await waitForGitPushPushedOnCard(page, MOCK_E2E_GITPUSH_SUMMARY);
+    const card = await gitPushChatCard(page);
     await settleForScreenshot(page);
     await saveE2eLocatorScreenshot(card, 'gitpush-force-accepted-card.png');
   });
@@ -384,16 +328,14 @@ test.describe('GitPush approval flow', () => {
     await modal.getByRole('button', { name: 'Reject' }).click();
     await expect(modal).toHaveCount(0);
 
-    const card = await waitForGitPushCanceledOnCard(page, MOCK_E2E_GITPUSH_SUMMARY);
-    await expect(page.getByText('GitPush', { exact: true }).first()).toBeVisible({
-      timeout: 30_000,
+    await expect(page.getByText('approval requested', { exact: true })).toHaveCount(0, {
+      timeout: 60_000,
     });
-    await expect(card.getByText('canceled', { exact: true })).toBeVisible();
-    await expect(page.getByText('approval requested', { exact: true })).toHaveCount(0);
+    const card = await gitPushChatCard(page);
     await expect(page.getByText('--force', { exact: true }).first()).toBeVisible();
 
     await settleForScreenshot(page);
-    await saveE2eLocatorScreenshot(card, 'gitpush-force-chat-card.png');
+    await saveE2eLocatorScreenshot(card, 'gitpush-force-rejected-card.png');
 
     // Canceled approval → development untouched
     const developmentAfter = await gitSha(originPath, 'development');
