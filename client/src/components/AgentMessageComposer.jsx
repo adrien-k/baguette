@@ -168,6 +168,7 @@ export default function AgentMessageComposer({
   mcpReadOnly = false,
   recipes,
   onRecipeSelect,
+  disableEnterSubmit = false,
 }) {
   const handleChange = (e) => {
     onChange(e.target.value);
@@ -352,7 +353,7 @@ export default function AgentMessageComposer({
           keepManualResize={resizable}
           value={value}
           onChange={handleChange}
-          onSubmit={onSubmit}
+          onSubmit={disableEnterSubmit ? undefined : onSubmit}
           canSubmit={hasDraft && !submitDisabled}
           disabled={disabled || sending}
           placeholder={placeholder}

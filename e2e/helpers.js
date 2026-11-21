@@ -350,8 +350,21 @@ export async function openStartSubagentModalFromComposer(page) {
   await expect(page.getByRole('heading', { name: 'Add builder' })).toBeVisible();
 }
 
+/** Open **Add builder** from the primary builder row in the agent tree (works with an empty composer). */
+export async function openAddBuilderModalFromAgentTree(page) {
+  const addBuilderControl = page.getByTestId('agent-tree-row').getByRole('button', {
+    name: 'Add builder',
+    exact: true,
+  });
+  await addBuilderControl.click();
+  await expect(page.getByRole('heading', { name: 'Add builder' })).toBeVisible();
+}
+
 export async function confirmStartSubagentModal(page) {
-  await page.getByRole('button', { name: 'Add builder' }).click();
+  const form = page.locator('form', {
+    has: page.getByPlaceholder(ADD_BUILDER_MODAL_PLACEHOLDER),
+  });
+  await form.getByRole('button', { name: 'Add builder', exact: true }).click();
 }
 
 /**
@@ -377,6 +390,37 @@ export async function addManualBuilderAgent(page, name) {
 
 export async function sessionChatComposer(page) {
   return page.getByPlaceholder(/Message .+\.\.\./);
+}
+
+export const ADD_BUILDER_MODAL_PLACEHOLDER =
+  'Optional — leave empty to open the builder with no initial message';
+
+export function addBuilderModalComposer(page) {
+  return page.getByPlaceholder(ADD_BUILDER_MODAL_PLACEHOLDER);
+}
+
+/** Attach a local file via the Add builder modal paperclip. */
+export async function attachFileInAddBuilderModal(page, filePath) {
+  const modalForm = page.locator('form', {
+    has: page.getByPlaceholder(ADD_BUILDER_MODAL_PLACEHOLDER),
+  });
+  const fileChooserPromise = page.waitForEvent('filechooser');
+  await modalForm.getByRole('button', { name: 'Attach files' }).click();
+  const fileChooser = await fileChooserPromise;
+  await fileChooser.setFiles(filePath);
+}
+
+/** Attach a local file via the chat composer paperclip (before opening Add builder). */
+export async function attachFileInChatComposer(page, filePath) {
+  const fileChooserPromise = page.waitForEvent('filechooser');
+  const chatComposer = await sessionChatComposer(page);
+  await expect(chatComposer).toBeVisible();
+  await chatComposer
+    .locator('xpath=ancestor::form[1]')
+    .getByRole('button', { name: 'Attach files' })
+    .click();
+  const fileChooser = await fileChooserPromise;
+  await fileChooser.setFiles(filePath);
 }
 
 export async function sendSessionChatMessage(page, text) {

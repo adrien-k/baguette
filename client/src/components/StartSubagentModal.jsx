@@ -1,16 +1,24 @@
-import { useState } from 'react';
-import { BookOpen, Bot, Loader2, Sparkles } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { Bot, Loader2, Sparkles } from 'lucide-react';
 import Modal, { ModalActions, ModalHeader } from './Modal.jsx';
 import Field from './Field.jsx';
 import TextInput from './TextInput.jsx';
 import Tooltip from './Tooltip.jsx';
-import ChatRecipeCarousel from './chat/ChatRecipeCarousel.tsx';
-import { AgentDefaultModelPicker } from './settings/DefaultAgentPicker.jsx';
+import AgentMessageComposer from './AgentMessageComposer.jsx';
+import FileAttachmentPicker from './FileAttachmentPicker.jsx';
 import { agentsService } from '../feathers.js';
 import { toastError } from '../utils/toastError.jsx';
 import { GHOST_BUTTON_CLASS, PRIMARY_BUTTON_SIZED } from '../utils/buttonStyles.js';
-import { INPUT_CLASS, TEXT_FAINT } from '../utils/ui.js';
+import { TEXT_FAINT } from '../utils/ui.js';
 import { titleFromPrompt } from '@baguette/shared/agent-naming.js';
+import { useAgentConfigs } from '../hooks/useAgentConfigs.js';
+import { useAgentConfigModels } from '../hooks/useAgentConfigModels.js';
+import { useCursorModelPrefs } from '../hooks/useAgentPreferences.js';
+import { defaultModelForSdk, paramsJsonForModelChange } from '../utils/models.js';
+import { localStateFromConfigDefault } from '../utils/agentConfigDefaultModel.js';
+
+const ADD_BUILDER_PLACEHOLDER =
+  'Optional — leave empty to open the builder with no initial message';
 
 function paramsJsonFromValue(value) {
   if (value == null || value === '') return null;
@@ -21,6 +29,7 @@ function paramsJsonFromValue(value) {
 export default function StartSubagentModal({
   sessionId,
   initialPrompt = '',
+  initialFiles = [],
   defaultLabel,
   recipes = [],
   initialAgentConfigId = null,
@@ -32,6 +41,8 @@ export default function StartSubagentModal({
 }) {
   const [label, setLabel] = useState(defaultLabel ?? titleFromPrompt(initialPrompt));
   const [prompt, setPrompt] = useState(initialPrompt);
+  const [files, setFiles] = useState(() => (Array.isArray(initialFiles) ? [...initialFiles] : []));
+  const [fileError, setFileError] = useState(null);
   const [generating, setGenerating] = useState(false);
   const [configId, setConfigId] = useState(
     initialAgentConfigId != null ? Number(initialAgentConfigId) : null
@@ -39,11 +50,43 @@ export default function StartSubagentModal({
   const [model, setModel] = useState(initialModel || null);
   const [modelParamsJson, setModelParamsJson] = useState(paramsJsonFromValue(initialModelParams));
 
+  const { configOptions: agentConfigOptions, loading: configsLoading } = useAgentConfigs();
+  const { models, stale: modelsStale } = useAgentConfigModels(configId, {
+    enabled: configId != null,
+  });
+  const modelsLoading = modelsStale && !models.length;
+  const { cursorModelPrefs, setCursorModelPref } = useCursorModelPrefs();
+
   const trimmedLabel = label.trim();
   const trimmedPrompt = prompt.trim();
   const busy = saving || generating;
   const canStart = Boolean(trimmedLabel) && !busy;
   const canGenerate = Boolean(trimmedPrompt) && !busy;
+
+  const handleComposerModelChange = useCallback((modelId, paramsJson) => {
+    setModel(modelId || null);
+    setModelParamsJson(paramsJson ?? null);
+  }, []);
+
+  const handleAgentConfigChange = useCallback(
+    (nextKey) => {
+      const nextId = Number(nextKey);
+      setConfigId(nextId);
+      const picked = agentConfigOptions.find((c) => c.key === String(nextKey));
+      const fromDefault = localStateFromConfigDefault(picked);
+      setModel(fromDefault.model || null);
+      setModelParamsJson(fromDefault.modelParamsJson);
+    },
+    [agentConfigOptions]
+  );
+
+  useEffect(() => {
+    if (configId == null || modelsStale || !models.length) return;
+    if (model && models.some((m) => m.id === model)) return;
+    const fallback = defaultModelForSdk(models);
+    if (!fallback) return;
+    handleComposerModelChange(fallback.id, paramsJsonForModelChange(fallback, cursorModelPrefs));
+  }, [configId, model, models, modelsStale, cursorModelPrefs, handleComposerModelChange]);
 
   const handleGenerate = async () => {
     if (!canGenerate) return;
@@ -61,20 +104,34 @@ export default function StartSubagentModal({
     }
   };
 
-  const handleRecipeSelect = (recipePrompt) => {
+  const handleRecipeSelect = useCallback((recipePrompt) => {
     setPrompt(recipePrompt);
     setLabel(titleFromPrompt(recipePrompt));
-  };
+  }, []);
 
-  const handleConfirm = () => {
-    if (!canStart) return;
-    onConfirm({
+  const handleConfirm = async () => {
+    if (!canStart || saving) return;
+    setFileError(null);
+    const result = await onConfirm({
       name: trimmedLabel,
       prompt: trimmedPrompt,
       agent_config_id: configId,
       model,
       model_params: modelParamsJson,
+      files,
     });
+    if (result?.ok === false && result.fileError) {
+      setFileError(result.fileError);
+    }
+  };
+
+  const handleAddFiles = (picked) => {
+    setFileError(null);
+    setFiles((prev) => [...prev, ...picked]);
+  };
+
+  const handleRemoveFile = (index) => {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
   return (
@@ -83,32 +140,50 @@ export default function StartSubagentModal({
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          handleConfirm();
+          void handleConfirm();
         }}
       >
         <div className="space-y-4">
           <Field className="" label="Prompt">
-            <textarea
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Optional — leave empty to open the builder with no initial message"
-              disabled={busy}
-              rows={4}
-              className={`${INPUT_CLASS} resize-y min-h-[5rem]`}
-            />
-            {recipes.length > 0 ? (
-              <div className="mt-2 space-y-1.5">
-                <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-faint">
-                  <BookOpen className="w-3 h-3 shrink-0" aria-hidden />
-                  Recipes
-                </div>
-                <ChatRecipeCarousel
-                  recipes={recipes}
+            <FileAttachmentPicker
+              className="w-full"
+              files={files}
+              onAdd={handleAddFiles}
+              onRemove={handleRemoveFile}
+              error={fileError}
+            >
+              {({ attachButton }) => (
+                <AgentMessageComposer
+                  skipColumn
+                  formClassName=""
+                  value={prompt}
+                  onChange={setPrompt}
+                  onSubmit={(e) => e.preventDefault()}
+                  disableEnterSubmit
+                  placeholder={ADD_BUILDER_PLACEHOLDER}
                   disabled={busy}
-                  onSelect={handleRecipeSelect}
+                  rows={2}
+                  resizable
+                  textareaId="add-builder-prompt"
+                  agentConfigKey={configId != null ? String(configId) : null}
+                  model={model || ''}
+                  params={modelParamsJson}
+                  models={configId != null ? models : []}
+                  cursorModelPrefs={cursorModelPrefs}
+                  onCursorModelPrefChange={setCursorModelPref}
+                  onModelChange={handleComposerModelChange}
+                  showAutoPushParam={false}
+                  agentConfigOptions={agentConfigOptions}
+                  onAgentConfigChange={handleAgentConfigChange}
+                  configsLoading={configsLoading}
+                  modelsLoading={modelsLoading}
+                  showSubmitButton={false}
+                  toolbarExtra={attachButton}
+                  recipes={recipes}
+                  onRecipeSelect={handleRecipeSelect}
                 />
-              </div>
-            ) : null}
+              )}
+            </FileAttachmentPicker>
           </Field>
           <Field className="" label="Label">
             <div className="relative">
@@ -140,17 +215,6 @@ export default function StartSubagentModal({
                 </Tooltip>
               </div>
             </div>
-          </Field>
-          <Field className="" label="Model">
-            <AgentDefaultModelPicker
-              configId={configId}
-              onConfigIdChange={setConfigId}
-              model={model}
-              modelParamsJson={modelParamsJson}
-              onModelChange={setModel}
-              onModelParamsJsonChange={setModelParamsJson}
-              allowInherit={false}
-            />
           </Field>
         </div>
         <ModalActions>

@@ -1133,6 +1133,7 @@ export default function Session() {
     open: addBuilderOpen,
     modalKey: addBuilderModalKey,
     initialPrompt: addBuilderInitialPrompt,
+    initialFiles: addBuilderInitialFiles,
     initialLabel: addBuilderInitialLabel,
     adding: addBuilderSaving,
     composerClearNonce: addBuilderComposerClearNonce,
@@ -1649,6 +1650,7 @@ export default function Session() {
             key={addBuilderModalKey}
             sessionId={gitSession.id}
             initialPrompt={addBuilderInitialPrompt}
+            initialFiles={addBuilderInitialFiles}
             defaultLabel={addBuilderInitialLabel}
             recipes={addBuilderRecipes}
             initialAgentConfigId={
@@ -1658,7 +1660,7 @@ export default function Session() {
             initialModelParams={
               primaryBuilderForChat?.model_params ?? gitSession.model_params ?? null
             }
-            onConfirm={(opts) => void confirmAddBuilder(opts)}
+            onConfirm={(opts) => confirmAddBuilder(opts)}
             onCancel={closeAddBuilderModal}
             saving={addBuilderSaving}
           />

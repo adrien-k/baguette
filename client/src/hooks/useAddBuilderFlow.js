@@ -13,21 +13,21 @@ export function useAddBuilderFlow({ session, modelAgent, onSelectAgent }) {
   const [open, setOpen] = useState(false);
   const [modalKey, setModalKey] = useState(0);
   const [initialPrompt, setInitialPrompt] = useState('');
+  const [initialFiles, setInitialFiles] = useState([]);
   const [adding, setAdding] = useState(false);
   const [composerClearNonce, setComposerClearNonce] = useState(0);
   const recipes = useSessionChatRecipes(session, modelAgent);
-  const composerFilesRef = useRef([]);
   const openedFromComposerRef = useRef(false);
 
   const openModal = useCallback((arg = '') => {
     if (arg && typeof arg === 'object') {
       const prompt = typeof arg.prompt === 'string' ? arg.prompt : '';
       setInitialPrompt(prompt);
-      composerFilesRef.current = Array.isArray(arg.files) ? [...arg.files] : [];
+      setInitialFiles(Array.isArray(arg.files) ? [...arg.files] : []);
       openedFromComposerRef.current = Boolean(arg.fromComposer);
     } else {
       setInitialPrompt(typeof arg === 'string' ? arg : '');
-      composerFilesRef.current = [];
+      setInitialFiles([]);
       openedFromComposerRef.current = false;
     }
     setModalKey((k) => k + 1);
@@ -36,19 +36,33 @@ export function useAddBuilderFlow({ session, modelAgent, onSelectAgent }) {
 
   const closeModal = useCallback(() => {
     if (adding) return;
-    composerFilesRef.current = [];
     openedFromComposerRef.current = false;
     setOpen(false);
   }, [adding]);
 
   const handleConfirm = useCallback(
-    async ({ name, prompt, agent_config_id, model, model_params }) => {
+    async ({ name, prompt, agent_config_id, model, model_params, files: modalFiles = [] }) => {
       if (!session?.id || adding) return;
       const label = typeof name === 'string' ? name.trim() : '';
       if (!label) return;
       const text = typeof prompt === 'string' ? prompt.trim() : '';
+      const files = Array.isArray(modalFiles) ? modalFiles : [];
 
       setAdding(true);
+
+      let messageContent = null;
+      if (text || files.length) {
+        try {
+          messageContent = await buildUserMessageContent(text, files);
+        } catch (err) {
+          setAdding(false);
+          return {
+            ok: false,
+            fileError: err?.message ?? 'Failed to read attached files',
+          };
+        }
+      }
+
       let newAgent;
       try {
         const payload = {
@@ -63,7 +77,7 @@ export function useAddBuilderFlow({ session, modelAgent, onSelectAgent }) {
       } catch (err) {
         toastFeathersError('Failed to add builder', err);
         setAdding(false);
-        return;
+        return { ok: false };
       }
 
       setOpen(false);
@@ -77,14 +91,12 @@ export function useAddBuilderFlow({ session, modelAgent, onSelectAgent }) {
         onSelectAgent?.(newAgent);
       }
 
-      if (text) {
+      if (messageContent != null) {
         const fromComposer = openedFromComposerRef.current;
-        const composerFiles = composerFilesRef.current;
         try {
-          const content = await buildUserMessageContent(text, composerFiles);
           const messageJson = JSON.stringify({
             type: 'user',
-            message: { role: 'user', content },
+            message: { role: 'user', content: messageContent },
           });
           await messagesService.create({
             session_id: session.id,
@@ -104,9 +116,9 @@ export function useAddBuilderFlow({ session, modelAgent, onSelectAgent }) {
         }
       }
 
-      composerFilesRef.current = [];
       openedFromComposerRef.current = false;
       setAdding(false);
+      return { ok: true };
     },
     [session, adding, onSelectAgent]
   );
@@ -115,6 +127,7 @@ export function useAddBuilderFlow({ session, modelAgent, onSelectAgent }) {
     open,
     modalKey,
     initialPrompt,
+    initialFiles,
     initialLabel: titleFromPrompt(initialPrompt),
     adding,
     composerClearNonce,
