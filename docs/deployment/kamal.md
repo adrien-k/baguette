@@ -120,6 +120,51 @@ When `DOCKER_REGISTRY_USERNAME` is set, Kamal pushes and pulls from that registr
 | `DOCKER_REGISTRY_PASSWORD` | Registry password or access token (secret in GitHub Actions; in `.kamal/.env` for local deploys) |
 | `DOCKER_REGISTRY_SERVER`   | Registry host (optional; omit for Docker Hub, use `ghcr.io` for GitHub Container Registry)       |
 
+### Optional — OIDC with oauth2-proxy (Kamal only)
+
+To require SSO before anyone can reach Baguette (complements or replaces `BOOTSTRAP_PASSWORD` at the network edge), set **`OAUTH2_PROXY_PROVIDER`** in `.kamal/.env` or in GitHub Actions **Variables**. When this variable is set, `config/deploy.yml`:
+
+- Disables kamal-proxy on the Baguette `web` role (`proxy: false`)
+- Boots an [oauth2-proxy](https://oauth2-proxy.github.io/oauth2-proxy/) **accessory** with kamal-proxy on port `4180`, forwarding to `baguette-web:3000`
+- Terminates TLS on the same wildcard certificate as the default layout (`www.<DOMAIN>`, `*.<DOMAIN>`, and the apex)
+
+Unset `OAUTH2_PROXY_PROVIDER` to keep the default single-proxy setup.
+
+| Variable / secret              | Where    | Description                                                                          |
+| ------------------------------ | -------- | ------------------------------------------------------------------------------------ |
+| `OAUTH2_PROXY_PROVIDER`        | Variable | **Opt-in.** Provider name (e.g. `google`, `github`, `oidc`). Omit to disable.        |
+| `OAUTH2_PROXY_EMAIL_DOMAINS`   | Variable | Allowed email domains (e.g. `example.com`) or `*` for any                            |
+| `OAUTH2_PROXY_CLIENT_ID`       | Secret   | OAuth client ID from your IdP                                                        |
+| `OAUTH2_PROXY_CLIENT_SECRET`   | Secret   | OAuth client secret                                                                  |
+| `OAUTH2_PROXY_COOKIE_SECRET`   | Secret   | Signing key for oauth2-proxy cookies (`openssl rand -base64 32`)                     |
+| `OAUTH2_PROXY_OIDC_ISSUER_URL` | Variable | Optional. Required for `oidc` provider                                               |
+| `OAUTH2_PROXY_COOKIE_DOMAINS`  | Variable | Optional. e.g. `.your-domain.com` so session preview subdomains share the SSO cookie |
+| `OAUTH2_PROXY_SKIP_AUTH_REGEX` | Variable | Optional. Paths that bypass SSO (advanced)                                           |
+
+**IdP redirect URL** — register this authorized redirect URI with your provider:
+
+`https://www.<DOMAIN>/oauth2/callback`
+
+Example Google OAuth client + `.kamal/.env`:
+
+```bash
+OAUTH2_PROXY_PROVIDER=google
+OAUTH2_PROXY_EMAIL_DOMAINS=example.com
+OAUTH2_PROXY_CLIENT_ID=123456789.apps.googleusercontent.com
+OAUTH2_PROXY_CLIENT_SECRET=...
+OAUTH2_PROXY_COOKIE_SECRET=...   # openssl rand -base64 32
+# Optional: SSO cookie on preview subdomains
+OAUTH2_PROXY_COOKIE_DOMAINS=.your-domain.com
+```
+
+After the first deploy with OIDC enabled, boot the accessory (Kamal does not roll accessories on `kamal deploy`):
+
+```bash
+kamal accessory boot oauth2-proxy
+```
+
+When you change oauth2-proxy env or image, run `kamal accessory reboot oauth2-proxy`. Baguette still uses its own sign-in (passkeys, GitHub, invites) **after** the edge gate — treat oauth2-proxy as network-level access control, not a replacement for Baguette user accounts.
+
 ### 5.1. Deploy with Kamal
 
 Deploy directly from your local machine. You'll need Ruby installed.
@@ -158,10 +203,15 @@ The included workflow (`.github/workflows/deploy.yml`) runs only on manual **wor
 
    **Secrets** (encrypted, "Secrets" tab):
 
-   | Secret                     | Value                                                                 |
-   | -------------------------- | --------------------------------------------------------------------- |
-   | `SSH_PRIVATE_KEY`          | Contents of `/home/ubuntu/.ssh/id_ed25519` on the server              |
-   | `BOOTSTRAP_PASSWORD`       | Optional. First-visitor gate on public hosts (env-only)               |
-   | `DOCKER_REGISTRY_PASSWORD` | Docker Hub token or registry password (only if using remote registry) |
+   | Secret                       | Value                                                                       |
+   | ---------------------------- | --------------------------------------------------------------------------- |
+   | `SSH_PRIVATE_KEY`            | Contents of `/home/ubuntu/.ssh/id_ed25519` on the server                    |
+   | `BOOTSTRAP_PASSWORD`         | Optional. First-visitor gate on public hosts (env-only)                     |
+   | `DOCKER_REGISTRY_PASSWORD`   | Docker Hub token or registry password (only if using remote registry)       |
+   | `OAUTH2_PROXY_CLIENT_ID`     | Optional. oauth2-proxy client ID (only when `OAUTH2_PROXY_PROVIDER` is set) |
+   | `OAUTH2_PROXY_CLIENT_SECRET` | Optional. oauth2-proxy client secret                                        |
+   | `OAUTH2_PROXY_COOKIE_SECRET` | Optional. oauth2-proxy cookie signing secret                                |
+
+   Optional **Variables** when using oauth2-proxy: `OAUTH2_PROXY_PROVIDER`, `OAUTH2_PROXY_EMAIL_DOMAINS`, `OAUTH2_PROXY_OIDC_ISSUER_URL`, `OAUTH2_PROXY_COOKIE_DOMAINS`, `OAUTH2_PROXY_SKIP_AUTH_REGEX` (see [Optional — OIDC with oauth2-proxy](#optional--oidc-with-oauth2-proxy-kamal-only)).
 
 3. In GitHub, open **Actions → Deploy → Run workflow**, choose the environment, and run the workflow.
