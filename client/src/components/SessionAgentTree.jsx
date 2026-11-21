@@ -28,6 +28,7 @@ import {
   isSecondaryBuilder,
   isSubagentBuilder,
 } from '../utils/sessionAgents.js';
+import TrailingHoverActions from './TrailingHoverActions.jsx';
 import { messageModelDisplayName } from '../utils/messageModelLabel.js';
 import { formatUsd } from '../utils/usageSeries.js';
 import { useAgentConfigContext } from '../context/AgentConfigContext.jsx';
@@ -124,7 +125,7 @@ function AgentTreeEdit({ agent, canManage, renaming, onRequestRename }) {
         e.stopPropagation();
         onRequestRename(agent);
       }}
-      className="shrink-0 p-0.5 rounded text-faint hover:text-fg md:opacity-0 md:group-hover/row:opacity-100 focus-visible:opacity-100 transition-opacity"
+      className="shrink-0 rounded p-0.5 text-faint hover:text-fg"
     >
       <Pencil className="w-3 h-3" aria-hidden />
     </button>
@@ -150,10 +151,24 @@ function AgentTreeAddBuilder({ agent, canManage, renaming, onAddBuilder, showAdd
   );
 }
 
-function AgentTreePin({ agent, canManage, renaming, pinnedAgentId, pinSaving, onTogglePin }) {
+/**
+ * @param {'label' | 'trailing'} placement — pinned rows keep the control beside the
+ * name; unpinned pin stacks over the model label with rename (desktop hover).
+ */
+function AgentTreePin({
+  agent,
+  canManage,
+  renaming,
+  pinnedAgentId,
+  pinSaving,
+  onTogglePin,
+  placement = 'trailing',
+}) {
   if (!canManage || renaming || !isSecondaryBuilder(agent)) return null;
   const isPinned =
     pinnedAgentId != null && pinnedAgentId !== '' && Number(pinnedAgentId) === agent.id;
+  if (placement === 'label' && !isPinned) return null;
+  if (placement === 'trailing' && isPinned) return null;
   const title = isPinned ? 'Unpin agent' : 'Pin agent';
   return (
     <button
@@ -166,14 +181,82 @@ function AgentTreePin({ agent, canManage, renaming, pinnedAgentId, pinSaving, on
         e.stopPropagation();
         onTogglePin(agent);
       }}
-      className={`shrink-0 p-0.5 rounded transition-opacity disabled:opacity-40 focus-visible:opacity-100 ${
-        isPinned
-          ? 'text-accent'
-          : 'text-faint hover:text-fg md:opacity-0 md:group-hover/row:opacity-100'
+      className={`shrink-0 rounded p-0.5 transition-opacity disabled:opacity-40 ${
+        isPinned ? 'text-accent' : 'text-faint hover:text-fg'
       }`}
     >
       <Pin className={`w-3 h-3 ${isPinned ? 'fill-current' : ''}`} aria-hidden />
     </button>
+  );
+}
+
+function showTrailingPinEdit(agent, canManage, renaming) {
+  return canManage && !renaming && isSecondaryBuilder(agent);
+}
+
+/**
+ * Trailing slot: model stays visible on desktop. On row hover, pin/edit sit on the
+ * right edge of that label (only the buttons cover text). Mobile hides the model
+ * and keeps the buttons in flow.
+ */
+function AgentTreeTrailingSlot({
+  agent,
+  canManage,
+  renaming,
+  pinnedAgentId,
+  pinSaving,
+  onTogglePin,
+  onRequestRename,
+  onSelectAgent,
+  accessibleTitle,
+  sessionHighlighted,
+  isCurrent,
+}) {
+  const modelLabelNode = (
+    <AgentTreeModelLabel agentConfigId={agent.agent_config_id} model={agent.model} />
+  );
+  const stackActions = showTrailingPinEdit(agent, canManage, renaming);
+
+  const modelLabel = modelLabelNode ? (
+    <button
+      type="button"
+      onClick={() => onSelectAgent(agent)}
+      title={`Open ${accessibleTitle} chat`}
+      aria-label={`Open ${accessibleTitle} chat`}
+      className="flex min-w-0 cursor-pointer items-center justify-end"
+    >
+      {modelLabelNode}
+    </button>
+  ) : null;
+
+  return (
+    <TrailingHoverActions
+      className="ml-auto min-w-0 max-w-[7rem] shrink-[9999]"
+      sessionHighlighted={sessionHighlighted}
+      extraHoverWash={!isCurrent}
+      groupName="row"
+      label={modelLabel}
+    >
+      {stackActions ? (
+        <>
+          <AgentTreePin
+            agent={agent}
+            canManage={canManage}
+            renaming={renaming}
+            pinnedAgentId={pinnedAgentId}
+            pinSaving={pinSaving}
+            onTogglePin={onTogglePin}
+            placement="trailing"
+          />
+          <AgentTreeEdit
+            agent={agent}
+            canManage={canManage}
+            renaming={renaming}
+            onRequestRename={onRequestRename}
+          />
+        </>
+      ) : null}
+    </TrailingHoverActions>
   );
 }
 
@@ -290,9 +373,6 @@ function AgentTreeRow({ agent, ...rest }) {
   } = rest;
   const isCurrent = currentAgentId != null && Number(currentAgentId) === agent.id;
   const renaming = renamingAgentId === agent.id;
-  const modelLabelNode = (
-    <AgentTreeModelLabel agentConfigId={agent.agent_config_id} model={agent.model} />
-  );
 
   return (
     <li>
@@ -301,7 +381,7 @@ function AgentTreeRow({ agent, ...rest }) {
         data-agent-name={agent.name || title}
         data-selected={isCurrent ? 'true' : 'false'}
         aria-current={isCurrent ? 'true' : undefined}
-        className={`group/row flex items-center gap-1.5 rounded-md border py-1 pl-1 pr-1.5 transition-colors ${selectedAgentRowBorderClass(
+        className={`group/row flex items-center gap-1.5 rounded-md border py-1 transition-colors ${selectedAgentRowBorderClass(
           isCurrent,
           sessionHighlighted
         )}`}
@@ -359,28 +439,24 @@ function AgentTreeRow({ agent, ...rest }) {
           pinnedAgentId={pinnedAgentId}
           pinSaving={pinSaving}
           onTogglePin={onTogglePin}
-        />
-        <AgentTreeEdit
-          agent={agent}
-          canManage={canManage}
-          renaming={renaming}
-          onRequestRename={onRequestRename}
+          placement="label"
         />
         {!renaming ? (
-          <button
-            type="button"
-            onClick={() => onSelectAgent(agent)}
-            title={`Open ${accessibleTitle} chat`}
-            aria-label={`Open ${accessibleTitle} chat`}
-            className="flex min-w-0 grow cursor-pointer items-center justify-end"
-          >
-            {modelLabelNode}
-          </button>
+          <AgentTreeTrailingSlot
+            agent={agent}
+            canManage={canManage}
+            renaming={renaming}
+            pinnedAgentId={pinnedAgentId}
+            pinSaving={pinSaving}
+            onTogglePin={onTogglePin}
+            onRequestRename={onRequestRename}
+            onSelectAgent={onSelectAgent}
+            accessibleTitle={accessibleTitle}
+            sessionHighlighted={sessionHighlighted}
+            isCurrent={isCurrent}
+          />
         ) : (
-          <>
-            <span className="grow" aria-hidden />
-            {modelLabelNode}
-          </>
+          <span className="ml-auto shrink-0" aria-hidden />
         )}
       </div>
     </li>
@@ -395,7 +471,9 @@ function AgentTreeRow({ agent, ...rest }) {
  * mobile), overridable via the caret. Builder and reviewer rows carry a quiet
  * brand/merged/info name-pill tints. On the session highlight fill the open agent
  * uses a faint border for contrast; off the fill it uses control-hover. Rows show
- * provider icon · `#ref` · name · status · rename affordance · model (on the right).
+ * provider icon · `#ref` · name · status · pinned pin / add builder (beside the name) ·
+ * model on the right (desktop; row hover places pin/edit over the end of the label)
+ * or pin/edit only (mobile).
  */
 export default function SessionAgentTree({
   agents,

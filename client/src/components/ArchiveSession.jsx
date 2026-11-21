@@ -6,7 +6,7 @@ import { fetchSessionGitStatus } from '../utils/sessionCommitsToPush.js';
 import ArchiveConfirmModal from './ArchiveConfirmModal.jsx';
 import { formatCommitsNotOnAnyRemote } from './UnpushedCommitsWarning.jsx';
 
-export default function ArchiveSession({ session, onArchive }) {
+export default function ArchiveSession({ session, onArchive, overlay = false }) {
   const [archiving, setArchiving] = useState(false);
   const [checking, setChecking] = useState(false);
   const [pendingConfirm, setPendingConfirm] = useState(false);
@@ -95,8 +95,9 @@ export default function ArchiveSession({ session, onArchive }) {
     return parts.join(' · ');
   })();
 
-  const iconButtonClass =
-    'p-1 text-faint hover:text-accent hover:bg-control rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
+  const iconButtonClass = overlay
+    ? 'p-0.5 text-faint hover:text-accent rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
+    : 'p-1 text-faint hover:text-accent hover:bg-control rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
 
   const archiveButton = pendingConfirm ? (
     <div

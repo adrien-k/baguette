@@ -13,6 +13,34 @@ import { useCurrentUser } from '../context/CurrentUserContext.jsx';
 import { formatCompactRelativeTime } from '../utils/dates.js';
 import { LIST_SCOPE_SHARED, isSessionOwner } from '@baguette/shared/session-sharing.js';
 import ListOwnerLabel from './ListOwnerLabel.jsx';
+import TrailingHoverActions from './TrailingHoverActions.jsx';
+
+function sessionRowAction(session, { isOwner, isArchiving, onArchive }) {
+  if (session.archived_at || isArchiving) return null;
+  if (isSessionStoppable(session)) return <StopSession session={session} />;
+  if (!isOwner) return null;
+  return <ArchiveSession session={session} overlay onArchive={() => onArchive?.(session)} />;
+}
+
+function SessionRowActions({ activeLabel, sessionHighlighted, action }) {
+  const label = activeLabel ? (
+    <span className="shrink-0 text-[10px] leading-4 text-faint tabular-nums" title="Last activity">
+      {activeLabel}
+    </span>
+  ) : null;
+  if (!label && !action) return null;
+  return (
+    <TrailingHoverActions
+      className="shrink-0"
+      sessionHighlighted={sessionHighlighted}
+      groupName="group"
+      hideLabelOnMobile={action != null}
+      label={label}
+    >
+      {action}
+    </TrailingHoverActions>
+  );
+}
 
 export default function MiniSessionEntry({
   session: s,
@@ -96,26 +124,14 @@ export default function MiniSessionEntry({
                 </span>
               )}
             </Link>
-            {activeLabel && (
-              <span
-                className="shrink-0 text-[10px] leading-4 text-faint tabular-nums"
-                title="Last activity"
-              >
-                {activeLabel}
-              </span>
-            )}
             {isArchiving && (
               <span className="shrink-0 text-[10px] leading-4 text-accent/90">Archiving…</span>
             )}
-            {!s.archived_at && !isArchiving && (
-              <div className="flex h-4 shrink-0 items-center">
-                {isSessionStoppable(s) ? (
-                  <StopSession session={s} />
-                ) : isOwner ? (
-                  <ArchiveSession session={s} onArchive={() => onArchive?.(s)} />
-                ) : null}
-              </div>
-            )}
+            <SessionRowActions
+              activeLabel={activeLabel}
+              sessionHighlighted={isCurrent}
+              action={sessionRowAction(s, { isOwner, isArchiving, onArchive })}
+            />
           </div>
         </div>
         {agentTree.length > 0 && (
