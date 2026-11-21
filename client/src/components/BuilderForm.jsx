@@ -59,6 +59,12 @@ function parseRepoFullName(full) {
   return { owner: full.slice(0, i), name: full.slice(i + 1) };
 }
 
+function sameStringArray(a, b) {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  return a.every((item, i) => item === b[i]);
+}
+
 // Form settings are only captured to localStorage while the prompt has text, so idle visits and
 // empty-prompt "just open a session" runs never overwrite the last composed snapshot. targetScope
 // is persisted only after the user changes the repo picker — server defaults stay in memory so each
@@ -457,14 +463,17 @@ export default function BuilderForm({
         const labels = new Set(rows.map((s) => s.label));
         setSelectedAutoLoadSkills((prev) => {
           const kept = prev.filter((item) => labels.has(item));
-          if (kept.length) return kept;
-          if (editingLoop || seededDefaultSkillsRef.current) return kept;
+          if (kept.length) return sameStringArray(prev, kept) ? prev : kept;
+          if (editingLoop || seededDefaultSkillsRef.current) {
+            return sameStringArray(prev, kept) ? prev : kept;
+          }
           if (persistKey && 'autoLoadSkills' in persistentState.store) {
             seededDefaultSkillsRef.current = true;
-            return kept;
+            return sameStringArray(prev, kept) ? prev : kept;
           }
           seededDefaultSkillsRef.current = true;
-          return defaultLabels.filter((item) => labels.has(item));
+          const seeded = defaultLabels.filter((item) => labels.has(item));
+          return sameStringArray(prev, seeded) ? prev : seeded;
         });
       })
       .catch((err) => {
@@ -473,14 +482,14 @@ export default function BuilderForm({
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- persistentState.store read for restored draft; omit store identity
   }, [
     isGlobal,
     selectedRepo?.id,
-    setSelectedAutoLoadSkills,
     editingLoop,
     persistKey,
-    persistentState.store,
     userSettings?.default_auto_load_skills,
+    formSeedToken,
   ]);
 
   useEffect(() => {
