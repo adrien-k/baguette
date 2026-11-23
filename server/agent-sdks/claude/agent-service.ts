@@ -25,6 +25,7 @@ import { buildBaguetteToolList, buildReviewerAgentTools } from '../../services/m
 import { loadEnabledMcpServersForSession } from '../../services/user-mcp-runtime.js';
 import { loadConfiguredSlackApps } from '../../services/mcp/lib/slack.js';
 import { toolListToClaudeMcpServer } from './adapt-tools.js';
+import { claudeSdkSubagentDenyResult } from './reject-sdk-subagent.js';
 import { createMessageChannel } from '../../services/message-channel.js';
 import { buildSystemPromptAppend } from '../../services/session-prompt.js';
 import { resolveDataDirRelativePath } from '../../config.js';
@@ -684,6 +685,10 @@ export class ClaudeAgentService {
           message: 'Questions presented to the user inline. They will reply with their answers.',
         };
       }
+
+      const sdkSubagentDeny = claudeSdkSubagentDenyResult(toolName);
+      if (sdkSubagentDeny) return sdkSubagentDeny;
+
       return { behavior: 'allow', updatedInput: input };
     };
   }
