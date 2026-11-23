@@ -62,7 +62,7 @@ test.describe('session agents in the session list (mock)', () => {
   test.describe('desktop viewport', () => {
     test.use({ viewport: { width: 1280, height: 800 } });
 
-    test('builder row always visible, other agents collapsed unless selected', async ({ page }) => {
+    test('builder row always visible, other agents collapsed by default', async ({ page }) => {
       await devLogin(page);
 
       const repoId = await createLocalRepo(page);

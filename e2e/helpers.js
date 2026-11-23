@@ -284,8 +284,8 @@ export function sessionAgentTreeRow(page, name) {
 }
 
 /**
- * Open an agent's chat from the sidebar agent tree. Skips the disclosure caret
- * (always the first button on the builder row) so the row's name button is clicked.
+ * Open an agent's chat from the sidebar agent tree. Clicks the row’s stretched
+ * overlay (first button in the row, not the disclosure caret on the builder row).
  */
 export async function selectAgentInTree(page, name) {
   const row = sessionAgentTreeRow(page, name);

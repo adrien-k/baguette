@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Bot,
   ChevronDown,
@@ -22,7 +22,8 @@ import {
   agentDisplayTitle,
   isAgentAwaitingUser,
   isAgentTurnActive,
-  isAgentTreeCollapseLocked,
+  agentTreeCollapseSelectionFallback,
+  isAgentVisibleInCollapsedTree,
   isPrimaryAgent,
   isReviewerAgent,
   isSecondaryBuilder,
@@ -82,15 +83,31 @@ function useAgentModelMeta(agentConfigId, model, costUsd) {
 }
 
 /** Provider icon, wrapped in a model / cost tooltip when either is known. */
-function AgentTreeIcon({ agent, config }) {
+function AgentTreeIcon({ agent, config, onSelectAgent }) {
   const { label, cost } = useAgentModelMeta(agent.agent_config_id, agent.model, agent.cost_usd);
   const icon = config ? (
     <AgentConfigLogo sdk={config.sdk} logo={config.logo} className="w-3.5 h-3.5 shrink-0" />
   ) : (
     <AgentTypeIcon agentType={agent.agent_type} />
   );
-  if (!label && !cost) return icon;
-  return <Tooltip content={[label, cost].filter(Boolean).join(' · ')}>{icon}</Tooltip>;
+  const selectClick = onSelectAgent ? () => onSelectAgent(agent) : undefined;
+  const hitTargetClass = onSelectAgent ? 'pointer-events-auto cursor-pointer shrink-0' : 'shrink-0';
+  if (!label && !cost) {
+    return (
+      <span className={hitTargetClass} onClick={selectClick} role="presentation">
+        {icon}
+      </span>
+    );
+  }
+  return (
+    <Tooltip
+      content={[label, cost].filter(Boolean).join(' · ')}
+      className={`inline-flex items-stretch ${hitTargetClass}`}
+      onReferenceClick={selectClick}
+    >
+      {icon}
+    </Tooltip>
+  );
 }
 
 /**
@@ -125,7 +142,7 @@ function AgentTreeEdit({ agent, canManage, renaming, onRequestRename }) {
         e.stopPropagation();
         onRequestRename(agent);
       }}
-      className="shrink-0 rounded p-0.5 text-faint hover:text-fg"
+      className="pointer-events-auto relative z-[1] shrink-0 rounded p-0.5 text-faint hover:text-fg"
     >
       <Pencil className="w-3 h-3" aria-hidden />
     </button>
@@ -144,7 +161,7 @@ function AgentTreeAddBuilder({ agent, canManage, renaming, onAddBuilder, showAdd
         e.stopPropagation();
         onAddBuilder();
       }}
-      className="shrink-0 p-0.5 rounded text-faint hover:text-fg"
+      className="pointer-events-auto relative z-[1] shrink-0 rounded p-0.5 text-faint hover:text-fg"
     >
       <Plus className="w-3 h-3" aria-hidden />
     </button>
@@ -181,7 +198,7 @@ function AgentTreePin({
         e.stopPropagation();
         onTogglePin(agent);
       }}
-      className={`shrink-0 rounded p-0.5 transition-opacity disabled:opacity-40 ${
+      className={`pointer-events-auto relative z-[1] shrink-0 rounded p-0.5 transition-opacity disabled:opacity-40 ${
         isPinned ? 'text-accent' : 'text-faint hover:text-fg'
       }`}
     >
@@ -207,8 +224,6 @@ function AgentTreeTrailingSlot({
   pinSaving,
   onTogglePin,
   onRequestRename,
-  onSelectAgent,
-  accessibleTitle,
   sessionHighlighted,
   isCurrent,
 }) {
@@ -218,15 +233,7 @@ function AgentTreeTrailingSlot({
   const stackActions = showTrailingPinEdit(agent, canManage, renaming);
 
   const modelLabel = modelLabelNode ? (
-    <button
-      type="button"
-      onClick={() => onSelectAgent(agent)}
-      title={`Open ${accessibleTitle} chat`}
-      aria-label={`Open ${accessibleTitle} chat`}
-      className="flex min-w-0 cursor-pointer items-center justify-end"
-    >
-      {modelLabelNode}
-    </button>
+    <span className="flex min-w-0 items-center justify-end">{modelLabelNode}</span>
   ) : null;
 
   return (
@@ -260,27 +267,21 @@ function AgentTreeTrailingSlot({
   );
 }
 
-function agentTreeCaretLabel(expanded, locked) {
-  if (locked) return 'Other agents stay visible while this agent is open';
+function agentTreeCaretLabel(expanded) {
   if (expanded) return 'Hide agents';
   return 'Show agents';
 }
 
 /** Disclosure caret for the builder's agent group. */
-function AgentTreeCaret({ expanded, onToggle, collapseLocked = false }) {
-  const locked = expanded && collapseLocked;
+function AgentTreeCaret({ expanded, onToggle }) {
   return (
     <button
       type="button"
       data-testid="agent-tree-toggle"
       aria-expanded={expanded}
-      aria-disabled={locked || undefined}
-      aria-label={agentTreeCaretLabel(expanded, locked)}
-      title={locked ? 'Open the default agent to hide the others' : undefined}
-      onClick={locked ? undefined : onToggle}
-      className={`shrink-0 -my-1 p-0.5 transition-colors ${
-        locked ? 'cursor-default text-faint/40' : 'text-faint hover:text-fg'
-      }`}
+      aria-label={agentTreeCaretLabel(expanded)}
+      onClick={onToggle}
+      className="shrink-0 -my-1 p-0.5 text-faint transition-colors hover:text-fg"
     >
       <ChevronDown
         className={`w-3.5 h-3.5 transition-transform ${expanded ? '' : '-rotate-90'}`}
@@ -300,7 +301,7 @@ function agentNameToneClass(agent) {
   return '';
 }
 
-function AgentTreeRoleIcon({ agent, pinnedAgentId }) {
+function AgentTreeRoleIcon({ agent, pinnedAgentId, onSelectAgent }) {
   let tooltip = null;
   let icon = null;
   if (isPrimaryAgent(agent)) {
@@ -317,8 +318,12 @@ function AgentTreeRoleIcon({ agent, pinnedAgentId }) {
     icon = <Network className="w-3 h-3 text-info" strokeWidth={2} aria-hidden />;
   }
   if (!tooltip || !icon) return null;
+  const selectClick = onSelectAgent ? () => onSelectAgent(agent) : undefined;
+  const hitTargetClass = onSelectAgent
+    ? 'inline-flex shrink-0 pointer-events-auto cursor-pointer'
+    : 'inline-flex shrink-0';
   return (
-    <Tooltip content={tooltip} wrap wide className="inline-flex shrink-0">
+    <Tooltip content={tooltip} wrap wide className={hitTargetClass} onReferenceClick={selectClick}>
       {icon}
     </Tooltip>
   );
@@ -330,14 +335,18 @@ function selectedAgentRowBorderClass(isCurrent, sessionHighlighted) {
   return 'border-control-hover';
 }
 
-function AgentTreeNameLabel({ agent, agentRef, title, isCurrent, pinnedAgentId }) {
+function AgentTreeNameLabel({ agent, agentRef, title, isCurrent, pinnedAgentId, onSelectAgent }) {
   const nameLabel = (
     <span
       className={`min-w-0 truncate rounded px-1 text-[11px] leading-4 inline-flex items-center gap-1 ${agentNameToneClass(
         agent
       )} ${isCurrent ? 'text-fg' : 'text-secondary'}`}
     >
-      <AgentTreeRoleIcon agent={agent} pinnedAgentId={pinnedAgentId} />
+      <AgentTreeRoleIcon
+        agent={agent}
+        pinnedAgentId={pinnedAgentId}
+        onSelectAgent={onSelectAgent}
+      />
       {agentRef != null ? (
         <span className="shrink-0 font-mono text-[10px] text-faint tabular-nums">#{agentRef}</span>
       ) : null}
@@ -381,18 +390,28 @@ function AgentTreeRow({ agent, ...rest }) {
         data-agent-name={agent.name || title}
         data-selected={isCurrent ? 'true' : 'false'}
         aria-current={isCurrent ? 'true' : undefined}
-        className={`group/row flex items-center gap-1.5 rounded-md border py-1 transition-colors ${selectedAgentRowBorderClass(
+        className={`group/row relative flex items-center gap-1.5 rounded-md border py-1 transition-colors ${selectedAgentRowBorderClass(
           isCurrent,
           sessionHighlighted
         )}`}
       >
-        <AgentTreeIcon agent={agent} config={config} />
-        <button
-          type="button"
-          onClick={() => onSelectAgent(agent)}
-          title={isAgentTurnActive(agent.status) ? 'Turn running' : `Open ${accessibleTitle} chat`}
-          className={`min-w-0 flex items-center gap-1.5 text-left ${renaming ? 'flex-1' : ''}`}
-        >
+        {!renaming ? (
+          <button
+            type="button"
+            onClick={() => onSelectAgent(agent)}
+            title={
+              isAgentTurnActive(agent.status) ? 'Turn running' : `Open ${accessibleTitle} chat`
+            }
+            aria-label={`Open ${accessibleTitle} chat`}
+            className="absolute inset-0 z-0 rounded-md"
+          />
+        ) : null}
+        <div className="relative z-[1] flex min-w-0 flex-1 items-center gap-1.5 pointer-events-none">
+          <AgentTreeIcon
+            agent={agent}
+            config={config}
+            onSelectAgent={renaming ? undefined : onSelectAgent}
+          />
           {renaming ? (
             <input
               type="text"
@@ -411,8 +430,7 @@ function AgentTreeRow({ agent, ...rest }) {
               }}
               onBlur={() => onCommitRename(agent)}
               autoFocus
-              onClick={(e) => e.stopPropagation()}
-              className="h-4 flex-1 min-w-0 rounded border border-line bg-control px-1.5 py-0 text-xs text-heading"
+              className="pointer-events-auto h-4 flex-1 min-w-0 rounded border border-line bg-control px-1.5 py-0 text-xs text-heading"
             />
           ) : (
             <AgentTreeNameLabel
@@ -421,10 +439,11 @@ function AgentTreeRow({ agent, ...rest }) {
               title={title}
               isCurrent={isCurrent}
               pinnedAgentId={pinnedAgentId}
+              onSelectAgent={onSelectAgent}
             />
           )}
-          <AgentTreeStatus status={agent.status} />
-        </button>
+          {!renaming ? <AgentTreeStatus status={agent.status} /> : null}
+        </div>
         <AgentTreeAddBuilder
           agent={agent}
           canManage={canManage}
@@ -450,8 +469,6 @@ function AgentTreeRow({ agent, ...rest }) {
             pinSaving={pinSaving}
             onTogglePin={onTogglePin}
             onRequestRename={onRequestRename}
-            onSelectAgent={onSelectAgent}
-            accessibleTitle={accessibleTitle}
             sessionHighlighted={sessionHighlighted}
             isCurrent={isCurrent}
           />
@@ -465,13 +482,14 @@ function AgentTreeRow({ agent, ...rest }) {
 
 /**
  * Agent group for a session row. A disclosure caret in the session-status column
- * toggles extra agents, except while a non-primary agent is selected — collapsing
- * would hide the open chat. Every row shares the same indent in the title column.
+ * toggles extra agents; collapsing while a hidden agent is open moves selection to
+ * the head row (or the primary row when pinned non-primary is head). Every row shares
+ * the same indent in the title column.
  * `autoExpanded` is the default (selected session on desktop, last-opened on
  * mobile), overridable via the caret. Builder and reviewer rows carry a quiet
  * brand/merged/info name-pill tints. On the session highlight fill the open agent
  * uses a faint border for contrast; off the fill it uses control-hover. Rows show
- * provider icon · `#ref` · name · status · pinned pin / add builder (beside the name) ·
+ * provider icon · `#ref` · name · status · pinned pin / add builder (primary row) ·
  * model on the right (desktop; row hover places pin/edit over the end of the label)
  * or pin/edit only (mobile).
  */
@@ -490,15 +508,6 @@ export default function SessionAgentTree({
   sessionHighlighted = false,
 }) {
   const list = buildSessionAgentList(agents, pinnedAgentId);
-  const [renamingAgentId, setRenamingAgentId] = useState(null);
-  const [renameValue, setRenameValue] = useState('');
-  const [renameSaving, setRenameSaving] = useState(false);
-  const [pinSaving, setPinSaving] = useState(false);
-  // null = follow the auto-expanded default; true/false = manual caret override.
-  const [manuallyExpanded, setManuallyExpanded] = useState(null);
-
-  if (!list.length) return null;
-
   const primaryAgent = list.find(isPrimaryAgent) ?? null;
   const headAgent = list[0] ?? null;
   const tailAfterHead = headAgent ? list.slice(1) : list;
@@ -508,13 +517,42 @@ export default function SessionAgentTree({
     ? tailAfterHead.filter((a) => a.id !== primaryAgent.id)
     : tailAfterHead;
   const grouped = Boolean(headAgent) && collapsibleOthers.length > 0;
-  const collapseLocked = isAgentTreeCollapseLocked(list, currentAgentId, headAgent?.id);
-  const expanded = collapseLocked || (manuallyExpanded ?? autoExpanded);
+
+  const [renamingAgentId, setRenamingAgentId] = useState(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [renameSaving, setRenameSaving] = useState(false);
+  const [pinSaving, setPinSaving] = useState(false);
+  // null = follow the auto-expanded default; true/false = manual caret override.
+  const [manuallyExpanded, setManuallyExpanded] = useState(null);
+
+  useEffect(() => {
+    if (!grouped) return;
+    if (manuallyExpanded ?? autoExpanded) return;
+    const visible = isAgentVisibleInCollapsedTree(currentAgentId, headAgent, primaryPinnedSlot);
+    if (!visible) setManuallyExpanded(true);
+  }, [autoExpanded, currentAgentId, grouped, headAgent, manuallyExpanded, primaryPinnedSlot]);
+
+  if (!list.length) return null;
+
+  const expanded = manuallyExpanded ?? autoExpanded;
   const caret = grouped
     ? {
         expanded,
-        collapseLocked,
-        onToggle: () => setManuallyExpanded(!expanded),
+        onToggle: () => {
+          const nextExpanded = !expanded;
+          if (!nextExpanded && grouped && onSelectAgent) {
+            const staysVisible = isAgentVisibleInCollapsedTree(
+              currentAgentId,
+              headAgent,
+              primaryPinnedSlot
+            );
+            if (!staysVisible) {
+              const fallback = agentTreeCollapseSelectionFallback(headAgent, primaryPinnedSlot);
+              if (fallback) onSelectAgent(fallback);
+            }
+          }
+          setManuallyExpanded(nextExpanded);
+        },
       }
     : null;
 
@@ -594,13 +632,7 @@ export default function SessionAgentTree({
   return (
     <div className="mt-0.5 flex items-start gap-2">
       <span className="mt-0.5 flex h-4 w-3 shrink-0 items-center justify-center">
-        {caret ? (
-          <AgentTreeCaret
-            expanded={caret.expanded}
-            collapseLocked={caret.collapseLocked}
-            onToggle={caret.onToggle}
-          />
-        ) : null}
+        {caret ? <AgentTreeCaret expanded={caret.expanded} onToggle={caret.onToggle} /> : null}
       </span>
       {showOwnerGutter && <span className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />}
       {/* Scroll breakpoint at 10 rows: rows are py-1 + a 16px line box (24px) with a

@@ -61,13 +61,15 @@ export default function TrailingHoverActions({
     : '';
 
   return (
-    <div className={`relative flex items-center justify-end ${className}`}>
+    <div
+      className={`relative z-[1] flex items-center justify-end pointer-events-none ${className}`}
+    >
       {label ? (
         <div className={`min-w-0 items-center justify-end ${labelVisibility}`}>{label}</div>
       ) : null}
       {hasActions ? (
         <div
-          className={`relative flex items-center justify-end gap-1 px-1 md:py-0.5 md:pl-3 md:pr-1 ${positionClass} ${revealClass(
+          className={`pointer-events-auto relative flex items-center justify-end gap-1 px-1 md:py-0.5 md:pl-3 md:pr-1 ${positionClass} ${revealClass(
             groupName,
             forceVisible
           )}`}

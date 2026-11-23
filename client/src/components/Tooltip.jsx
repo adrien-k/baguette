@@ -25,6 +25,8 @@ export default function Tooltip({
   interactive = false,
   /** Classes for the wrapper around `children`; use `flex w-full` to fill a row. */
   className = 'inline-flex items-stretch',
+  /** Fires on the reference target (merged with hover handlers). */
+  onReferenceClick,
 }) {
   const [open, setOpen] = useState(false);
 
@@ -43,6 +45,9 @@ export default function Tooltip({
     interactive ? { move: false, handleClose: safePolygon({ buffer: 4 }) } : undefined
   );
   const { getReferenceProps, getFloatingProps } = useInteractions([hover]);
+  const referenceProps = getReferenceProps(
+    onReferenceClick ? { onClick: onReferenceClick } : undefined
+  );
 
   let panelSizeClass = 'px-2 py-1 whitespace-nowrap';
   if (wrap && wide) {
@@ -53,7 +58,7 @@ export default function Tooltip({
 
   return (
     <>
-      <span ref={setReference} {...getReferenceProps()} className={className}>
+      <span ref={setReference} {...referenceProps} className={className}>
         {children}
       </span>
       <FloatingPortal>
