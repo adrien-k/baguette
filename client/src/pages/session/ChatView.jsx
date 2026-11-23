@@ -34,6 +34,7 @@ import ChatRunningBashDock from '../../components/chat/ChatRunningBashDock.tsx';
 import ChatCostSummary from '../../components/chat/ChatCostSummary.tsx';
 import ChatSessionPlanLinks from '../../components/chat/ChatSessionPlanLinks.tsx';
 import ChatPushChangesButton from '../../components/chat/ChatPushChangesButton.tsx';
+import ChatPullButton from '../../components/chat/ChatPullButton.tsx';
 import ChatQuickActionButton, {
   CHAT_ACTION_BUTTON_CLASS,
 } from '../../components/chat/ChatQuickActionButton.tsx';
@@ -132,6 +133,8 @@ export default function ChatView({
   commitsToPush = 0,
   onPush,
   pushing = false,
+  onPull,
+  pulling = false,
   onDeletePermanently,
   onOpenAddBuilder,
   addBuilderOpen = false,
@@ -911,6 +914,13 @@ export default function ChatView({
                     {isOwner && canTogglePrDraftStatus(session) && (
                       <PrDraftToggleButton session={session} className={CHAT_ACTION_BUTTON_CLASS} />
                     )}
+                    <ChatPullButton
+                      session={session}
+                      readonly={readonly || !isOwner}
+                      onPull={onPull}
+                      pulling={pulling}
+                      className={CHAT_ACTION_BUTTON_CLASS}
+                    />
                     <ChatPushChangesButton
                       session={session}
                       readonly={readonly || !isOwner}

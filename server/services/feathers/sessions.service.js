@@ -26,6 +26,7 @@ import {
   gitFetch,
   gitCommitsToPush,
   gitPush,
+  gitPull,
   mergePR,
   markPRReady,
   markPRDraft,
@@ -1309,6 +1310,33 @@ export class SessionsService extends KnexService {
       .service('sessions')
       .patch(session.id, { pr_status }, { provider: undefined, user: { id: session.user_id } });
     return { ok: true, pr_status };
+  }
+
+  async pull(_data, params) {
+    const session = params.resolvedSession;
+    if (isGlobalSession(session)) throw new BadRequest('Global sessions cannot pull');
+    if (!session?.session_path) throw new BadRequest('Session has no worktree');
+    if (!session.remote_branch) throw new BadRequest('No remote branch to pull');
+    const cwd = resolveDataDirRelativePath(session.session_path);
+    const user = await this.app.service('users').get(session.user_id, {});
+    const auth = await sessionGitAuth(this.app, session, user);
+    if (auth.mode === 'local') throw new BadRequest('This repository has no remote to pull from');
+    if (auth.mode === 'github' && !auth.token) {
+      throw new BadRequest('No GitHub token configured');
+    }
+    try {
+      const result = await gitPull(cwd, session.remote_branch, auth);
+      if (result?.message) {
+        return { ok: true, message: result.message };
+      }
+      return { ok: true };
+    } catch (err) {
+      const message = err?.message || 'Pull failed';
+      const conflict = /CONFLICT|conflict/i.test(message);
+      const badRequest = new BadRequest(message);
+      if (conflict) badRequest.data = { conflict: true };
+      throw badRequest;
+    }
   }
 
   async push(data, params) {
@@ -3166,6 +3194,7 @@ export function registerSessionsService(app, path = 'sessions') {
       'merge',
       'setPrDraft',
       'push',
+      'pull',
       'recordGitPushApprovalOutcome',
       'archive',
       'restore',
@@ -3288,6 +3317,7 @@ const sessionsHooks = {
     merge: [resolveSessionFromData, requireOwnResolvedSession],
     setPrDraft: [resolveSessionFromData, requireOwnResolvedSession],
     push: [resolveSessionFromData, requireOwnResolvedSession],
+    pull: [resolveSessionFromData, requireOwnResolvedSession],
     recordGitPushApprovalOutcome: [resolveSessionFromData, requireOwnResolvedSession],
     archive: [resolveSessionFromData, requireOwnResolvedSession],
     restore: [resolveSessionFromData, requireOwnResolvedSession],

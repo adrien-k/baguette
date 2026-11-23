@@ -43,6 +43,7 @@ import {
   createWorktree,
   gitCommitsToPush,
   gitPush,
+  gitPull,
   upsertPR,
   getOpenPR,
   getOpenPRByNumber,
@@ -131,6 +132,7 @@ vi.mock('../github.js', async (importOriginal) => {
     createWorktree: vi.fn().mockResolvedValue({ worktreePath: '/tmp/test-worktree' }),
     gitCommitsToPush: vi.fn().mockResolvedValue(0),
     gitPush: vi.fn().mockResolvedValue({ ok: true, branch: 'feature-branch' }),
+    gitPull: vi.fn().mockResolvedValue({ ok: true }),
     upsertPR: vi.fn().mockResolvedValue({ url: 'https://github.com/o/r/pull/1', number: 1 }),
     getOpenPRByNumber: vi.fn(),
     getOpenPR: vi.fn().mockResolvedValue(null),
@@ -645,6 +647,45 @@ describe('Sessions service - custom methods', () => {
 
       const row = await db('sessions').where({ id: sessId }).first();
       expect(row.pr_status).toBe('merged');
+    });
+  });
+
+  // ── pull ───────────────────────────────────────────────────────────────────
+
+  describe('pull', () => {
+    beforeEach(async () => {
+      const session = await db('sessions').where({ id: sessId }).first();
+      await db('repos')
+        .where({ id: session.repo_id })
+        .update({ origin: 'https://github.com/test/repo.git', access_mode: 'github' });
+      await db('sessions')
+        .where({ id: sessId })
+        .update({ remote_branch: 'feature-branch', session_path: '/tmp/wt' });
+      gitPull.mockResolvedValue({ ok: true });
+    });
+
+    it('pulls the remote branch into the worktree', async () => {
+      const result = await app.service('sessions').pull({ id: sessId }, params({ id: userId }));
+
+      expect(gitPull).toHaveBeenCalled();
+      expect(result).toEqual({ ok: true });
+    });
+
+    it('rejects when session has no remote branch', async () => {
+      await db('sessions').where({ id: sessId }).update({ remote_branch: null });
+      await expect(
+        app.service('sessions').pull({ id: sessId }, params({ id: userId }))
+      ).rejects.toBeBadRequestError();
+      expect(gitPull).not.toHaveBeenCalled();
+    });
+
+    it('returns skip message when remote branch is missing on origin', async () => {
+      gitPull.mockResolvedValueOnce({
+        ok: true,
+        message: 'Remote branch not found, skipping pull',
+      });
+      const result = await app.service('sessions').pull({ id: sessId }, params({ id: userId }));
+      expect(result.message).toContain('skipping pull');
     });
   });
 

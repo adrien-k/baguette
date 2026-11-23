@@ -310,6 +310,7 @@ export default function Session() {
 
   const { cursorModelPrefs, setCursorModelPref } = useCursorModelPrefs();
   const { pushing, beginLocalPush, endLocalPush } = useSessionPushInProgress(gitSession?.id);
+  const [pulling, setPulling] = useState(false);
   const [showPushModal, setShowPushModal] = useState(false);
   const [pushRequest, setPushRequest] = useState(null);
   const [activeTaskModal, setActiveTaskModal] = useState(null);
@@ -766,6 +767,24 @@ export default function Session() {
     if (!session?.id || pushing) return;
     setPushRequest(null);
     setShowPushModal(true);
+  };
+
+  const handlePull = async () => {
+    if (!session?.id || pulling) return;
+    setPulling(true);
+    try {
+      const result = await sessionsService.pull({ id: session.id });
+      await refreshCommitsToPush();
+      toast.success(result?.message?.includes('skipping') ? result.message : 'Pulled successfully');
+    } catch (err) {
+      if (err.data?.conflict) {
+        toastError('Pull failed due to merge conflicts — resolve them in the worktree', err);
+      } else {
+        toastError('Pull failed', err);
+      }
+    } finally {
+      setPulling(false);
+    }
   };
 
   const handlePushConfirmed = async ({
@@ -1481,6 +1500,8 @@ export default function Session() {
                     commitsToPush={commitsToPush}
                     onPush={handlePush}
                     pushing={pushing}
+                    onPull={handlePull}
+                    pulling={pulling}
                     onDeletePermanently={handleSessionDeletedPermanently}
                     onOpenAddBuilder={handleOpenAddBuilder}
                     addBuilderOpen={addBuilderOpen}
