@@ -908,6 +908,68 @@ describe('GitPush', () => {
     expect(mockEmit).not.toHaveBeenCalled();
   });
 
+  it('pushes directly to a repo-configured fixed branch without approval', async () => {
+    gitPush.mockResolvedValue({ ok: true, branch: 'development' });
+    const { tools, mockEmit } = buildStandaloneGitPrTools(
+      {
+        remote_branch: 'feature-branch',
+        local_branch: 'feature-branch-test',
+      },
+      { repoOverrides: { agent_fixed_push_branches: JSON.stringify(['development']) } }
+    );
+    const result = parseResult(
+      await callTool(tools, 'GitPush', {
+        branch: 'development',
+        source_branch: 'topic/subagent-work',
+      })
+    );
+    expect(result.ok).toBe(true);
+    expect(result.approval_requested).toBeUndefined();
+    expect(gitPush).toHaveBeenCalledWith(
+      '/tmp/wt',
+      expect.objectContaining({ mode: 'github', token: 'ghtoken', userId: 1 }),
+      { branch: 'development', sourceBranch: 'topic/subagent-work' }
+    );
+    expect(mockEmit).not.toHaveBeenCalled();
+  });
+
+  it('opens approval when auto_push is off even for a fixed target branch', async () => {
+    const { tools, mockEmit } = buildStandaloneGitPrTools(
+      {
+        remote_branch: 'feature-branch',
+        local_branch: 'feature-branch-test',
+        auto_push: 0,
+      },
+      { repoOverrides: { agent_fixed_push_branches: JSON.stringify(['development']) } }
+    );
+    const result = parseResult(
+      await callTool(tools, 'GitPush', {
+        branch: 'development',
+        source_branch: 'topic/subagent-work',
+      })
+    );
+    expect(result.approval_requested).toBe(true);
+    expect(result.auto_push_off).toBe(true);
+    expect(mockEmit).toHaveBeenCalled();
+    expect(gitPush).not.toHaveBeenCalled();
+  });
+
+  it('still requires approval for force push to a fixed branch', async () => {
+    const { tools, mockEmit } = buildStandaloneGitPrTools(
+      {
+        remote_branch: 'feature-branch',
+        local_branch: 'feature-branch-test',
+      },
+      { repoOverrides: { agent_fixed_push_branches: JSON.stringify(['development']) } }
+    );
+    const result = parseResult(
+      await callTool(tools, 'GitPush', { branch: 'development', force: 'lease' })
+    );
+    expect(result.approval_requested).toBe(true);
+    expect(mockEmit).toHaveBeenCalled();
+    expect(gitPush).not.toHaveBeenCalled();
+  });
+
   it('includes source_branch on the push:request emit payload', async () => {
     const { tools, mockEmit } = buildStandaloneGitPrTools({
       remote_branch: 'feature-branch',

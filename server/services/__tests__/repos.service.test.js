@@ -676,17 +676,33 @@ describe('Repos service - get', () => {
 });
 
 describe('Repos service - patch', () => {
-  it('any authenticated user can patch a repo', async () => {
+  it('linked user can patch agent_fixed_push_branches', async () => {
     const [repoId] = await db('repos').insert({
       full_name: 'alice/project',
       repo_path: '/nonexistent',
       stripped_name: 'alice-project',
     });
+    await linkAliceToRepo(repoId);
 
     const result = await app
       .service('repos')
-      .patch(repoId, { repo_path: '/updated' }, params(regularUser));
-    expect(result.repo_path).toBe('/updated');
+      .patch(repoId, { agent_fixed_push_branches: ['development', 'main'] }, params(regularUser));
+    expect(result.agent_fixed_push_branches).toEqual(['development', 'main']);
+    const row = await db('repos').where({ id: repoId }).first();
+    expect(JSON.parse(row.agent_fixed_push_branches)).toEqual(['development', 'main']);
+  });
+
+  it('rejects patch when the user is not linked to the repo', async () => {
+    const [repoId] = await db('repos').insert({
+      full_name: 'alice/unlinked',
+      repo_path: '/nonexistent',
+      stripped_name: 'alice-unlinked',
+    });
+    await expect(
+      app
+        .service('repos')
+        .patch(repoId, { agent_fixed_push_branches: ['development'] }, params(regularUser))
+    ).rejects.toBeNotFoundError();
   });
 
   it('unauthenticated patch is rejected', async () => {
@@ -696,7 +712,9 @@ describe('Repos service - patch', () => {
       stripped_name: 'alice-project',
     });
     await expect(
-      app.service('repos').patch(repoId, { repo_path: '/updated' }, unauthParams)
+      app
+        .service('repos')
+        .patch(repoId, { agent_fixed_push_branches: ['development'] }, unauthParams)
     ).rejects.toThrow('Not authenticated');
   });
 });

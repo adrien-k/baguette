@@ -1,5 +1,7 @@
 import { AlertTriangle, ArrowUpToLine } from 'lucide-react';
 import { useGetSession } from '../../hooks/useGetSession.js';
+import { useGetRepos } from '../../hooks/useGetRepos.js';
+import { parseAgentFixedPushBranches } from '../../../../shared/agent-fixed-push-branches.js';
 import { parseMcpJsonResult } from '../../utils/parseMcpJsonResult.ts';
 import { usePushApprovalUi } from '../../context/PushApprovalUiContext.jsx';
 import { NEUTRAL_BUTTON_CLASS } from '../../utils/buttonStyles.js';
@@ -59,6 +61,11 @@ export default function GitPushToolBlock({
 }) {
   const mcpResult = parseMcpJsonResult(result);
   const { session } = useGetSession(sessionId);
+  const { repos } = useGetRepos(!!sessionId);
+  const agentFixedPushBranches =
+    session?.repo_id != null
+      ? parseAgentFixedPushBranches(repos.find((r) => r.id === session.repo_id))
+      : [];
   const persistedOutcome =
     typeof mcpResult?.approval_outcome === 'string' ? mcpResult.approval_outcome : null;
   const requestId = typeof mcpResult?.request_id === 'string' ? mcpResult.request_id : null;
@@ -76,7 +83,8 @@ export default function GitPushToolBlock({
 
   const running = result == null;
   const needsApproval =
-    approvalRequested || (running && gitPushNeedsApproval(args, session ?? undefined));
+    approvalRequested ||
+    (running && gitPushNeedsApproval(args, session ?? undefined, agentFixedPushBranches));
   const directPushInProgress = running && !needsApproval;
   const approvalPushInProgress = outcome === 'pushing';
   const showPushSpinner = directPushInProgress || approvalPushInProgress;

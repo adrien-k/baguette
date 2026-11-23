@@ -41,6 +41,16 @@ describe('CurrentSessionInfo (isolated subagent)', () => {
     expect(parsed.working_directory_restrictions).not.toContain("session's session_path");
   });
 
+  it('includes agent_fixed_push_branches from the linked repo', async () => {
+    const tool = createCurrentSessionInfoTool(async () => SESSION_ROW, {
+      getRepo: async () => ({
+        agent_fixed_push_branches: JSON.stringify(['development']),
+      }),
+    });
+    const parsed = JSON.parse((await tool.handler()).content[0].text);
+    expect(parsed.agent_fixed_push_branches).toEqual(['development']);
+  });
+
   it('omits subagent fields and uses session_path restrictions for shared subagents', async () => {
     const tool = createCurrentSessionInfoTool(async () => SESSION_ROW, {
       getCallerAgent: async () => ({ agent_type: 'subagent', worktree_path: null }),

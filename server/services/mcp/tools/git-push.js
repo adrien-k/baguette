@@ -2,12 +2,18 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { gitPush } from '../../github.js';
 import { ok, fail } from '../lib/result.js';
+import { parseAgentFixedPushBranches } from '../../../../shared/agent-fixed-push-branches.js';
+import {
+  gitPushRequiresApproval,
+  resolveGitPushTargetBranch,
+} from '../../../../shared/git-push-approval.js';
 
 export function createGitPushTool(ctx) {
   const {
     app,
     session,
     getSession,
+    getRepo,
     getGitAuth,
     requireRemoteRepo,
     patchSession,
@@ -16,19 +22,19 @@ export function createGitPushTool(ctx) {
   return {
     name: 'GitPush',
     description:
-      'Push the session work to origin. NOT for regular turn work: Baguette pushes and syncs the PR automatically after each turn — calling this for a plain session-branch push with auto-push on only duplicates that. A plain session-branch push with auto-push on goes through immediately (no Push modal). Auto-push off, a different target branch, source_branch, or force opens the Push approval modal for the user to confirm. Valid pattern: after an isolated subagent finishes on its own branch, call GitPush with source_branch set to that branch (no need to merge into the session worktree first); use branch to publish onto a shared integration branch (e.g. development) or the session remote. Always pass reason with a short explanation of why the push is needed; it is shown to the user in the approval. While the approval is open, do not retry and do not push via shell git — the push runs once the user confirms.',
+      'Push the session work to origin. NOT for regular turn work: Baguette pushes and syncs the PR automatically after each turn — calling this for a plain session-branch push with auto-push on only duplicates that. A plain session-branch push with auto-push on goes through immediately (no Push modal). Auto-push off, a different target branch, source_branch, or force opens the Push approval modal for the user to confirm — except when auto-push is on and the target is a repository-configured **agent fixed push branch** (see CurrentSessionInfo `agent_fixed_push_branches`): a non-force push to that branch goes through without approval even with source_branch or a non-session target. Auto-push off still opens the Push modal for every GitPush, including fixed targets. Valid pattern: after an isolated subagent finishes on its own branch, call GitPush with source_branch set to that branch (no need to merge into the session worktree first); use branch to publish onto a shared integration branch listed in `agent_fixed_push_branches` (e.g. development) or the session remote. Always pass reason with a short explanation of why the push is needed; it is shown to the user in the approval when one is required. While the approval is open, do not retry and do not push via shell git — the push runs once the user confirms.',
     schema: {
       branch: z
         .string()
         .optional()
         .describe(
-          'Target branch on origin (defaults to the session remote branch). A different branch — e.g. a shared development branch — requires user approval via the Push modal.'
+          'Target branch on origin (defaults to the session remote branch). A different branch requires user approval unless it is listed in the repo agent fixed push branches (CurrentSessionInfo `agent_fixed_push_branches`).'
         ),
       source_branch: z
         .string()
         .optional()
         .describe(
-          'Local git ref to push from instead of the session worktree HEAD (branch name, tag, or commit). You do not need to merge that ref into the session branch first — typical use: publish an isolated subagent branch (set to subagent_local_branch) or any other local branch; refspec is source_branch:target. User approval is always required.'
+          'Local git ref to push from instead of the session worktree HEAD (branch name, tag, or commit). You do not need to merge that ref into the session branch first — typical use: publish an isolated subagent branch (set to subagent_local_branch); refspec is source_branch:target. User approval is required unless the target branch is an agent fixed push branch for this repository.'
         ),
       force: z
         .enum(['lease', 'force'])
@@ -48,27 +54,42 @@ export function createGitPushTool(ctx) {
       if (localErr) return localErr;
 
       const freshSession = await getSession();
+      const repo = await getRepo();
+      const agentFixedPushBranches = parseAgentFixedPushBranches(repo);
       const sessionBranch = freshSession.remote_branch || freshSession.local_branch;
-      const isForcePush = force === 'lease' || force === 'force';
-      const isNonSessionBranch =
-        branch && branch !== sessionBranch && branch !== freshSession.local_branch;
       const cleanedSourceBranch =
         typeof sourceBranch === 'string' && sourceBranch.trim() ? sourceBranch.trim() : null;
-      const hasSourceBranch = !!cleanedSourceBranch;
       const autoPushOff = !freshSession.auto_push;
       const cleanedReason = typeof reason === 'string' && reason.trim() ? reason.trim() : null;
+      const targetBranch = resolveGitPushTargetBranch({ branch, sessionBranch });
 
-      if (!isForcePush && !isNonSessionBranch && !hasSourceBranch && !autoPushOff) {
+      const needsApproval = gitPushRequiresApproval({
+        force,
+        branch,
+        source_branch: sourceBranch,
+        session: freshSession,
+        agentFixedPushBranches,
+      });
+
+      if (!needsApproval) {
+        const pushOpts = {};
+        if (targetBranch) pushOpts.branch = targetBranch;
+        if (cleanedSourceBranch) pushOpts.sourceBranch = cleanedSourceBranch;
+
         let result;
         try {
-          result = await gitPush(absoluteSessionPath, await getGitAuth(), {
-            ...(sessionBranch ? { branch: sessionBranch } : {}),
-          });
+          result = await gitPush(absoluteSessionPath, await getGitAuth(), pushOpts);
         } catch (err) {
           if (err.rejected) return fail(err.message);
           throw err;
         }
-        await patchSession({ remote_branch: result.branch });
+        const pushedToSessionBranch =
+          targetBranch === sessionBranch ||
+          targetBranch === freshSession.local_branch ||
+          (!branch && !cleanedSourceBranch);
+        if (pushedToSessionBranch) {
+          await patchSession({ remote_branch: result.branch });
+        }
         if (freshSession?.pr_status === 'merged') {
           return ok({
             ...result,
@@ -79,7 +100,6 @@ export function createGitPushTool(ctx) {
       }
 
       const requestId = randomUUID();
-      const targetBranch = branch || sessionBranch;
       app.service('sessions').emit('push:request', {
         sessionId: session.id,
         request_id: requestId,
