@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { ChevronDown } from 'lucide-react';
 import { isGlobalSession } from '@baguette/shared/session-scope.js';
 import { useFilterRoutes } from '../hooks/useFilterRoutes.js';
 import CardRepoBadge from './CardRepoBadge.jsx';
@@ -42,6 +44,29 @@ function SessionRowActions({ activeLabel, sessionHighlighted, action }) {
   );
 }
 
+function MobileAgentsToggle({ count, expanded, onToggle }) {
+  return (
+    <button
+      type="button"
+      data-testid="session-agents-toggle"
+      aria-expanded={expanded}
+      aria-label={expanded ? 'Hide agents' : 'Show agents'}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onToggle();
+      }}
+      className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-line/70 bg-control/60 px-1.5 py-0.5 text-[10px] leading-3.5 font-medium text-fg-muted transition-colors hover:bg-control-hover hover:text-fg"
+    >
+      <span className="tabular-nums">{count}</span>
+      <ChevronDown
+        className={`h-3 w-3 transition-transform ${expanded ? '' : '-rotate-90'}`}
+        aria-hidden
+      />
+    </button>
+  );
+}
+
 export default function MiniSessionEntry({
   session: s,
   currentId,
@@ -78,10 +103,12 @@ export default function MiniSessionEntry({
     return `${base}?agent=${agentId}&view=chat`;
   };
   const agentTree = Array.isArray(s.agents) ? s.agents : [];
-  // The builder row is always visible; the remaining agents expand by default
-  // for the selected session, and on the mobile full-width list also for the
-  // last-opened one. The tree's caret overrides this per entry.
-  const autoExpanded = isCurrent || (isMobileList && String(s.id) === String(autoExpandId));
+  // Desktop shows the agent tree only on the selected session.
+  // Mobile opens a session on tap, so each session row has a toggle (defaulting
+  // to expanded for the last-opened session).
+  const [mobileManuallyExpanded, setMobileManuallyExpanded] = useState(null);
+  const isMobileExpanded = mobileManuallyExpanded ?? String(s.id) === String(autoExpandId);
+  const showAgentTree = agentTree.length > 0 && (isMobileList ? isMobileExpanded : isCurrent);
 
   const highlightShellClass = isCurrent ? '-mx-3 mb-1 bg-control-hover px-3 py-2' : '';
 
@@ -124,6 +151,13 @@ export default function MiniSessionEntry({
                 </span>
               )}
             </Link>
+            {isMobileList && agentTree.length > 0 && (
+              <MobileAgentsToggle
+                count={agentTree.length}
+                expanded={isMobileExpanded}
+                onToggle={() => setMobileManuallyExpanded(!isMobileExpanded)}
+              />
+            )}
             {isArchiving && (
               <span className="shrink-0 text-[10px] leading-4 text-accent/90">Archiving…</span>
             )}
@@ -134,11 +168,9 @@ export default function MiniSessionEntry({
             />
           </div>
         </div>
-        {agentTree.length > 0 && (
+        {showAgentTree && (
           <SessionAgentTree
             agents={agentTree}
-            sessionId={s.id}
-            pinnedAgentId={s.pinned_agent_id ?? null}
             currentAgentId={routeAgentId}
             canManage={isOwner && !isArchived && !isArchiving}
             onSelectAgent={(agent) => navigate(agentChatUrl(agent.id))}
@@ -150,7 +182,6 @@ export default function MiniSessionEntry({
                 : undefined
             }
             showAddBuilder={showAddBuilder && isOwner && !isArchived && !isArchiving}
-            autoExpanded={autoExpanded}
             showOwnerGutter={showOwner}
             sessionHighlighted={isCurrent}
           />

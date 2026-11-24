@@ -158,14 +158,14 @@ test.describe('add builder modal (mock)', () => {
     }
   });
 
-  test('agent-tree Add builder works when a pinned secondary is listed first', async ({ page }) => {
+  test('agent-tree Add builder works when multiple builders exist', async ({ page }) => {
     await devLogin(page);
 
     const repoId = await createLocalRepo(page);
     await startMockBuilderSession(page, repoId, MOCK_E2E_QUICK_TURN_PROMPT);
     await expectMockQuickTurnComplete(page);
 
-    await addManualBuilderAgent(page, 'Pinned secondary');
+    await addManualBuilderAgent(page, 'Extra builder');
     await openAddBuilderModalFromAgentTree(page);
     await page.getByRole('button', { name: 'Cancel' }).click();
     await expect(page.getByRole('heading', { name: 'Add builder' })).toHaveCount(0);

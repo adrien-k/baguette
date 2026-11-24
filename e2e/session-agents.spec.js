@@ -63,6 +63,7 @@ test.describe('session agents (mock)', () => {
     await sendSessionChatMessage(page, MOCK_E2E_SUBAGENT_PROMPT);
     await expect(page.getByText(MOCK_E2E_SUBAGENT_SUMMARY)).toBeVisible({ timeout: 120_000 });
 
+    await sessionAgentTreeRow(page, 'Builder').getByTestId('builder-subagents-toggle').click();
     await selectAgentInTree(page, MOCK_E2E_SUBAGENT_NAME);
 
     const sessionId = parseSessionIdFromUrl(page.url());
@@ -104,7 +105,8 @@ test.describe('session agents (mock)', () => {
     await sendSessionChatMessage(page, MOCK_E2E_SUBAGENT_PROMPT);
     await expect(page.getByText(MOCK_E2E_SUBAGENT_SUMMARY)).toBeVisible({ timeout: 120_000 });
 
-    // The MCP subagent sits directly under the session row in the sidebar tree.
+    // The MCP subagent sits nested under its parent builder behind the subagents toggle.
+    await sessionAgentTreeRow(page, 'Builder').getByTestId('builder-subagents-toggle').click();
     await expect(sessionAgentTreeRow(page, MOCK_E2E_SUBAGENT_NAME)).toBeVisible();
     await saveE2eScreenshot(page, 'session-sidebar-agent-tree.png');
 

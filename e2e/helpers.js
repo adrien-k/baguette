@@ -285,31 +285,19 @@ export function sessionAgentTreeRow(page, name) {
 
 /**
  * Open an agent's chat from the sidebar agent tree. Clicks the row’s stretched
- * overlay (first button in the row, not the disclosure caret on the builder row).
+ * overlay (first button in the row, not the subagent disclosure toggle).
  */
 export async function selectAgentInTree(page, name) {
   const row = sessionAgentTreeRow(page, name);
   await expect(row).toBeVisible({ timeout: 30_000 });
-  await row.locator('button:not([data-testid="agent-tree-toggle"])').first().click();
-}
-
-/** Pin/unpin control for a secondary builder row (hover the row first on desktop). */
-export function agentTreePinButton(page, agentName) {
-  return sessionAgentTreeRow(page, agentName).getByRole('button', {
-    name: new RegExp(`^(Pin|Unpin) agent — ${escapeRegExp(agentName)}`),
-  });
+  await row.locator('button:not([data-testid="builder-subagents-toggle"])').first().click();
 }
 
 export async function hoverAgentTreeRow(page, agentName) {
   await sessionAgentTreeRow(page, agentName).hover();
 }
 
-export async function clickAgentTreePin(page, agentName) {
-  await hoverAgentTreeRow(page, agentName);
-  await agentTreePinButton(page, agentName).click();
-}
-
-/** Session URL with `agent` query removed so the pinned default applies on load. */
+/** Session URL with `agent` query removed so the default builder applies on load. */
 export function sessionChatUrlWithoutAgentQuery(page) {
   const url = new URL(page.url());
   url.searchParams.delete('agent');
@@ -350,12 +338,9 @@ export async function openStartSubagentModalFromComposer(page) {
   await expect(page.getByRole('heading', { name: 'Add builder' })).toBeVisible();
 }
 
-/** Open **Add builder** from the primary builder row in the agent tree (works with an empty composer). */
+/** Open **Add builder** from the button at the top of the agent tree (works with an empty composer). */
 export async function openAddBuilderModalFromAgentTree(page) {
-  const addBuilderControl = page.getByTestId('agent-tree-row').getByRole('button', {
-    name: 'Add builder',
-    exact: true,
-  });
+  const addBuilderControl = page.getByTestId('agent-tree-add-builder');
   await addBuilderControl.click();
   await expect(page.getByRole('heading', { name: 'Add builder' })).toBeVisible();
 }

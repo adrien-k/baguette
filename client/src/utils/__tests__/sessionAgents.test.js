@@ -9,8 +9,6 @@ import {
   agentSwitcherDropdownSections,
   countActiveAgentsForSession,
   isAgentAwaitingUser,
-  agentTreeCollapseSelectionFallback,
-  isAgentVisibleInCollapsedTree,
   isAgentTurnActive,
   isAnyAgentAwaitingUser,
   isPrimaryAgent,
@@ -50,19 +48,6 @@ describe('agent display labels', () => {
     expect(isPrimaryAgent({ is_primary: 1 })).toBe(true);
     expect(isPrimaryAgent({ is_primary: 0 })).toBe(false);
     expect(isPrimaryAgent({ is_primary: true })).toBe(true);
-  });
-
-  it('knows which agents stay visible when the tree collapses', () => {
-    const head = { id: 2, is_primary: 0, agent_type: 'subagent' };
-    const primarySlot = { id: 1, is_primary: 1 };
-    expect(isAgentVisibleInCollapsedTree(2, head, primarySlot)).toBe(true);
-    expect(isAgentVisibleInCollapsedTree(1, head, primarySlot)).toBe(true);
-    expect(isAgentVisibleInCollapsedTree(3, head, primarySlot)).toBe(false);
-    expect(isAgentVisibleInCollapsedTree('2', head, primarySlot)).toBe(true);
-    expect(isAgentVisibleInCollapsedTree(null, head, primarySlot)).toBe(true);
-    expect(agentTreeCollapseSelectionFallback(head, primarySlot)).toBe(head);
-    expect(agentTreeCollapseSelectionFallback(head, null)).toBe(head);
-    expect(agentTreeCollapseSelectionFallback(null, primarySlot)).toBe(primarySlot);
   });
 
   it('sorts agents by ref ascending', () => {

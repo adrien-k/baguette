@@ -69,24 +69,6 @@ export function isPrimaryAgent(agent) {
   return Boolean(agent && Number(agent.is_primary) === 1);
 }
 
-/**
- * Whether `currentAgentId` stays listed when the agent tree is collapsed
- * (head row plus primary when pinned non-primary is head).
- */
-export function isAgentVisibleInCollapsedTree(currentAgentId, headAgent, primaryPinnedSlot) {
-  if (currentAgentId == null || currentAgentId === '') return true;
-  const id = Number(currentAgentId);
-  if (!Number.isFinite(id)) return true;
-  if (headAgent && Number(headAgent.id) === id) return true;
-  if (primaryPinnedSlot && Number(primaryPinnedSlot.id) === id) return true;
-  return false;
-}
-
-/** Agent chat to show after collapsing while a hidden agent was selected. */
-export function agentTreeCollapseSelectionFallback(headAgent, primaryPinnedSlot) {
-  return headAgent ?? primaryPinnedSlot ?? null;
-}
-
 /** Stable list order for agents panel and switchers (ref ascending, then id). */
 export function sortSessionAgentsByRefAsc(agents) {
   return [...agents].sort((a, b) => {

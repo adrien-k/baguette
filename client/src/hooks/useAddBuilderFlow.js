@@ -1,13 +1,13 @@
 import { useState, useCallback, useRef } from 'react';
 import { titleFromPrompt } from '@baguette/shared/agent-naming.js';
-import { agentsService, messagesService, sessionsService } from '../feathers.js';
-import { toastError, toastFeathersError } from '../utils/toastError.jsx';
+import { agentsService, messagesService } from '../feathers.js';
+import { toastFeathersError } from '../utils/toastError.jsx';
 import { builderMessageCreateFields } from '../utils/messageCreateFields.js';
 import { buildUserMessageContent } from '../utils/buildUserMessageContent.js';
 import { useSessionChatRecipes } from './useSessionChatRecipes.js';
 
 /**
- * Add-builder modal + create agent, pin, optional first message (empty prompt = no message).
+ * Add-builder modal + create agent, optional first message (empty prompt = no message).
  */
 export function useAddBuilderFlow({ session, modelAgent, onSelectAgent }) {
   const [open, setOpen] = useState(false);
@@ -83,11 +83,6 @@ export function useAddBuilderFlow({ session, modelAgent, onSelectAgent }) {
       setOpen(false);
 
       if (newAgent?.id != null) {
-        try {
-          await sessionsService.patch(session.id, { pinned_agent_id: newAgent.id });
-        } catch (err) {
-          toastError('Failed to pin new builder', err);
-        }
         onSelectAgent?.(newAgent);
       }
 
