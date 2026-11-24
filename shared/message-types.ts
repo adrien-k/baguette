@@ -191,6 +191,12 @@ export type UserMessagePayload = {
   subtype?: string | null;
   /** Populated for `subtype: ask_user_answer` (AskUserQuestions replies). */
   answers?: { question?: string; value?: string }[];
+  /** Populated for `subtype: git_push_outcome` (GitPush approval resolution). */
+  outcome?: 'pushed' | 'canceled' | 'failed';
+  request_id?: string | null;
+  target_branch?: string | null;
+  source_branch?: string | null;
+  error?: string;
   /** Source session/agent or external MCP when `source` is `mcp`. */
   mcp_sender?: McpMessageSender;
 };

@@ -37,9 +37,11 @@ import type {
 
 type MockSessionState = {
   userId: number;
+  agentId?: number;
   abortController: AbortController;
   turnId?: number | null;
   channel?: MessageChannel;
+  endTurnAwaitingUser?: boolean;
 };
 
 class MockAgentService {
@@ -113,6 +115,10 @@ class MockAgentService {
     });
   }
 
+  getActiveSession(sessionOrId: string | number): MockSessionState | undefined {
+    return this._activeSessions.get(sessionOrId);
+  }
+
   async handleMessageCreated(message: MessageRowLike) {
     return this.handleTableMessageCreated(message, 'messages');
   }
@@ -163,13 +169,14 @@ class MockAgentService {
     }
 
     const abortController = new AbortController();
-    this._activeSessions.set(activeKey, {
+    const sessionState: MockSessionState = {
       userId,
       agentId: agent.id,
       abortController,
       turnId,
       channel,
-    });
+    };
+    this._activeSessions.set(activeKey, sessionState);
 
     const isReview = channel === 'review';
     let turnFinishedOk = false;

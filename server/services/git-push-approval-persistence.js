@@ -1,5 +1,9 @@
 import { baguetteMcpShortName } from '../../shared/baguette-mcp-tool-names.js';
 import { parseMcpJsonResult } from '../../shared/parse-mcp-json-result.js';
+import {
+  deliverGitPushOutcomeToAgent,
+  gitPushPrevDataFromToolPayload,
+} from './git-push-agent-notify.js';
 
 const GIT_PUSH_OUTCOMES = new Set(['canceled', 'pushed', 'failed']);
 
@@ -106,5 +110,17 @@ export async function persistGitPushApprovalOutcome(
       { provider: undefined, user: { id: session.user_id } }
     );
 
-  return { patched: true, message_id: row.id };
+  let agent_notify = { delivered: false };
+  try {
+    agent_notify = await deliverGitPushOutcomeToAgent(app, session, {
+      row,
+      prevData: { ...gitPushPrevDataFromToolPayload(payload), ...dataPatch },
+      outcome,
+      errorMessage: errorMessage ?? null,
+    });
+  } catch (err) {
+    agent_notify = { delivered: false, error: err?.message };
+  }
+
+  return { patched: true, message_id: row.id, agent_notify };
 }

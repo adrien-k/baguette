@@ -1,3 +1,5 @@
+import { parseMcpJsonResult } from './parse-mcp-json-result.js';
+
 /** PascalCase Baguette MCP tool names (builder + base lists). Used for Cursor kind: mcp. */
 
 export const BAGUETTE_MCP_TOOL_NAMES = new Set([
@@ -96,14 +98,23 @@ export function baguettePlanToolIsInteractive(args) {
   return args.interactive !== false;
 }
 
+function gitPushApprovalRequestedInResult(result) {
+  const parsed = parseMcpJsonResult(result);
+  return parsed?.approval_requested === true;
+}
+
 /**
  * Whether a successful Baguette MCP tool call should mark the agent awaiting user input.
  * @param {string} name Tool name (short or mcp__baguette__ prefixed)
  * @param {Record<string, unknown> | null | undefined} args
+ * @param {unknown} [result] Tool handler return value (needed for GitPush approval)
  */
-export function baguetteToolPausesForUserAfterSuccess(name, args) {
-  if (!isTurnEndingBaguetteTool(name)) return false;
+export function baguetteToolPausesForUserAfterSuccess(name, args, result) {
   const short = baguetteMcpShortName(name) || name;
+  if (short === 'GitPush' && result != null && gitPushApprovalRequestedInResult(result)) {
+    return true;
+  }
+  if (!isTurnEndingBaguetteTool(name)) return false;
   if ((short === 'CreatePlan' || short === 'EditPlan') && !baguettePlanToolIsInteractive(args)) {
     return false;
   }

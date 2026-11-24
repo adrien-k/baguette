@@ -33,6 +33,17 @@ export function buildAskUserAnswerMessageJson(content, answers = []) {
   });
 }
 
+/** GitPush approval resolution posted back to the agent (server-initiated). */
+export function buildGitPushOutcomeMessageJson(content, outcomeFields = {}) {
+  return JSON.stringify({
+    type: 'user',
+    subtype: 'git_push_outcome',
+    content: String(content),
+    ...outcomeFields,
+    message: { role: 'user', content: String(content) },
+  });
+}
+
 /**
  * Resolve `agent_id` for a session message create; defaults to the primary builder.
  * @param {import('knex').Knex} db

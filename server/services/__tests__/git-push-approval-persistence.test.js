@@ -64,18 +64,32 @@ describe('git-push-approval-persistence', () => {
     expect(match?.row.id).toBe(3);
   });
 
-  it('persistGitPushApprovalOutcome patches ok() envelope tool_call rows', async () => {
-    const row = { id: 100, message_json: gitPushOkEnvelopeMessageJson(REQUEST_ID) };
+  it('persistGitPushApprovalOutcome patches ok() envelope tool_call rows and unwraps metadata for agent notification', async () => {
+    const row = { id: 100, agent_id: 9, message_json: gitPushOkEnvelopeMessageJson(REQUEST_ID) };
     const patch = vi.fn().mockResolvedValue({ id: 100 });
+    const create = vi.fn().mockResolvedValue({ id: 502 });
     const orderBy = vi.fn().mockResolvedValue([row]);
-    const db = () => ({
-      where: vi.fn().mockReturnThis(),
-      whereRaw: vi.fn().mockReturnThis(),
-      orderBy,
-    });
+    const agent = {
+      id: 9,
+      session_id: 7,
+      agent_sdk: 'mock',
+      agent_type: 'builder',
+      model: 'mock',
+      agent_config_id: null,
+    };
+    const db = (table) => {
+      if (table === 'agents') {
+        return { where: () => ({ first: async () => agent }) };
+      }
+      return {
+        where: vi.fn().mockReturnThis(),
+        whereRaw: vi.fn().mockReturnThis(),
+        orderBy,
+      };
+    };
     const app = {
       get: (key) => (key === 'db' ? db : undefined),
-      service: () => ({ patch }),
+      service: () => ({ patch, create }),
     };
 
     const result = await persistGitPushApprovalOutcome(
@@ -88,9 +102,16 @@ describe('git-push-approval-persistence', () => {
     );
 
     expect(result.patched).toBe(true);
+    expect(result.agent_notify).toEqual({ delivered: true });
     const payload = JSON.parse(patch.mock.calls[0][1].message_json);
     expect(payload.result.data.approval_outcome).toBe('canceled');
     expect(payload.result.data.approval_requested).toBe(false);
+    expect(create).toHaveBeenCalledOnce();
+    const notified = JSON.parse(create.mock.calls[0][0].message_json);
+    expect(notified.request_id).toBe(REQUEST_ID);
+    expect(notified.target_branch).toBe('development');
+    expect(notified.content).toContain(`request_id: ${REQUEST_ID}`);
+    expect(notified.content).toContain('Target: origin/development');
   });
 
   it('loadGitPushToolCallRowsForRequest queries by request_id substring', async () => {
@@ -113,18 +134,41 @@ describe('git-push-approval-persistence', () => {
   });
 
   it('persistGitPushApprovalOutcome patches the tool_call message', async () => {
-    const row = { id: 99, message_json: gitPushMessageJson(REQUEST_ID) };
+    const row = { id: 99, agent_id: 9, message_json: gitPushMessageJson(REQUEST_ID) };
     const patch = vi.fn().mockResolvedValue({ id: 99 });
+    const create = vi.fn().mockResolvedValue({ id: 500 });
     const orderBy = vi.fn().mockResolvedValue([row]);
-    const db = () => ({
+    const messageChain = {
       where: vi.fn().mockReturnThis(),
       whereRaw: vi.fn().mockReturnThis(),
       orderBy,
-    });
+    };
+    const agent = {
+      id: 9,
+      session_id: 7,
+      agent_sdk: 'mock',
+      agent_type: 'builder',
+      model: 'mock',
+      agent_config_id: null,
+    };
+    const db = (table) => {
+      if (table === 'agents') {
+        return {
+          where: () => ({
+            first: async () => agent,
+          }),
+        };
+      }
+      return messageChain;
+    };
     const app = {
       get: (key) => (key === 'db' ? db : undefined),
-      service: () => ({ patch }),
+      service: (name) => {
+        if (name === 'messages') return { patch, create };
+        return { patch };
+      },
     };
+
     const session = { id: 7, user_id: 3 };
 
     const result = await persistGitPushApprovalOutcome(app, session, {
@@ -133,7 +177,9 @@ describe('git-push-approval-persistence', () => {
     });
 
     expect(result.patched).toBe(true);
+    expect(result.agent_notify?.delivered).toBe(true);
     expect(patch).toHaveBeenCalledOnce();
+    expect(create).toHaveBeenCalledOnce();
     const patchBody = patch.mock.calls[0][1];
     const payload = JSON.parse(patchBody.message_json);
     expect(payload.result.data.approval_requested).toBe(false);

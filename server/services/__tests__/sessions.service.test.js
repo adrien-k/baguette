@@ -3608,6 +3608,48 @@ describe('Sessions service - find, get, create', () => {
       flushSpy.mockRestore();
     });
 
+    it('flushes queued git_push_outcome when onTurnComplete runs on an approval session', async () => {
+      const created = await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
+
+      const builderAgent = await db('agents')
+        .where({ session_id: created.id, is_primary: 1 })
+        .first();
+      await app
+        .get('db')('queued_messages')
+        .insert({
+          session_id: created.id,
+          user_id: userId1,
+          kind: 'turn',
+          agent_id: builderAgent.id,
+          agent_sdk: builderAgent.agent_sdk,
+          model: builderAgent.model,
+          message_json: JSON.stringify({
+            type: 'user',
+            subtype: 'git_push_outcome',
+            content: 'GitPush approval resolved.\nOutcome: pushed.',
+            message: {
+              role: 'user',
+              content: 'GitPush approval resolved.\nOutcome: pushed.',
+            },
+          }),
+          created_at: new Date().toISOString(),
+        });
+
+      await db('agents')
+        .where({ session_id: created.id, is_primary: 1 })
+        .update({ status: 'approval' });
+
+      const flushSpy = vi
+        .spyOn(app.service('sessions'), 'flushNextQueuedTurn')
+        .mockResolvedValue(undefined);
+      await app.service('sessions').onTurnComplete(created.id);
+
+      expect(flushSpy).toHaveBeenCalledWith(created.id, builderAgent.id);
+      flushSpy.mockRestore();
+    });
+
     it('does not flush queued messages when onTurnComplete runs on a stopped session', async () => {
       const created = await app
         .service('sessions')

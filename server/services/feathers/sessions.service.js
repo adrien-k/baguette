@@ -2122,6 +2122,9 @@ export class SessionsService extends KnexService {
     }
 
     if (isBuilderAgentAwaitingUser(agent)) {
+      if (agent?.id != null && (await this.hasQueuedGitPushOutcome(db, sessionId, agent.id))) {
+        await this.flushNextQueuedTurn(sessionId, agent.id);
+      }
       this.emit('turn:complete', { session_id: sessionId, user_id: session.user_id });
       return;
     }
@@ -2179,6 +2182,21 @@ export class SessionsService extends KnexService {
     );
   }
 
+  /** Check whether `queued_messages` has a pending `git_push_outcome` turn for this agent. */
+  async hasQueuedGitPushOutcome(db, sessionId, agentId) {
+    const rows = await db('queued_messages')
+      .where({ session_id: sessionId, kind: 'turn', agent_id: agentId })
+      .select('message_json');
+    return rows.some((r) => {
+      try {
+        const parsed = JSON.parse(r.message_json || '{}');
+        return parsed?.type === 'user' && parsed.subtype === 'git_push_outcome';
+      } catch {
+        return false;
+      }
+    });
+  }
+
   /** Flush the oldest queued turn message for this session and agent. */
   async flushNextQueuedTurn(sessionId, agentId) {
     if (agentId == null) return;
@@ -2203,11 +2221,23 @@ export class SessionsService extends KnexService {
       user: { id: queued.user_id },
     });
     const loopSubtype = loopUserRowSubtypeFromMessageJson(queued.message_json);
+    let gitPushSubtype = null;
+    if (!loopSubtype) {
+      try {
+        const parsed = JSON.parse(queued.message_json || '{}');
+        if (parsed?.type === 'user' && parsed.subtype === 'git_push_outcome') {
+          gitPushSubtype = 'git_push_outcome';
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    const rowSubtype = loopSubtype ?? gitPushSubtype;
     await this.app.service('messages').create(
       {
         session_id: sessionId,
         type: 'user',
-        ...(loopSubtype ? { subtype: loopSubtype } : {}),
+        ...(rowSubtype ? { subtype: rowSubtype } : {}),
         message_json: queued.message_json,
         agent_id: queued.agent_id ?? agentRow.id,
         agent_sdk: queued.agent_sdk,

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { ok } from '../../server/services/baguette-mcp-tool-result.js';
 import {
   baguettePlanToolIsInteractive,
   baguetteToolPausesForUserAfterSuccess,
@@ -41,5 +42,16 @@ describe('baguetteToolPausesForUserAfterSuccess', () => {
 
   it('ignores non turn-ending tools', () => {
     expect(baguetteToolPausesForUserAfterSuccess('ListTodos', {})).toBe(false);
+  });
+
+  it('pauses for GitPush when approval is requested', () => {
+    const result = ok({ approval_requested: true, request_id: 'req-1' });
+    expect(baguetteToolPausesForUserAfterSuccess('GitPush', {}, result)).toBe(true);
+    expect(baguetteToolPausesForUserAfterSuccess('mcp__baguette__GitPush', {}, result)).toBe(true);
+  });
+
+  it('does not pause for GitPush on immediate push', () => {
+    const result = ok({ branch: 'feature' });
+    expect(baguetteToolPausesForUserAfterSuccess('GitPush', {}, result)).toBe(false);
   });
 });

@@ -13,6 +13,7 @@ import {
   MOCK_E2E_ASK_ANSWER_SUMMARY,
   MOCK_E2E_ASK_QUESTION_TEXT,
   MOCK_E2E_GITPUSH_REASON,
+  MOCK_E2E_GITPUSH_OUTCOME_SUMMARY,
   MOCK_E2E_GITPUSH_SESSION_SUMMARY,
   MOCK_E2E_GITPUSH_SUMMARY,
   MOCK_E2E_GITPUSH_TARGET_BRANCH,
@@ -245,6 +246,16 @@ async function runMockAskAnswerTurn({ writer }) {
 }
 
 /**
+ * @param {import('../../shared/message-stream-writer.ts').MessageStreamWriter} writer
+ */
+async function runMockGitPushOutcomeTurn({ writer }) {
+  await writer.appendAssistantText(MOCK_E2E_GITPUSH_OUTCOME_SUMMARY);
+  await writer.flushAssistant();
+  await persistMockTurnResult(writer);
+  return {};
+}
+
+/**
  * Real GitPush MCP tool call for e2e: commits a scratch file, then calls the
  * actual tool handler so the Push approval modal opens in the UI. Needs a
  * session whose repo has an origin (seeded by the e2e spec).
@@ -284,12 +295,29 @@ async function runMockGitPushE2eTurn({
   };
   const ctx = createSessionAgentContext(session, app);
   const tool = createGitPushTool(ctx);
+  const rawResult = await tool.handler(toolArgs);
   await runMockTool(writer, abortSignal, {
     callId: 'mock-gitpush',
     name: 'mcp__baguette__GitPush',
     args: toolArgs,
-    rawResult: await tool.handler(toolArgs),
+    rawResult,
   });
+
+  let approvalRequested = false;
+  try {
+    const text = rawResult?.content?.[0]?.text;
+    if (typeof text === 'string') {
+      const parsed = JSON.parse(text);
+      approvalRequested = parsed?.approval_requested === true;
+    }
+  } catch {
+    approvalRequested = false;
+  }
+
+  if (approvalRequested) {
+    await persistMockTurnResult(writer);
+    return { awaitingUser: true };
+  }
 
   await writer.appendAssistantText(summary);
   await writer.flushAssistant();
@@ -409,6 +437,9 @@ export async function runMockAgentTurn({
   }
   if (scenario === 'ask-answer') {
     return runMockAskAnswerTurn({ writer, abortSignal });
+  }
+  if (scenario === 'gitpush-outcome') {
+    return runMockGitPushOutcomeTurn({ writer });
   }
   if (scenario === 'gitpush-session-e2e') {
     return runMockGitPushE2eTurn({
