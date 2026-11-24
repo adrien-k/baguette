@@ -31,6 +31,7 @@ const mocks = vi.hoisted(() => {
     sessionPlansService: makeService(),
     sessionTodosService: makeService(),
     agentModelPresetsService: makeService(),
+    usageModelPricingService: makeService(),
   };
 });
 
@@ -46,6 +47,7 @@ vi.mock('../../feathers.js', () => ({
   sessionPlansService: mocks.sessionPlansService,
   sessionTodosService: mocks.sessionTodosService,
   agentModelPresetsService: mocks.agentModelPresetsService,
+  usageModelPricingService: mocks.usageModelPricingService,
 }));
 
 import { QueryClient } from '@tanstack/react-query';

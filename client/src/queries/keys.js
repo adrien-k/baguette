@@ -96,3 +96,8 @@ export const subscriptionLimitsKeys = {
 export const systemInfoKeys = {
   all: ['system-info'],
 };
+
+export const usageModelPricingKeys = {
+  all: ['usage-model-pricing'],
+  list: () => ['usage-model-pricing', 'list'],
+};
