@@ -26,6 +26,11 @@ import { useAuth } from '../../hooks/useAuth.jsx';
 import { useCurrentUser } from '../../context/CurrentUserContext.jsx';
 import Toggle from '../../components/Toggle.jsx';
 import { USER_STATUS_APPROVED, USER_STATUS_REVOKED } from '@baguette/shared/user-status.js';
+import UserAccountActionsMenu from '../../components/UserAccountActionsMenu.jsx';
+import {
+  AccountStatusLabel,
+  buildUserAccountActionItems,
+} from '../../utils/userAccountActions.jsx';
 
 function formatUserLastIpLine(user) {
   if (!user.last_ip) return null;
@@ -473,16 +478,25 @@ export function UsersTab() {
             const lastIpLine = formatUserLastIpLine(u);
             const isLastAdmin = !!u.admin && adminCount <= 1;
             const isOwner = !!u.owner;
-            let demoteTitle;
-            if (isOwner) demoteTitle = 'Cannot demote the owner';
-            else if (isLastAdmin) demoteTitle = 'Cannot demote the last admin';
-            let revokeTitle;
-            if (isOwner) revokeTitle = 'Cannot revoke the owner';
-            else if (isLastAdmin) revokeTitle = 'Cannot revoke the last admin';
             let accountStatus = 'pending';
             if (u.invite_pending) accountStatus = 'invited';
             else if (u.status === USER_STATUS_APPROVED) accountStatus = 'approved';
             else if (u.status === USER_STATUS_REVOKED) accountStatus = 'revoked';
+            const actionItems = buildUserAccountActionItems({
+              accountStatus,
+              u,
+              isOwner,
+              isLastAdmin,
+              currentUserOwner: !!currentUser?.owner,
+              inviteBusy,
+              handlers: {
+                onSetAdmin: handleSetAdmin,
+                onTransferOwner: setConfirmTransferOwner,
+                onInvite: handleInvite,
+                onReject: handleReject,
+                onApprove: handleApprove,
+              },
+            });
             return (
               <div key={u.id} className="flex items-center justify-between py-3 gap-3">
                 <div className="flex items-center gap-3 min-w-0">
@@ -504,61 +518,13 @@ export function UsersTab() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
-                  {currentUser?.owner && !isOwner && accountStatus === 'approved' ? (
-                    <button
-                      type="button"
-                      onClick={() => setConfirmTransferOwner(u)}
-                      className="text-xs text-fg-muted hover:text-fg"
-                    >
-                      Transfer ownership
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={() => handleSetAdmin(u.id, !u.admin)}
-                    disabled={isLastAdmin || isOwner}
-                    title={demoteTitle}
-                    className="text-xs text-fg-muted hover:text-fg disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {u.admin ? 'Remove admin' : 'Make admin'}
-                  </button>
-                  {accountStatus === 'invited' ? (
-                    <>
-                      <span className="text-xs text-accent hidden sm:inline">Invited</span>
-                      <span className="w-2 h-2 rounded-full bg-brand sm:hidden" />
-                      <button
-                        type="button"
-                        onClick={() => handleInvite({ id: u.id })}
-                        disabled={inviteBusy}
-                        className="text-xs text-fg-muted hover:text-fg disabled:opacity-50"
-                      >
-                        New invite link
-                      </button>
-                    </>
-                  ) : null}
-                  {accountStatus === 'approved' ? (
-                    <>
-                      <span className="text-xs text-success hidden sm:inline">Approved</span>
-                      <span className="w-2 h-2 rounded-full bg-ok sm:hidden" />
-                      <button
-                        type="button"
-                        onClick={() => handleReject(u.id)}
-                        disabled={isLastAdmin || isOwner}
-                        title={revokeTitle}
-                        className="text-xs text-danger hover:text-danger ml-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        Revoke
-                      </button>
-                    </>
-                  ) : null}
                   {accountStatus === 'pending' ? (
                     <>
-                      <span className="text-xs text-accent hidden sm:inline">Pending</span>
-                      <span className="w-2 h-2 rounded-full bg-brand sm:hidden" />
+                      <AccountStatusLabel accountStatus={accountStatus} />
                       <button
                         type="button"
                         onClick={() => handleApprove(u.id)}
-                        className="text-xs bg-ok hover:bg-ok-hover text-on-solid px-3 py-1 rounded ml-1"
+                        className="text-xs bg-ok hover:bg-ok-hover text-on-solid px-3 py-1 rounded"
                       >
                         Approve
                       </button>
@@ -570,20 +536,13 @@ export function UsersTab() {
                         Reject
                       </button>
                     </>
-                  ) : null}
-                  {accountStatus === 'revoked' ? (
-                    <>
-                      <span className="text-xs text-danger hidden sm:inline">Revoked</span>
-                      <span className="w-2 h-2 rounded-full bg-danger sm:hidden" />
-                      <button
-                        type="button"
-                        onClick={() => handleApprove(u.id)}
-                        className="text-xs bg-ok hover:bg-ok-hover text-on-solid px-3 py-1 rounded ml-1"
-                      >
-                        Approve
-                      </button>
-                    </>
-                  ) : null}
+                  ) : (
+                    <AccountStatusLabel accountStatus={accountStatus} />
+                  )}
+                  <UserAccountActionsMenu
+                    items={actionItems}
+                    ariaLabel={`Actions for ${u.username}`}
+                  />
                 </div>
               </div>
             );
