@@ -86,6 +86,62 @@ describe('mapPiEvent', () => {
     expect(result).toMatchObject({ status: 'ok', diff: '-old\n+new' });
   });
 
+  it('unwraps the Pi bash result envelope into exit_code and stdout', () => {
+    const result = mapPiToolResult('bash', {
+      content: [{ type: 'text', text: 'some-output' }],
+      structuredContent: {
+        output: 'some-output\n',
+        truncated: false,
+        exit_code: 0,
+        wall_time_seconds: 0.1,
+      },
+      isError: false,
+    });
+    expect(result).toEqual({
+      status: 'ok',
+      error_message: null,
+      exit_code: 0,
+      stdout: 'some-output\n',
+      stderr: '',
+    });
+  });
+
+  it('marks failed Pi bash calls as errors with a non-zero exit code', () => {
+    const result = mapPiToolResult(
+      'bash',
+      {
+        content: [{ type: 'text', text: 'fatal: not a git repository' }],
+        structuredContent: {
+          output: 'fatal: not a git repository',
+          truncated: false,
+          exit_code: 128,
+          wall_time_seconds: 0.05,
+        },
+        isError: true,
+      },
+      { isError: true }
+    );
+    expect(result).toEqual({
+      status: 'error',
+      error_message: 'fatal: not a git repository',
+      exit_code: 128,
+      stdout: 'fatal: not a git repository',
+      stderr: '',
+    });
+  });
+
+  it('falls back to exit code 1 when a failed Pi bash call reports no exit_code', () => {
+    const result = mapPiToolResult(
+      'bash',
+      {
+        content: [{ type: 'text', text: 'boom' }],
+        isError: true,
+      },
+      { isError: true }
+    );
+    expect(result).toMatchObject({ status: 'error', exit_code: 1, stdout: 'boom' });
+  });
+
   it('builds typed tool_call payloads for the message writer', () => {
     const start = piBuildToolCallStart(
       'call-1',

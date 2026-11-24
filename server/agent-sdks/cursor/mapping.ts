@@ -473,7 +473,7 @@ export function mapCursorBashToolResult(
 
   return {
     status: opts.isError ? 'error' : 'ok',
-    error_message: opts.isError ? stderr || 'Tool call failed' : null,
+    error_message: opts.isError ? stderr || stdout || 'Tool call failed' : null,
     exit_code: Number.isNaN(exitCode) ? 1 : exitCode,
     stdout,
     stderr,
