@@ -15,7 +15,6 @@ import { getLastResultTotals } from './usage-totals.js';
 import { allowsOverage, usageLimitStatusText } from '../../lib/usage-limit.js';
 import type { ClaudeUsageLimitHit } from './sdk-turn.ts';
 import logger from '../../logger.js';
-import { disableExternal } from '../../services/feathers/hooks.js';
 import { METADATA_TIMEOUT_MS } from '../../services/session-metadata.js';
 import { remoteHasNewCommits } from '../../services/github.js';
 import { getGithubToken, getAllowedCommandsFromUser } from '../../services/agent-settings.js';
@@ -39,13 +38,11 @@ import {
 } from './sdk-options.js';
 import { getReviewAgentTurn, reviewTurnKey } from '../../services/review-agent-turn.js';
 import { requireAgentConfigId } from '../../lib/usage-snapshot.js';
-import {
-  isDispatchableUserMessage,
-  parseUserRow,
-  rejectTurnMismatch,
-} from '../../services/agent-message-dispatch.js';
 import { createMessageStreamWriter } from '../../services/message-writer-factory.ts';
-import { prepareAgentTurnStart } from '../../services/agent-turn-prelude.js';
+import {
+  assertAgentTurnCredentials,
+  prepareAgentTurnStart,
+} from '../../services/agent-turn-prelude.js';
 import { sessionMessageIdentity } from '../../services/feathers/message-create-fields.js';
 import { claudeResultErrorText } from './mapping.ts';
 import { processClaudeQueryStream, type ClaudeStreamTurnOutcome } from './sdk-turn.ts';
@@ -63,13 +60,16 @@ import type {
 import { claudeTiedSessionLoopCompaction } from './loop-compaction.ts';
 import { CLAUDE_AGENT_SDK_KEY, CLAUDE_AGENT_SDK_LABEL, CLAUDE_AGENT_SERVICE_PATH } from './meta.js';
 import { recordClaudeTurnUsage } from './record-turn-usage.js';
-import { getSdkPlugin, registerAgentSdk } from '../registry.js';
 import {
-  builderChatActiveKey,
+  handleAgentMessageCreated,
+  isAgentSessionResumable,
+  registerInternalAgentService,
+} from '../../services/agent-service-lifecycle.ts';
+import { getSdkPlugin } from '../registry.js';
+import {
   getAgentById,
   getPrimaryBuilderAgent,
   getReviewerAgent,
-  resolveAgentRowForMessage,
 } from '../../services/agents-db.js';
 import { patchAgentInternal } from '../../services/feathers/agents.service.js';
 import {
@@ -113,7 +113,6 @@ type ClaudeAgentState = {
   absoluteSessionPath?: string | null;
   repoId?: number | null;
   token?: string | null;
-  sessionSettings?: { permissionMode: PermissionMode };
   claudeSessionId?: string | null;
   streamWriter?: MessageStreamWriter | null;
   turnChannel?: MessageChannel;
@@ -184,10 +183,6 @@ const REVIEWER_ALLOWED_TOOLS = [
   'mcp__baguette__CloseIssue',
 ];
 
-function claudeSdkPermissionMode(sessionRow: AgentSessionRow): 'plan' | 'acceptEdits' {
-  return sessionRow.plan_mode ? 'plan' : 'acceptEdits';
-}
-
 function toSdkUserMessage(prompt: unknown): SDKUserMessage {
   if (prompt && typeof prompt === 'object') return prompt as SDKUserMessage;
   return {
@@ -198,6 +193,36 @@ function toSdkUserMessage(prompt: unknown): SDKUserMessage {
 }
 
 // ─── ClaudeAgentService class ─────────────────────────────────────────────────
+
+function toClaudeSdkUserPayload(parsedStorage: unknown): unknown {
+  let forSdk: Record<string, unknown> = parsedStorage as Record<string, unknown>;
+  if (
+    isBaguetteUserMessage(parsedStorage) &&
+    typeof (parsedStorage as UserMessagePayload).content === 'string'
+  ) {
+    const baguette = parsedStorage as UserMessagePayload;
+    forSdk = {
+      type: 'user',
+      source: 'baguette',
+      title: baguette.title,
+      message: { role: 'user', content: baguette.content },
+    };
+  } else if (typeof (parsedStorage as { content?: unknown }).content === 'string') {
+    forSdk = {
+      type: 'user',
+      message: { role: 'user', content: (parsedStorage as { content: string }).content },
+    };
+  } else if (Array.isArray((parsedStorage as { content?: unknown }).content)) {
+    forSdk = {
+      type: 'user',
+      message: {
+        role: 'user',
+        content: (parsedStorage as { content: unknown[] }).content,
+      },
+    };
+  }
+  return normalizeUserMessageForAgentSdk(forSdk);
+}
 
 export class ClaudeAgentService {
   app!: AgentApp;
@@ -331,7 +356,7 @@ export class ClaudeAgentService {
       systemPrompt,
       canUseTool,
       allowedTools,
-      permissionMode: claudeSdkPermissionMode(sessionRow),
+      permissionMode: 'acceptEdits',
       plugins,
       model,
       modelParams,
@@ -409,164 +434,139 @@ export class ClaudeAgentService {
   }
 
   async handleMessageCreated(row: MessageRowLike): Promise<void> {
-    if (row.type !== 'user') return;
-    if (row.id != null && this._handlingMessageIds.has(row.id)) return;
-    if (row.id != null) this._handlingMessageIds.add(row.id);
-    try {
-      await this._handleMessageCreatedImpl(row);
-    } finally {
-      if (row.id != null) this._handlingMessageIds.delete(row.id);
-    }
-  }
+    await handleAgentMessageCreated({
+      app: this.app,
+      row,
+      expectedSdk: CLAUDE_AGENT_SDK_KEY,
+      handlingMessageIds: this._handlingMessageIds,
+      loadSession: (sessionId) =>
+        this.app.service('sessions').get(sessionId) as Promise<AgentSessionRow | null>,
+      getActiveTurn: (key) => this.getActiveSession(key) ?? undefined,
+      onActiveTurnMessage: ({ parsed: parsedStorage, active }) => {
+        active?.channel.push(toClaudeSdkUserPayload(parsedStorage));
+      },
+      onStartTurn: async ({
+        session,
+        agent,
+        parsed: parsedStorage,
+        channel,
+        isReview,
+        activeKey,
+      }) => {
+        const sessionId = session.id;
+        const parsed = toClaudeSdkUserPayload(parsedStorage);
 
-  async _handleMessageCreatedImpl(row: MessageRowLike): Promise<void> {
-    const parsedStorage = parseUserRow(row);
-    if (!parsedStorage || !isDispatchableUserMessage(parsedStorage)) return;
+        if (row.turn_id != null) {
+          await setAgentActiveTurnId(this.app, agent, session.user_id, row.turn_id);
+        }
 
-    const sessionId = row.session_id;
-    const session = (await this.app.service('sessions').get(sessionId)) as AgentSessionRow | null;
-    if (!session || session.archived_at) return;
-
-    const db = this.app.get('db') as DbLike;
-    const agent = (await resolveAgentRowForMessage(db as never, row as never)) as
-      AgentRow | undefined;
-    if (!agent) return;
-
-    const isReview = agent.agent_type === 'reviewer';
-    const channel: MessageChannel = isReview ? 'review' : 'chat';
-    const sdk = row.agent_sdk ?? agent.agent_sdk;
-    if (sdk !== 'claude') return;
-
-    if (!isReview) {
-      if (session.status === 'archiving' || session.status === 'archived') return;
-      if (session.repo_full_name && !session.session_path) return;
-    }
-
-    const activeKey = isReview ? reviewTurnKey(agent.id) : builderChatActiveKey(agent);
-    const active = this.getActiveSession(activeKey);
-    const activeTurnId = agent.active_turn_id;
-
-    let forSdk: Record<string, unknown> = parsedStorage as Record<string, unknown>;
-    if (
-      isBaguetteUserMessage(parsedStorage) &&
-      typeof (parsedStorage as UserMessagePayload).content === 'string'
-    ) {
-      const baguette = parsedStorage as UserMessagePayload;
-      forSdk = {
-        type: 'user',
-        source: 'baguette',
-        title: baguette.title,
-        message: { role: 'user', content: baguette.content },
-      };
-    } else if (typeof (parsedStorage as { content?: unknown }).content === 'string') {
-      forSdk = {
-        type: 'user',
-        message: { role: 'user', content: (parsedStorage as { content: string }).content },
-      };
-    } else if (Array.isArray((parsedStorage as { content?: unknown }).content)) {
-      forSdk = {
-        type: 'user',
-        message: {
-          role: 'user',
-          content: (parsedStorage as { content: unknown[] }).content,
-        },
-      };
-    }
-    const parsed = normalizeUserMessageForAgentSdk(forSdk);
-
-    if (active) {
-      if (row.turn_id != null && activeTurnId != null && row.turn_id !== activeTurnId) {
-        await rejectTurnMismatch(this.app, {
-          session,
-          row,
-          channel,
-          activeTurnId,
-          userId: session.user_id,
+        const turnModel = requireTurnModelFromRow(row, {
+          sdk: CLAUDE_AGENT_SDK_KEY,
+          requiresModelParamsOnTurn:
+            getSdkPlugin(CLAUDE_AGENT_SDK_KEY)?.requiresModelParamsOnTurn === true,
         });
-        return;
-      }
-      active.channel.push(parsed);
-      return;
-    }
+        const { model, modelParams } = turnModel;
+        const turnAgentConfigId = requireAgentConfigId(row.agent_config_id);
 
-    if (row.turn_id != null) {
-      await setAgentActiveTurnId(this.app, agent, session.user_id, row.turn_id);
-    }
-
-    const turnModel = requireTurnModelFromRow(row, {
-      sdk,
-      requiresModelParamsOnTurn: getSdkPlugin(sdk)?.requiresModelParamsOnTurn === true,
-    });
-    const { model, modelParams } = turnModel;
-    const turnAgentConfigId = requireAgentConfigId(row.agent_config_id);
-
-    // Never start a turn on a used-up plan window: providers would keep serving it on paid
-    // overage. Applies to every agent of the session (builder, subagents, reviewer).
-    const blocked = await this.app
-      .service('sessions')
-      .checkUsageLimitGate(sessionId, agent.id, { agentConfigId: turnAgentConfigId });
-    if (blocked) {
-      if (isReview) {
-        await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'failed', {
-          sdk: 'claude',
-          error_message: usageLimitStatusText({
-            label: 'Claude',
-            reason: blocked.reason,
-            action: 'stop',
-            resetAtMs: blocked.reset_at_ms,
-          }),
-        });
-        return;
-      }
-      await setAgentTurnTerminal(this.app, agent, session.user_id, 'stopped');
-      await this.app.service('sessions').onUsageLimit(sessionId, agent.id, {
-        ...blocked,
-        label: 'Claude',
-      });
-      return;
-    }
-    await prepareAgentTurnStart(this.app, session, agent, { channel, agentSdk: sdk });
-    const writer =
-      row.turn_id != null
-        ? createMessageStreamWriter(this.app, {
-            sessionId,
+        try {
+          await assertAgentTurnCredentials(this.app, {
             userId: session.user_id,
-            turnId: row.turn_id,
-            agentId: agent.id,
-            channel,
-            sessionPath: session.session_path,
-            agentType: 'claude',
-            model: model ?? session.model ?? '',
-            modelParams,
+            agentSdk: CLAUDE_AGENT_SDK_KEY,
             agentConfigId: turnAgentConfigId,
-          })
-        : null;
+          });
+        } catch (err) {
+          if ((err as { name?: string })?.name !== 'Forbidden') {
+            throw err;
+          }
+          const errorMessage = (err as Error).message;
+          if (isReview) {
+            await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'failed', {
+              sdk: 'claude',
+              error_message: errorMessage,
+            });
+            return;
+          }
+          await setAgentTurnTerminal(this.app, agent, session.user_id, 'failed', {
+            error_message: errorMessage,
+          });
+          this.app
+            .service('sessions')
+            .emit('app:error', { sessionId, message: errorMessage, user_id: session.user_id });
+          return;
+        }
 
-    let agentSession: ClaudeAgentState;
-    const resumeId = agent.claude_session_id;
-    if (resumeId) {
-      const resumed = await this.ensureActiveSession(session, agent, {
-        model,
-        modelParams,
-        channel,
-        activeKey,
-        writer,
-        turnAgentConfigId,
-      });
-      if (!resumed) return;
-      agentSession = resumed;
-    } else {
-      agentSession = await this.createAgentSession(session, agent, {
-        model,
-        modelParams,
-        channel,
-        activeKey,
-        writer,
-        turnAgentConfigId,
-      });
-    }
+        // Never start a turn on a used-up plan window: providers would keep serving it on paid
+        // overage. Applies to every agent of the session (builder, subagents, reviewer).
+        const blocked = await this.app
+          .service('sessions')
+          .checkUsageLimitGate(sessionId, agent.id, { agentConfigId: turnAgentConfigId });
+        if (blocked) {
+          if (isReview) {
+            await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'failed', {
+              sdk: 'claude',
+              error_message: usageLimitStatusText({
+                label: 'Claude',
+                reason: blocked.reason,
+                action: 'stop',
+                resetAtMs: blocked.reset_at_ms,
+              }),
+            });
+            return;
+          }
+          await setAgentTurnTerminal(this.app, agent, session.user_id, 'stopped');
+          await this.app.service('sessions').onUsageLimit(sessionId, agent.id, {
+            ...blocked,
+            label: 'Claude',
+          });
+          return;
+        }
+        await prepareAgentTurnStart(this.app, session, agent, {
+          channel,
+          agentSdk: CLAUDE_AGENT_SDK_KEY,
+        });
+        const writer =
+          row.turn_id != null
+            ? createMessageStreamWriter(this.app, {
+                sessionId,
+                userId: session.user_id,
+                turnId: row.turn_id,
+                agentId: agent.id,
+                channel,
+                sessionPath: session.session_path,
+                agentType: 'claude',
+                model: model ?? session.model ?? '',
+                modelParams,
+                agentConfigId: turnAgentConfigId,
+              })
+            : null;
 
-    agentSession.channel.push(parsed);
+        let agentSession: ClaudeAgentState;
+        const resumeId = agent.claude_session_id;
+        if (resumeId) {
+          const resumed = await this.ensureActiveSession(session, agent, {
+            model,
+            modelParams,
+            channel,
+            activeKey,
+            writer,
+            turnAgentConfigId,
+          });
+          if (!resumed) return;
+          agentSession = resumed;
+        } else {
+          agentSession = await this.createAgentSession(session, agent, {
+            model,
+            modelParams,
+            channel,
+            activeKey,
+            writer,
+            turnAgentConfigId,
+          });
+        }
+
+        agentSession.channel.push(parsed);
+      },
+    });
   }
 
   async createAgentSession(
@@ -750,9 +750,6 @@ export class ClaudeAgentService {
     const turnConfigId = requireAgentConfigId(turnAgentConfigId);
     const user = await this.app.service('users').get(sessionRow.user_id, {});
     const sessionId = sessionRow.id;
-    const sessionSettings = {
-      permissionMode: claudeSdkPermissionMode(sessionRow),
-    };
     const canUseTool = this.createCanUseTool();
     const allowedTools = commandsToAllowedTools(getAllowedCommandsFromUser());
     const resolvedActiveKey = activeKey ?? sessionId;
@@ -814,7 +811,6 @@ export class ClaudeAgentService {
         absoluteSessionPath,
         repoId: sessionRow.repo_id,
         token: getGithubToken(user),
-        sessionSettings,
         ...(agent.claude_session_id ? { claudeSessionId: agent.claude_session_id } : {}),
         streamWriter: writer ?? null,
         turnChannel: channel,
@@ -1356,15 +1352,6 @@ export class ClaudeAgentService {
     void (async () => {
       const builder = await getPrimaryBuilderAgent(this.app.get('db'), sessionId);
       if (!builder) return;
-      const sessionRow = (await (this.app.get('db') as DbLike)('sessions')
-        .where({ id: sessionId })
-        .first()) as AgentSessionRow | undefined;
-      if (!sessionRow) return;
-      const effectiveMode = claudeSdkPermissionMode(sessionRow);
-      if (session.sessionSettings) {
-        session.sessionSettings.permissionMode = effectiveMode;
-      }
-      session.queryInstance.setPermissionMode(effectiveMode);
       session.queryInstance.setModel((builder.model as string) ?? undefined);
       await applyClaudeModelParamsToQueryInstance(session.queryInstance, builder.model_params);
     })().catch((err: Error) => {
@@ -1443,17 +1430,9 @@ export class ClaudeAgentService {
 
   async isInterruptedSessionResumable(
     session: AgentSessionRow,
-    { channel = 'chat', agent: agentRow }: { channel?: MessageChannel; agent?: AgentRow } = {}
+    opts: { channel?: MessageChannel; agent?: AgentRow } = {}
   ): Promise<boolean> {
-    const db = this.app.get('db');
-    let agent = agentRow;
-    if (!agent) {
-      agent =
-        channel === 'review'
-          ? ((await getReviewerAgent(db, session.id)) as AgentRow | undefined)
-          : ((await getPrimaryBuilderAgent(db, session.id)) as AgentRow | undefined);
-    }
-    return Boolean(agent?.claude_session_id);
+    return isAgentSessionResumable(this.app, session, 'claude_session_id', opts);
   }
 
   usesCompactionBeforeLoopRepeat(): boolean {
@@ -1510,9 +1489,9 @@ export class ClaudeAgentService {
 }
 
 export function registerClaudeAgentService(app: AgentApp, path = CLAUDE_AGENT_SERVICE_PATH) {
-  const service = new ClaudeAgentService();
-  service.setup(app);
-  app.use(path, service, {
+  registerInternalAgentService(app, {
+    service: new ClaudeAgentService(),
+    path,
     methods: [
       'createAgentSession',
       'resumeSession',
@@ -1528,13 +1507,7 @@ export function registerClaudeAgentService(app: AgentApp, path = CLAUDE_AGENT_SE
       'completeText',
       'isInterruptedSessionResumable',
     ],
-  });
-  // Internal-only service: drives the agent SDK and must never be reachable over the
-  // HTTP transport (see PUBLIC_SERVICES for the declarative external allow-list).
-  app.service(path).hooks({ before: { all: [disableExternal] } });
-  registerAgentSdk(app, {
     key: CLAUDE_AGENT_SDK_KEY,
     label: CLAUDE_AGENT_SDK_LABEL,
-    servicePath: path,
   });
 }

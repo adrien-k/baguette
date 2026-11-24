@@ -35,6 +35,7 @@ const AGENT_FIELDS_ON_SESSION = new Set([
   'claude_session_id',
   'cursor_agent_id',
   'pi_session_id',
+  'antigravity_session_id',
   'review_agent_config_id',
   'review_agent_sdk',
   'review_model',

@@ -18,6 +18,10 @@ describe('readLiveSdkEnv', () => {
       'SDK_TESTS_PI_API_KEY',
       'SDK_TESTS_PI_MODEL',
       'SDK_TESTS_PI_API_KEY_ENV_VAR',
+      'SDK_TESTS_ANTIGRAVITY',
+      'SDK_TESTS_ANTIGRAVITY_MODEL',
+      'SDK_TESTS_ANTIGRAVITY_API_KEY',
+      'SDK_TESTS_ANTIGRAVITY_MODEL_PARAMS',
     ]) {
       vi.stubEnv(key, '');
     }
@@ -82,6 +86,26 @@ describe('readLiveSdkEnv', () => {
     const env = readLiveSdkEnv('mock');
     expect(env.enabled).toBe(true);
     expect(env.model).toBe(MOCK_STANDARD_MODEL_ID);
+  });
+
+  it('enables antigravity via flag or model without requiring an API key', () => {
+    expect(readLiveSdkEnv('antigravity').enabled).toBe(false);
+
+    vi.stubEnv('SDK_TESTS_ANTIGRAVITY', '1');
+    const byFlag = readLiveSdkEnv('antigravity');
+    expect(byFlag.enabled).toBe(true);
+    expect(byFlag.apiKey).toBeNull();
+    expect(byFlag.model).toBe('gemini-3.8-flash');
+
+    vi.stubEnv('SDK_TESTS_ANTIGRAVITY', '');
+    vi.stubEnv('SDK_TESTS_ANTIGRAVITY_MODEL', 'gemini-4-neon');
+    vi.stubEnv('SDK_TESTS_ANTIGRAVITY_API_KEY', 'AIza-test');
+    vi.stubEnv('SDK_TESTS_ANTIGRAVITY_MODEL_PARAMS', '[{"id":"reasoning","value":"low"}]');
+    const byModel = readLiveSdkEnv('antigravity');
+    expect(byModel.enabled).toBe(true);
+    expect(byModel.model).toBe('gemini-4-neon');
+    expect(byModel.apiKey).toBe('AIza-test');
+    expect(byModel.modelParams).toBe('[{"id":"reasoning","value":"low"}]');
   });
 
   it('parses SDK_TESTS_TIMEOUT_MS', () => {

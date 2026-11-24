@@ -88,7 +88,7 @@ export default function AgentConfigsList() {
         <p className={`text-sm ${TEXT_FAINT}`}>Loading agent configurations…</p>
       ) : configs.length === 0 ? (
         <p className={`text-sm ${TEXT_FAINT}`}>
-          No configurations yet. Add one to run Claude, Cursor, or Pi agents.
+          No configurations yet. Add one to run Claude, Cursor, Pi, or Antigravity agents.
         </p>
       ) : (
         <div className="space-y-3">

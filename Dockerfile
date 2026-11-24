@@ -74,6 +74,10 @@ RUN curl -fsSL "https://github.com/coder/code-server/releases/download/v${CODE_S
 
 RUN npm install -g pnpm @anthropic-ai/claude-code@2.1.310 playwright
 
+# Install Antigravity CLI (agy)
+RUN curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- --dir /usr/local/bin \
+    && rm -rf /root/.cache/antigravity
+
 # Install Chromium and its system dependencies for Playwright
 RUN npx playwright install --with-deps chromium
 

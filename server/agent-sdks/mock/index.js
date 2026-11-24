@@ -16,6 +16,7 @@ export const mockAgentSdkPlugin = {
 
   // Mock catalogs are keyed by api_key (catalog/…); an empty key still works.
   requiresApiKey: false,
+  ownerOnlySystemAuth: false,
   supportsModelParams: false,
   requiresModelParamsOnTurn: false,
   usesAgentPricingTable: false,

@@ -222,6 +222,7 @@ function pickDefaultConfig(configs) {
 }
 
 export async function insertDevUser(db, devGhKey) {
+  const existingOwner = await db('users').where({ owner: 1 }).first();
   const [userId] = await db('users').insert({
     github_id: 0,
     username: DEV_SEED_USERNAME,
@@ -229,6 +230,7 @@ export async function insertDevUser(db, devGhKey) {
     access_token_encrypted: devGhKey ? encrypt(devGhKey) : null,
     status: USER_STATUS_APPROVED,
     admin: 1,
+    owner: existingOwner ? 0 : 1,
     onboarding_completed: 1,
     subagent_default_mode: 'preset',
   });

@@ -1,5 +1,5 @@
 /**
- * Live Pi SDK turn. Skips unless SDK_TESTS_PI_* are set (see `.env.dev.example`).
+ * Live Pi SDK turn. Skips unless SDK_TESTS_PI_* are set (see `.env.example`).
  *
  * Recommended (OpenCode Go):
  *   SDK_TESTS_PI_API_KEY_ENV_VAR=OPENCODE_GO_API_KEY

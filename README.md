@@ -4,7 +4,7 @@
 
 ## What is Baguette?
 
-Baguette is a self-hosted orchestrator for AI coding agents that runs in the cloud, giving you AI-powered coding sessions with GitHub integration, isolated test environments, and the ability to review and merge changes — from any device, including your phone. It supports [Claude Code](https://platform.claude.com/docs/en/agent-sdk/typescript), [Cursor](https://cursor.com), and [Pi](https://pi.dev) (OpenRouter, OpenCode Zen, ZAI, and many other LLM providers).
+Baguette is a self-hosted orchestrator for AI coding agents that runs in the cloud, giving you AI-powered coding sessions with GitHub integration, isolated test environments, and the ability to review and merge changes — from any device, including your phone. It supports [Claude Code](https://platform.claude.com/docs/en/agent-sdk/typescript), [Cursor](https://cursor.com), [Pi](https://pi.dev) (OpenRouter, OpenCode Zen, ZAI, and many other LLM providers), and Antigravity (via the Agent Client Protocol).
 
 - **Runs in the cloud, accessible anywhere** -- Deploy to your own VPS or EC2 instance and develop from any device, including your phone.
 - **Tests and dev servers for every session** -- Baguette configures the host to run databases, tests, and whatever else your project needs, isolated per session.
@@ -18,7 +18,7 @@ Baguette is a self-hosted orchestrator for AI coding agents that runs in the clo
 ## Features
 
 - **GitHub sign-in (optional)** -- Sign in through your own GitHub App to create branches and PRs on your behalf. Baguette is scoped to the repositories you grant the App -- down to a single one. You can skip the App and use passkeys and/or a personal access token instead.
-- **Claude, Cursor & Pi agents** -- Choose Claude Code, Cursor, or Pi as the agent backend when creating a session. All support Start (agent) and Plan modes.
+- **Claude, Cursor, Pi & Antigravity agents** -- Choose Claude Code, Cursor, Pi, or Antigravity as the agent backend when creating a session. All support Start (agent) and Plan modes.
 - **Session management** -- Spin up sessions from any branch of any repo. Each session gets its own git worktree.
 - **Multi-session orchestration** -- Run several sessions in parallel from a global session: agents subscribe to child-session turn-end notifications and report progress as it happens ([read more](docs/sessions-and-agents.md)).
 - **Live preview** -- Test your session's changes live in the browser. Each session gets a subdomain hooked to its development server, its own database, and the rest of its isolated stack ([read more](docs/session-management.md#web-server-preview)).
@@ -50,6 +50,7 @@ Persistent data (database, repo clones, worktrees) lives under **`~/.baguette`**
 **Optional on the host:**
 
 - [Claude Code](https://claude.ai/install.sh) for Claude agent sessions: `curl -fsSL https://claude.ai/install.sh | bash`
+- Antigravity CLI (`agy`) for Antigravity agent sessions
 - [code-server](https://coder.com/docs/code-server/install) for the **VS Code** button on sessions
 
 To set a public hostname, bootstrap password, custom data directory, or other server options, see **[Environment variables](#environment-variables)**.
@@ -65,6 +66,8 @@ Configure your agent(s) in **Settings → Agent**.
 **Cursor:** Enter your Cursor API key and optionally set a default model and variant. No additional CLI installation required.
 
 **Pi:** Use Pi when you want models from providers other than Anthropic or Cursor — for example [OpenRouter](https://openrouter.ai/), [OpenCode Zen](https://opencode.ai/), [ZAI](https://z.ai/), Groq, or DeepSeek. Pi supports [many providers](https://pi.dev/docs/latest/providers); each maps to an API-key environment variable (e.g. `OPENROUTER_API_KEY`, `OPENCODE_API_KEY`, `ZAI_API_KEY`). In **Settings → Agent**, add a configuration, choose **Pi** as the agent type, select the matching **API key env var**, paste your provider API key, and run **Test connection** to load models. Set a default model for new sessions. You can add multiple Pi configurations for different providers. No extra CLI installation is required on the host.
+
+**Antigravity:** Runs the local `agy` CLI over the Agent Client Protocol (`agy acp`). Antigravity uses your local `agy` login by default — no API key is required, though you can optionally provide a Gemini API key or set `ANTIGRAVITY_BIN` in **Extra env**. Run **Test connection** to verify CLI availability, authentication, and available models.
 
 ### GitHub App (optional)
 
@@ -110,13 +113,13 @@ The IP is read from `X-Forwarded-For` right-to-left: every proxy in front of Bag
 
 Defaults for `TRUST_PROXY_HOPS` and `TRUST_EDGE_COUNTRY` match the documented deployments ([Fly.io](docs/deployment/fly.io.md), [Kamal](docs/deployment/kamal.md), [AWS EC2](docs/deployment/aws-ec2-kamal.md)).
 
-Repository contributors can copy [`.env.dev.example`](.env.dev.example) to `.env` for local overrides and live SDK test keys — see [CONTRIBUTING.md](CONTRIBUTING.md#development-setup).
+Repository contributors can copy [`.env.example`](.env.example) to `.env` for local overrides and live SDK test keys — see [CONTRIBUTING.md](CONTRIBUTING.md#development-setup).
 
 ## Tech Stack
 
 - **Backend**: Express, Feathers.js, SQLite (via Knex), Socket.io
 - **Frontend**: Vite, React, Tailwind CSS
-- **AI**: `@anthropic-ai/claude-agent-sdk`, `@cursor/sdk`, `@earendil-works/pi-coding-agent`
+- **AI**: `@anthropic-ai/claude-agent-sdk`, `@cursor/sdk`, `@earendil-works/pi-coding-agent`, `@agentclientprotocol/sdk`
 
 ## Configuring your project
 

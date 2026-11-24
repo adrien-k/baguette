@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(fileURLToPath(import.meta.url), '../../../..');
 
-const BUILT_IN_PLUGINS = ['claude', 'cursor', 'pi', 'mock'];
+const BUILT_IN_PLUGINS = ['claude', 'cursor', 'pi', 'antigravity', 'mock'];
 
 describe('built-in SDK plugin entry imports', () => {
   it.each(BUILT_IN_PLUGINS)(

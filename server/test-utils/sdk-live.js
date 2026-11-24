@@ -1,7 +1,7 @@
 /**
  * Env-gated live agent-SDK tests: real LLM (or mock) turns against a full Feathers app.
  *
- * Set SDK_TESTS_<SDK>_API_KEY + SDK_TESTS_<SDK>_MODEL (see `.env.dev.example`) to enable.
+ * Set SDK_TESTS_<SDK>_API_KEY + SDK_TESTS_<SDK>_MODEL (see `.env.example`) to enable.
  * Suites skip when those vars are unset so `pnpm test` stays free/offline by default.
  *
  * Recommended cheap models and observed harness costs (one turn, 2026-10-31):
@@ -580,7 +580,7 @@ function restoreMockLiveEnv(prevMockEnv) {
 /**
  * Live checks: plugin listModels + testConnectivity, builder turn, reviewer turn.
  *
- * @param {'claude' | 'cursor' | 'pi' | 'mock'} sdk
+ * @param {'claude' | 'cursor' | 'pi' | 'antigravity' | 'mock'} sdk
  * @param {{ builder?: object, includeReviewer?: boolean }} [opts]
  */
 export async function runLiveSdkSuite(sdk, opts = {}) {
@@ -623,7 +623,7 @@ export async function runLiveSdkIntegration(sdk, assertOpts = {}) {
 /**
  * One builder turn that runs bash and asserts typed `result.stdout` is persisted.
  *
- * @param {'claude' | 'cursor' | 'pi' | 'mock'} sdk
+ * @param {'claude' | 'cursor' | 'pi' | 'antigravity' | 'mock'} sdk
  */
 export async function runLiveBashStdoutSuite(sdk) {
   const env = readLiveSdkEnv(sdk);

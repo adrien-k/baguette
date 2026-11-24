@@ -40,6 +40,7 @@ export const AGENT_CONFIG_LOGO_OPTIONS = [
   { id: 'Zhipu', fullTitle: 'Zhipu AI' },
   { id: 'Minimax', fullTitle: 'MiniMax' },
   { id: 'Pi', fullTitle: 'Pi' },
+  { id: 'Antigravity', fullTitle: 'Antigravity' },
   { id: 'LobeHub', fullTitle: 'LobeHub' },
   { id: 'LunaRoute', fullTitle: 'LunaRoute' },
 ];
@@ -61,6 +62,7 @@ export const SDK_DEFAULT_LOBE_ICON = {
   claude: 'ClaudeCode',
   cursor: 'Cursor',
   pi: 'Pi',
+  antigravity: 'Antigravity',
   mock: 'LobeHub',
 };
 

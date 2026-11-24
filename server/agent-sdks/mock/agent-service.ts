@@ -1,23 +1,20 @@
 import logger from '../../logger.js';
-import { disableExternal } from '../../services/feathers/hooks.js';
 import { attachAppErrorHandler, handleAppError } from '../../lib/app-error-handler.js';
 import { createMessageStreamWriter } from '../../services/message-writer-factory.ts';
-import {
-  isDispatchableUserMessage,
-  parseUserRow,
-  rejectTurnMismatch,
-} from '../../services/agent-message-dispatch.js';
 import { requireTurnModelFromRow } from '../../../shared/turn-model.js';
 import { isMockAgentSdkEnabled, mockUserPromptText } from '../../../shared/mock-agent-sdk.js';
 import { MOCK_AGENT_SDK, MOCK_AGENT_SDK_LABEL, MOCK_AGENT_SERVICE_PATH } from './meta.js';
-import { getSdkPlugin, registerAgentSdk, registerSdkPlugin } from '../registry.js';
+import {
+  handleAgentMessageCreated,
+  registerInternalAgentService,
+} from '../../services/agent-service-lifecycle.ts';
+import { getSdkPlugin, registerSdkPlugin } from '../registry.js';
 import { claudeBuildToolCallStart, claudeBuildToolCallComplete } from '../claude/mapping.ts';
 import { requireAgentConfigId } from '../../lib/usage-snapshot.js';
 import { runMockAgentTurn, runMockReviewerTurn } from './mock-agent-turn.js';
 import { recordMockTurnUsage } from './record-turn-usage.js';
-import { getReviewAgentTurn, reviewTurnKey } from '../../services/review-agent-turn.js';
+import { getReviewAgentTurn } from '../../services/review-agent-turn.js';
 import { issueAgentMetadataFromTurn } from '../../services/session-issues.js';
-import { builderChatActiveKey, resolveAgentRowForMessage } from '../../services/agents-db.js';
 import {
   clearAgentActiveTurnId,
   setAgentActiveTurnId,
@@ -30,7 +27,6 @@ import type {
   AgentRow,
   AgentSessionRow,
   ChatTable,
-  DbLike,
   MessageChannel,
   MessageRowLike,
 } from '../../services/feathers/agent-service-types.ts';
@@ -54,64 +50,37 @@ class MockAgentService {
 
   async handleTableMessageCreated(row: MessageRowLike, _table: ChatTable) {
     if (!isMockAgentSdkEnabled()) return;
-    if (row.type !== 'user') return;
-
-    const parsed = parseUserRow(row);
-    if (!parsed || !isDispatchableUserMessage(parsed)) return;
-    const userPrompt = mockUserPromptText(parsed);
-
-    const sessionId = row.session_id;
-    const db = this.app.get('db') as DbLike;
-    const session = (await db('sessions').where({ id: sessionId }).first()) as
-      AgentSessionRow | undefined;
-    if (!session || session.archived_at) return;
-
-    const agent = (await resolveAgentRowForMessage(db, row as never)) as AgentRow | undefined;
-    if (!agent) return;
-
-    const isReview = agent.agent_type === 'reviewer';
-    const channel: MessageChannel = isReview ? 'review' : 'chat';
-    const sdk = row.agent_sdk ?? agent.agent_sdk;
-    if (sdk !== MOCK_AGENT_SDK) return;
-
-    if (!isReview) {
-      if (session.status === 'archiving' || session.status === 'archived') return;
-      if (session.repo_full_name && !session.session_path) return;
-    }
-
-    const activeKey = isReview ? reviewTurnKey(agent.id) : builderChatActiveKey(agent);
-    if (this._activeSessions.has(activeKey)) {
-      const activeTurnId = agent.active_turn_id;
-      if (row.turn_id != null && activeTurnId != null && row.turn_id !== activeTurnId) {
-        await rejectTurnMismatch(this.app, {
-          session,
-          row,
-          channel,
-          activeTurnId,
-          userId: session.user_id,
+    await handleAgentMessageCreated({
+      app: this.app,
+      row,
+      expectedSdk: MOCK_AGENT_SDK,
+      getActiveTurn: (key) => this._activeSessions.get(key),
+      onStartTurn: ({ session, agent, parsed, channel, activeKey }) => {
+        const userPrompt = mockUserPromptText(parsed);
+        const turnModel = requireTurnModelFromRow(row, {
+          sdk: MOCK_AGENT_SDK,
+          requiresModelParamsOnTurn:
+            getSdkPlugin(MOCK_AGENT_SDK)?.requiresModelParamsOnTurn === true,
         });
-      }
-      return;
-    }
-
-    const turnModel = requireTurnModelFromRow(row, {
-      sdk: MOCK_AGENT_SDK,
-      requiresModelParamsOnTurn: getSdkPlugin(MOCK_AGENT_SDK)?.requiresModelParamsOnTurn === true,
-    });
-    const turnAgentConfigId = requireAgentConfigId(row.agent_config_id);
-    attachAppErrorHandler(
-      this.app,
-      this._runTurn(session, row, turnModel, {
-        turnId: row.turn_id as number | null,
-        channel,
-        activeKey,
-        turnAgentConfigId,
-        agent,
-        userPrompt,
-      }),
-      { userId: session.user_id, sessionId }
-    ).catch((err) => {
-      logger.error({ sessionId, err: (err as Error).message }, 'mock-agent turn failed');
+        const turnAgentConfigId = requireAgentConfigId(row.agent_config_id);
+        attachAppErrorHandler(
+          this.app,
+          this._runTurn(session, row, turnModel, {
+            turnId: row.turn_id as number | null,
+            channel,
+            activeKey,
+            turnAgentConfigId,
+            agent,
+            userPrompt,
+          }),
+          { userId: session.user_id, sessionId: session.id }
+        ).catch((err) => {
+          logger.error(
+            { sessionId: session.id, err: (err as Error).message },
+            'mock-agent turn failed'
+          );
+        });
+      },
     });
   }
 
@@ -343,21 +312,6 @@ class MockAgentService {
 
 export function registerMockAgentService(app: AgentApp, path = MOCK_AGENT_SERVICE_PATH) {
   if (!isMockAgentSdkEnabled()) return;
-  const service = new MockAgentService();
-  service.setup(app);
-  app.use(path, service, {
-    methods: [
-      'handleMessageCreated',
-      'handleTableMessageCreated',
-      'stopSession',
-      'stopTurn',
-      'completeText',
-      'isInterruptedSessionResumable',
-    ],
-  });
-  // Internal-only service: drives the agent SDK and must never be reachable over the
-  // HTTP transport (see PUBLIC_SERVICES for the declarative external allow-list).
-  app.service(path).hooks({ before: { all: [disableExternal] } });
   // Tests may mount this service without the SDK manifest; keep the module
   // registry in sync so message writers find mock tool-call builders.
   registerSdkPlugin({
@@ -365,6 +319,7 @@ export function registerMockAgentService(app: AgentApp, path = MOCK_AGENT_SERVIC
     label: MOCK_AGENT_SDK_LABEL,
     servicePath: path,
     requiresApiKey: false,
+    ownerOnlySystemAuth: false,
     supportsModelParams: false,
     storedSessionIdColumn: null,
     toolCallBuilders() {
@@ -374,9 +329,18 @@ export function registerMockAgentService(app: AgentApp, path = MOCK_AGENT_SERVIC
       };
     },
   });
-  registerAgentSdk(app, {
+  registerInternalAgentService(app, {
+    service: new MockAgentService(),
+    path,
+    methods: [
+      'handleMessageCreated',
+      'handleTableMessageCreated',
+      'stopSession',
+      'stopTurn',
+      'completeText',
+      'isInterruptedSessionResumable',
+    ],
     key: MOCK_AGENT_SDK,
     label: MOCK_AGENT_SDK_LABEL,
-    servicePath: path,
   });
 }

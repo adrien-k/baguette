@@ -431,6 +431,12 @@ async function normalizeAgentConfigOnLoopWrite(context) {
         apiKey: 'cursor-test-key',
         apiKeyEnvVar: null,
       });
+    } else if (sdkHint === 'antigravity') {
+      configId = await insertTestAgentConfig(db, userId, {
+        sdk: 'antigravity',
+        apiKey: null,
+        apiKeyEnvVar: null,
+      });
     } else {
       configId = await ensureTestClaudeConfig(db, userId);
     }

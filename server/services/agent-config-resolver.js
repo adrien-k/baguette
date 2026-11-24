@@ -294,6 +294,12 @@ export async function assertAgentConfigOnCreate(context) {
         apiKey: 'cursor-test-key',
         apiKeyEnvVar: null,
       });
+    } else if (sdkHint === 'antigravity') {
+      agentConfigId = await insertTestAgentConfig(db, userId, {
+        sdk: 'antigravity',
+        apiKey: null,
+        apiKeyEnvVar: null,
+      });
     } else {
       agentConfigId = await ensureTestClaudeConfig(db, userId);
     }

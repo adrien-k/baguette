@@ -124,14 +124,15 @@ pnpm test                                 # full suite
 
 Each SDK can ship a `*.live.test.js` that drives a real turn (tools, a `.baguette.yaml`
 task, usage). The shared harness is `server/test-utils/sdk-live.js`. Tests **skip**
-unless the matching env vars are set (see `.env.dev.example`):
+unless the matching env vars are set (see `.env.example`):
 
-| SDK    | Required env                                                                                                         |
-| ------ | -------------------------------------------------------------------------------------------------------------------- |
-| claude | `SDK_TESTS_CLAUDE_API_KEY` (or `SDK_TESTS_CLAUDE_AUTH_TOKEN`) + `SDK_TESTS_CLAUDE_MODEL`; optional `_API_URL`        |
-| cursor | `SDK_TESTS_CURSOR_API_KEY` + `SDK_TESTS_CURSOR_MODEL`                                                                |
-| pi     | `SDK_TESTS_PI_API_KEY` + `SDK_TESTS_PI_MODEL`; optional `SDK_TESTS_PI_API_KEY_ENV_VAR` (provider, default Anthropic) |
-| mock   | `SDK_TESTS_MOCK=1` (no LLM; optional)                                                                                |
+| SDK         | Required env                                                                                                         |
+| ----------- | -------------------------------------------------------------------------------------------------------------------- |
+| claude      | `SDK_TESTS_CLAUDE_API_KEY` (or `SDK_TESTS_CLAUDE_AUTH_TOKEN`) + `SDK_TESTS_CLAUDE_MODEL`; optional `_API_URL`        |
+| cursor      | `SDK_TESTS_CURSOR_API_KEY` + `SDK_TESTS_CURSOR_MODEL`                                                                |
+| pi          | `SDK_TESTS_PI_API_KEY` + `SDK_TESTS_PI_MODEL`; optional `SDK_TESTS_PI_API_KEY_ENV_VAR` (provider, default Anthropic) |
+| antigravity | `SDK_TESTS_ANTIGRAVITY_MODEL` (e.g. `gemini-3.8-flash`) or `SDK_TESTS_ANTIGRAVITY=1`; optional `_API_KEY`            |
+| mock        | `SDK_TESTS_MOCK=1` (no LLM; optional)                                                                                |
 
 ```bash
 SDK_TESTS_CLAUDE_API_KEY=sk-ant-… SDK_TESTS_CLAUDE_MODEL=haiku pnpm vitest run server/agent-sdks/claude/__tests__/claude.live.test.js

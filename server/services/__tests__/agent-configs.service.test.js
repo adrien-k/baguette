@@ -29,15 +29,31 @@ function makeApp() {
     service_path: 'cursor-agent',
     credentialSchema: { envVarOptions: null, defaultEnvVar: null, hasApiUrl: false },
   });
+  app.service('agent-configs').registerSdk({
+    key: 'antigravity',
+    label: 'Antigravity',
+    service_path: 'antigravity-agent',
+    requiresApiKey: false,
+  });
+  app.service('agent-configs').registerSdk({
+    key: 'mock',
+    label: 'Mock',
+    service_path: 'mock-agent',
+    requiresApiKey: false,
+    ownerOnlySystemAuth: false,
+  });
   return app;
 }
 
 let app;
 let user1;
+let nonOwner;
 
 beforeEach(async () => {
-  await db('users').insert({ github_id: 1, username: 'alice', status: 'approved' });
+  await db('users').insert({ github_id: 1, username: 'alice', status: 'approved', owner: 1 });
+  await db('users').insert({ github_id: 2, username: 'bob', status: 'approved', owner: 0 });
   user1 = await db('users').where({ username: 'alice' }).first();
+  nonOwner = await db('users').where({ username: 'bob' }).first();
   app = makeApp();
   await app.setup();
 });
@@ -255,5 +271,49 @@ describe('agent-configs provider cache', () => {
       .patch(created.id, { label: 'Cache Claude 2' }, params(user1));
     expect(spy).toHaveBeenCalledWith('anthropic-models:https://api.anthropic.com');
     spy.mockRestore();
+  });
+});
+
+describe('agent-configs owner api_key enforcement', () => {
+  it('rejects non-owner creating claude, cursor, or antigravity config without an api_key', async () => {
+    await expect(
+      app
+        .service('agent-configs')
+        .create({ label: 'Blank Claude', sdk: 'claude', api_key: '' }, params(nonOwner))
+    ).rejects.toMatchObject({ name: 'Forbidden' });
+
+    await expect(
+      app
+        .service('agent-configs')
+        .create({ label: 'Blank Cursor', sdk: 'cursor' }, params(nonOwner))
+    ).rejects.toMatchObject({ name: 'Forbidden' });
+
+    await expect(
+      app
+        .service('agent-configs')
+        .create({ label: 'Blank Antigravity', sdk: 'antigravity' }, params(nonOwner))
+    ).rejects.toMatchObject({ name: 'Forbidden' });
+  });
+
+  it('rejects non-owner patching an existing config to a blank api_key, but allows label edits', async () => {
+    const created = await app
+      .service('agent-configs')
+      .create({ label: 'Keyed', sdk: 'claude', api_key: 'sk-ant-valid' }, params(nonOwner));
+
+    const renamed = await app
+      .service('agent-configs')
+      .patch(created.id, { label: 'Renamed' }, params(nonOwner));
+    expect(renamed.label).toBe('Renamed');
+
+    await expect(
+      app.service('agent-configs').patch(created.id, { api_key: '   ' }, params(nonOwner))
+    ).rejects.toMatchObject({ name: 'Forbidden' });
+  });
+
+  it('allows non-owner creating mock config without an api_key', async () => {
+    const created = await app
+      .service('agent-configs')
+      .create({ label: 'Mock', sdk: 'mock' }, params(nonOwner));
+    expect(created.sdk).toBe('mock');
   });
 });

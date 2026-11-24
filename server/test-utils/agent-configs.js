@@ -6,8 +6,16 @@ import {
 } from '../../shared/agent-config-api-key-env.js';
 import { DEFAULT_PI_API_KEY_ENV_VAR } from '../../shared/pi-api-key-env-vars.js';
 
+function defaultTestApiKeyEnvVar(sdk, apiKey, apiKeyEnvVar) {
+  if (apiKeyEnvVar !== undefined) return apiKeyEnvVar;
+  if (sdk === 'cursor' || sdk === 'mock' || sdk === 'antigravity') return null;
+  if (apiKey?.startsWith('tok')) return ANTHROPIC_AUTH_TOKEN_ENV;
+  if (sdk === 'pi') return DEFAULT_PI_API_KEY_ENV_VAR;
+  return ANTHROPIC_API_KEY_ENV;
+}
+
 /**
- * Insert a test agent_configs row (credentials for Claude/Cursor/Pi in migrated schema).
+ * Insert a test agent_configs row (credentials for Claude/Cursor/Pi/Antigravity in migrated schema).
  */
 export async function insertTestAgentConfig(
   db,
@@ -20,16 +28,7 @@ export async function insertTestAgentConfig(
     apiUrl = null,
   } = {}
 ) {
-  const envVar =
-    apiKeyEnvVar !== undefined
-      ? apiKeyEnvVar
-      : sdk === 'cursor' || sdk === 'mock'
-        ? null
-        : apiKey?.startsWith('tok')
-          ? ANTHROPIC_AUTH_TOKEN_ENV
-          : sdk === 'pi'
-            ? DEFAULT_PI_API_KEY_ENV_VAR
-            : ANTHROPIC_API_KEY_ENV;
+  const envVar = defaultTestApiKeyEnvVar(sdk, apiKey, apiKeyEnvVar);
   const [id] = await db('agent_configs').insert({
     user_id: userId,
     label: label ?? accountAgentConfigLabel(sdk),

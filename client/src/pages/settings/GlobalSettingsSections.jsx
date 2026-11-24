@@ -317,11 +317,14 @@ export function AllRepositoriesSection() {
 
 export function UsersTab() {
   const { github } = useAuth();
+  const { currentUser, refetch: refetchCurrentUser } = useCurrentUser();
   const githubConfigured = Boolean(github?.configured);
   const [users, setUsers] = useState([]);
   const [inviteUsername, setInviteUsername] = useState('');
   const [inviteBusy, setInviteBusy] = useState(false);
   const [inviteResult, setInviteResult] = useState(null);
+  const [confirmTransferOwner, setConfirmTransferOwner] = useState(null);
+  const [transferBusy, setTransferBusy] = useState(false);
 
   const load = () => {
     usersService
@@ -357,6 +360,21 @@ export function UsersTab() {
       load();
     } catch (err) {
       toastError(admin ? 'Failed to grant admin' : 'Failed to remove admin', err);
+    }
+  };
+
+  const handleTransferOwnerConfirm = async () => {
+    if (!confirmTransferOwner) return;
+    setTransferBusy(true);
+    try {
+      await usersService.transferOwner({ id: confirmTransferOwner.id });
+      setConfirmTransferOwner(null);
+      load();
+      await refetchCurrentUser();
+    } catch (err) {
+      toastError('Failed to transfer ownership', err);
+    } finally {
+      setTransferBusy(false);
     }
   };
 
@@ -454,6 +472,13 @@ export function UsersTab() {
           {users.map((u) => {
             const lastIpLine = formatUserLastIpLine(u);
             const isLastAdmin = !!u.admin && adminCount <= 1;
+            const isOwner = !!u.owner;
+            let demoteTitle;
+            if (isOwner) demoteTitle = 'Cannot demote the owner';
+            else if (isLastAdmin) demoteTitle = 'Cannot demote the last admin';
+            let revokeTitle;
+            if (isOwner) revokeTitle = 'Cannot revoke the owner';
+            else if (isLastAdmin) revokeTitle = 'Cannot revoke the last admin';
             let accountStatus = 'pending';
             if (u.invite_pending) accountStatus = 'invited';
             else if (u.status === USER_STATUS_APPROVED) accountStatus = 'approved';
@@ -465,6 +490,9 @@ export function UsersTab() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 min-w-0">
                       <div className="text-sm text-fg font-medium truncate">{u.username}</div>
+                      {isOwner ? (
+                        <span className="text-xs text-accent font-medium shrink-0">Owner</span>
+                      ) : null}
                       {u.admin ? <span className="text-xs text-accent shrink-0">Admin</span> : null}
                     </div>
                     <div className="text-xs text-faint">
@@ -476,11 +504,20 @@ export function UsersTab() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                  {currentUser?.owner && !isOwner && accountStatus === 'approved' ? (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmTransferOwner(u)}
+                      className="text-xs text-fg-muted hover:text-fg"
+                    >
+                      Transfer ownership
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     onClick={() => handleSetAdmin(u.id, !u.admin)}
-                    disabled={isLastAdmin}
-                    title={isLastAdmin ? 'Cannot demote the last admin' : undefined}
+                    disabled={isLastAdmin || isOwner}
+                    title={demoteTitle}
                     className="text-xs text-fg-muted hover:text-fg disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {u.admin ? 'Remove admin' : 'Make admin'}
@@ -506,8 +543,8 @@ export function UsersTab() {
                       <button
                         type="button"
                         onClick={() => handleReject(u.id)}
-                        disabled={isLastAdmin}
-                        title={isLastAdmin ? 'Cannot revoke the last admin' : undefined}
+                        disabled={isLastAdmin || isOwner}
+                        title={revokeTitle}
                         className="text-xs text-danger hover:text-danger ml-1 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         Revoke
@@ -553,6 +590,40 @@ export function UsersTab() {
           })}
         </div>
       </SettingsSection>
+
+      {confirmTransferOwner && (
+        <Modal maxWidth="max-w-md" padding="p-5">
+          <ModalHeader
+            title="Transfer ownership?"
+            onClose={() => !transferBusy && setConfirmTransferOwner(null)}
+          />
+          <p className={`${TEXT_MUTED} text-sm mb-4`}>
+            Transfer instance ownership to{' '}
+            <strong className={TEXT_PRIMARY}>{confirmTransferOwner.username}</strong>? You will
+            remain an admin, and{' '}
+            <strong className={TEXT_PRIMARY}>{confirmTransferOwner.username}</strong> will become
+            the sole owner (and admin) with access to default system authentication.
+          </p>
+          <ModalActions className="flex justify-end gap-2 mt-4">
+            <button
+              type="button"
+              onClick={() => setConfirmTransferOwner(null)}
+              disabled={transferBusy}
+              className="px-4 py-2 text-sm text-secondary hover:text-fg"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleTransferOwnerConfirm}
+              disabled={transferBusy}
+              className={PRIMARY_BUTTON_SIZED}
+            >
+              {transferBusy ? 'Transferring…' : 'Transfer ownership'}
+            </button>
+          </ModalActions>
+        </Modal>
+      )}
     </div>
   );
 }

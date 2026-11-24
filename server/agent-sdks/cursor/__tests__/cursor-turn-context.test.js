@@ -153,12 +153,13 @@ describe('CursorAgentService turn context', () => {
   });
 
   it('resolves credentials from the message row agent_config_id', async () => {
+    const { encrypt } = await import('../../../lib/encrypt.js');
     await db('agent_configs').insert({
       id: 6,
       user_id: 1,
       label: 'Row config',
       sdk: 'cursor',
-      api_key_encrypted: null,
+      api_key_encrypted: encrypt('cursor-test-key'),
       api_key_env_var: null,
       created_at: db.fn.now(),
       updated_at: db.fn.now(),

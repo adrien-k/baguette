@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { KnexService } from '@feathersjs/knex';
 import { BadRequest, Forbidden, NotAuthenticated, NotFound } from 'feathers/errors';
-import { requireUser, requireAdmin, encryptFields, decryptFields } from './hooks.js';
+import { requireUser, requireAdmin, requireOwner, encryptFields, decryptFields } from './hooks.js';
 import { encrypt } from '../../lib/encrypt.js';
 import { MCP_HTTP_ENDPOINT } from '../../config.js';
 import { getGithubAppConfig } from '../../lib/instance-settings.js';
@@ -58,6 +58,9 @@ class UsersService extends KnexService {
     const db = this.options.Model;
     const user = await db('users').where({ id }).first();
     if (!user) throw new Error('User not found');
+    if (user.owner) {
+      throw new Forbidden('Cannot revoke the owner');
+    }
     if (!!user.admin && (await countAdmins(db)) <= 1) {
       throw new Forbidden('Cannot revoke the last admin');
     }
@@ -86,12 +89,39 @@ class UsersService extends KnexService {
     const user = await db('users').where({ id }).first();
     if (!user) throw new NotFound('User not found');
     const admin = !!(data && typeof data === 'object' && data.admin);
+    if (!admin && !!user.owner) {
+      throw new Forbidden('Cannot demote the owner');
+    }
     if (!admin && !!user.admin && (await countAdmins(db)) <= 1) {
       throw new Forbidden('Cannot demote the last admin');
     }
     await db('users')
       .where({ id })
       .update({ admin: admin ? 1 : 0 });
+    return db('users').where({ id }).first();
+  }
+
+  /**
+   * Transfer instance ownership from the current owner to another approved user.
+   * Ensures a single owner at all times and promotes the new owner to admin so
+   * they can manage or transfer ownership in Admin settings.
+   */
+  async transferOwner(data, params) {
+    const id = setAdminTargetId(data, params);
+    if (id == null) throw new BadRequest('User id is required');
+    const db = this.options.Model;
+    const target = await db('users').where({ id }).first();
+    if (!target) throw new NotFound('User not found');
+    if (resolveUserStatus(target) !== USER_STATUS_APPROVED) {
+      throw new BadRequest('Owner must be an approved user');
+    }
+    if (target.owner) {
+      return target;
+    }
+    await db.transaction(async (trx) => {
+      await trx('users').where({ owner: 1 }).update({ owner: 0 });
+      await trx('users').where({ id }).update({ owner: 1, admin: 1 });
+    });
     return db('users').where({ id }).first();
   }
 
@@ -268,6 +298,9 @@ async function countAdmins(db) {
 async function preventRemoveLastAdmin(context) {
   const db = context.service.options.Model;
   const user = await db('users').where({ id: context.id }).first();
+  if (user && !!user.owner) {
+    throw new Forbidden('Cannot delete the owner');
+  }
   if (user && !!user.admin && (await countAdmins(db)) <= 1) {
     throw new Forbidden('Cannot delete the last admin');
   }
@@ -302,6 +335,7 @@ function restrictGetToSelfOrAdmin(context) {
 async function stripPrivilegedFieldsFromExternalPatch(context) {
   if (!context.params?.provider) return context;
   delete context.data.admin;
+  delete context.data.owner;
   delete context.data.github_id;
   delete context.data.approved;
   return context;
@@ -399,6 +433,7 @@ function formatUserExternal(context) {
     user.utility_default_model = parseAgentDefaultModelJson(user.utility_default_model);
     user.default_auto_load_skills = parseAutoLoadSkillLabels(user.default_auto_load_skills);
     user.admin = !!user.admin;
+    user.owner = !!user.owner;
     return user;
   };
   if (Array.isArray(context.result)) {
@@ -483,6 +518,7 @@ const usersHooks = {
     approve: [requireAdmin],
     reject: [requireAdmin],
     setAdmin: [requireAdmin],
+    transferOwner: [requireOwner],
     invite: [requireAdmin],
     patch: [
       restrictPatchToSelf,
@@ -503,6 +539,7 @@ const usersHooks = {
     create: [decryptUserSecrets, formatUserExternal],
     patch: [decryptUserSecrets, formatUserExternal],
     setAdmin: [decryptUserSecrets, formatUserExternal],
+    transferOwner: [decryptUserSecrets, formatUserExternal],
     passkeyRegisterOptions: [passkeyRegisterOptionsAfter],
     passkeyRegisterVerify: [passkeyRegisterVerifyAfter],
   },
@@ -526,6 +563,7 @@ export function registerUsersService(app, path = 'users') {
       'approve',
       'reject',
       'setAdmin',
+      'transferOwner',
       'invite',
       'generateMcpToken',
       'revokeMcpToken',

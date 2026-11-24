@@ -20,7 +20,6 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { cursorSdkStateRoot, cursorWorkspaceRef } from './session-paths.js';
 import logger from '../../logger.js';
-import { disableExternal } from '../../services/feathers/hooks.js';
 import { METADATA_TIMEOUT_MS } from '../../services/session-metadata.js';
 import { resolveDataDirRelativePath, DATA_DIR } from '../../config.js';
 import { agentWorktreeCwd } from '../../services/subagent-worktree.js';
@@ -43,27 +42,27 @@ import {
   type CursorUsageLimit,
 } from './turn-error.ts';
 import { extractUserTextFromUserPayload } from '../../../shared/user-message-content.js';
-import { isSteerableUserMessage, requireTurnModelFromRow } from '../../../shared/turn-model.js';
-import { attachAppErrorHandler, handleAppError } from '../../lib/app-error-handler.js';
+import { isSteerableUserMessage } from '../../../shared/turn-model.js';
+import { attachAppErrorHandler } from '../../lib/app-error-handler.js';
 import { loadOwnedAgentConfigDecrypted } from '../../services/agent-context.js';
 import { requireAgentConfigId } from '../../lib/usage-snapshot.js';
 import { loadModelsForSdk } from '../../services/baguette-models-for-user.js';
 import { parseCursorModelPrefsJson } from '../../services/agent-preferences.js';
 import { resolveCursorAgentModelParams } from './model-params.js';
-import { getReviewAgentTurn, reviewTurnKey } from '../../services/review-agent-turn.js';
-import {
-  isDispatchableUserMessage,
-  parseUserRow,
-  rejectTurnMismatch,
-} from '../../services/agent-message-dispatch.js';
+import { getReviewAgentTurn } from '../../services/review-agent-turn.js';
 import { createMessageStreamWriter } from '../../services/message-writer-factory.ts';
-import { prepareAgentTurnStart } from '../../services/agent-turn-prelude.js';
-import { sessionMessageIdentity } from '../../services/feathers/message-create-fields.js';
 import type { MessageStreamWriter } from '../../../shared/message-stream-writer.ts';
-import type { SystemMessagePayload } from '../../../shared/session-messages.ts';
 import { CURSOR_AGENT_SDK_KEY, CURSOR_AGENT_SDK_LABEL, CURSOR_AGENT_SERVICE_PATH } from './meta.js';
 import { recordCursorTurnUsage } from './record-turn-usage.js';
-import { getSdkPlugin, registerAgentSdk } from '../registry.js';
+import {
+  handleAgentMessageCreated,
+  isAgentSessionResumable,
+  persistAgentStatusMessage,
+  registerInternalAgentService,
+  runAgentTurnLifecycle,
+  type BaseTurnSessionState,
+} from '../../services/agent-service-lifecycle.ts';
+import { getSdkPlugin } from '../registry.js';
 import type {
   AgentApp,
   AgentRow,
@@ -74,20 +73,9 @@ import type {
   TiedSessionLoopCompactionArgs,
 } from '../../services/feathers/agent-service-types.ts';
 import { directPromptTiedSessionLoopCompaction } from '../../services/feathers/loop-compaction.ts';
-import {
-  builderChatActiveKey,
-  getAgentById,
-  getPrimaryBuilderAgent,
-  getReviewerAgent,
-  resolveAgentRowForMessage,
-} from '../../services/agents-db.js';
+import { getAgentById } from '../../services/agents-db.js';
 import { patchAgentInternal } from '../../services/feathers/agents.service.js';
-import {
-  clearAgentActiveTurnId,
-  setAgentActiveTurnId,
-  setAgentTurnRunning,
-  setAgentTurnTerminal,
-} from '../../services/agent-turn-patch.js';
+import { setAgentTurnTerminal } from '../../services/agent-turn-patch.js';
 
 const CURSOR_CHEAP_MODEL_ID = 'claude-haiku-4-5';
 
@@ -121,17 +109,9 @@ type TurnUsage = Omit<ReturnType<typeof emptyTurnUsage>, 'model'> & {
 };
 
 /** Active Cursor run state for a session/chat key. */
-type CursorSessionState = {
-  isProcessing: boolean;
-  userId: number;
-  agentId?: number;
+type CursorSessionState = BaseTurnSessionState & {
   currentRun: Run | null;
   abortController?: AbortController;
-  writer?: MessageStreamWriter | null;
-  turnId?: number | null;
-  channel?: MessageChannel;
-  turnAgentConfigId?: number | null;
-  endTurnAwaitingUser?: boolean;
   /** Set by stopTurn so a subsequent CANCELLED is treated as a deliberate stop. */
   stopRequested?: boolean;
 };
@@ -360,73 +340,36 @@ ${body}`,
   }
 
   async handleMessageCreated(row: MessageRowLike) {
-    if (row.type !== 'user') return;
-    if (row.id != null && this._handlingMessageIds.has(row.id)) return;
-    if (row.id != null) this._handlingMessageIds.add(row.id);
-    try {
-      await this._handleMessageCreatedImpl(row);
-    } finally {
-      if (row.id != null) this._handlingMessageIds.delete(row.id);
-    }
-  }
-
-  async _handleMessageCreatedImpl(row: MessageRowLike) {
-    const parsed = parseUserRow(row);
-    if (!parsed || !isDispatchableUserMessage(parsed)) return;
-
-    const sessionId = row.session_id;
-    const session = (await (this.app.get('db') as DbLike)('sessions')
-      .where({ id: sessionId })
-      .first()) as AgentSessionRow | undefined;
-    if (!session || session.archived_at) return;
-
-    const agent = (await resolveAgentRowForMessage(this.app.get('db') as never, row as never)) as
-      AgentRow | undefined;
-    if (!agent) return;
-
-    const isReview = agent.agent_type === 'reviewer';
-    const channel: MessageChannel = isReview ? 'review' : 'chat';
-    const sdk = row.agent_sdk ?? agent.agent_sdk;
-    if (sdk !== 'cursor') return;
-
-    if (!isReview) {
-      if (session.status === 'archiving' || session.status === 'archived') return;
-      if (session.repo_full_name && !session.session_path) return;
-    }
-
-    const activeKey = isReview ? reviewTurnKey(agent.id) : builderChatActiveKey(agent);
-    const active = this._activeSessions.get(activeKey);
-    const activeTurnId = agent.active_turn_id;
-
-    if (active?.isProcessing) {
-      if (row.turn_id != null && activeTurnId != null && row.turn_id !== activeTurnId) {
-        await rejectTurnMismatch(this.app, {
-          session,
-          row,
+    await handleAgentMessageCreated({
+      app: this.app,
+      row,
+      expectedSdk: CURSOR_AGENT_SDK_KEY,
+      handlingMessageIds: this._handlingMessageIds,
+      getActiveTurn: (key) => this._activeSessions.get(key),
+      isActiveProcessing: (active) => Boolean(active.isProcessing),
+      onActiveTurnMessage: ({ parsed, active }) => {
+        if (row.force && active?.currentRun?.steer && isSteerableUserMessage(parsed)) {
+          const text = extractUserTextFromUserPayload(parsed);
+          if (text) active.currentRun.steer(text).catch(() => {});
+        }
+      },
+      onStartTurn: ({ session, agent, parsed, channel, activeKey }) => {
+        const meta = {
+          turnId: row.turn_id as number | null,
           channel,
-          activeTurnId,
+          activeKey,
+          agent,
+        };
+        attachAppErrorHandler(this.app, this._runTurn(session, parsed, row, meta), {
           userId: session.user_id,
+          sessionId: session.id,
+        }).catch((err) => {
+          logger.error(
+            { sessionId: session.id, err: (err as Error).message },
+            'cursor-agent turn failed'
+          );
         });
-        return;
-      }
-      if (row.force && active.currentRun?.steer && isSteerableUserMessage(parsed)) {
-        const text = extractUserTextFromUserPayload(parsed);
-        if (text) active.currentRun.steer(text).catch(() => {});
-      }
-      return;
-    }
-
-    const meta = {
-      turnId: row.turn_id as number | null,
-      channel,
-      activeKey,
-      agent,
-    };
-    attachAppErrorHandler(this.app, this._runTurn(session, parsed, row, meta), {
-      userId: session.user_id,
-      sessionId: session.id,
-    }).catch((err) => {
-      logger.error({ sessionId, err: (err as Error).message }, 'cursor-agent turn failed');
+      },
     });
   }
 
@@ -682,205 +625,120 @@ ${body}`,
       agent?: AgentRow;
     } = {}
   ): Promise<void> {
-    const sessionId = session.id;
-    const userId = session.user_id;
-    const channel: MessageChannel = meta.channel ?? 'chat';
-    const activeKey = meta.activeKey ?? sessionId;
-    const turnId = meta.turnId ?? null;
-    const agent = meta.agent;
-    if (!agent) return;
-    let turnFinishedOk = false;
-
-    if (turnId != null) {
-      await setAgentActiveTurnId(this.app, agent, userId, turnId);
-    }
-
-    const sessionState: CursorSessionState = {
-      isProcessing: true,
-      userId,
-      agentId: agent.id,
-      currentRun: null,
-      writer: null,
-      turnId,
-      channel,
-      turnAgentConfigId: null,
-    };
-    this._activeSessions.set(activeKey, sessionState);
-    const turnUsage = emptyTurnUsage() as TurnUsage;
-    let awaitingUser = false;
-    try {
-      // Required turn context, resolved here so failures follow the turn's error path:
-      // model and agent config come from the message row (params required on Cursor).
-      const turnModel = requireTurnModelFromRow(row, {
-        sdk: 'cursor',
-        requiresModelParamsOnTurn: getSdkPlugin('cursor')?.requiresModelParamsOnTurn === true,
-      });
-      const turnAgentConfigId = requireAgentConfigId(row.agent_config_id);
-      await prepareAgentTurnStart(this.app, session, agent, {
+    await runAgentTurnLifecycle<CursorSessionState, TurnUsage>({
+      app: this.app,
+      sdk: CURSOR_AGENT_SDK_KEY,
+      logPrefix: 'cursor-agent',
+      streamErrorLabel: 'Cursor',
+      session,
+      row,
+      meta,
+      activeSessions: this._activeSessions,
+      emitAppErrorEvenWithWriter: true,
+      createSessionState: ({ userId, agentId, turnId, channel }) => ({
+        isProcessing: true,
+        userId,
+        agentId,
+        currentRun: null,
+        writer: null,
+        turnId,
         channel,
-        agentSdk: CURSOR_AGENT_SDK_KEY,
-      });
-      const writer =
-        turnId != null
-          ? createMessageStreamWriter(this.app, {
-              sessionId,
-              userId,
-              turnId,
-              agentId: agent.id,
-              channel,
-              sessionPath: session.session_path,
-              agentType: 'cursor',
-              model: turnModel.model ?? '',
-              modelParams: turnModel.modelParams,
-              agentConfigId: turnAgentConfigId,
-            })
-          : null;
-      sessionState.writer = writer;
-      sessionState.turnAgentConfigId = turnAgentConfigId;
-      if (channel !== 'review') {
-        await setAgentTurnRunning(this.app, agent, userId);
-        await this.app.service('sessions').onTurnStart(sessionId);
-      }
-      const resumeAgentId = agent.cursor_agent_id;
-      let agentOptions;
-      if (channel === 'review') {
-        const extras = getReviewAgentTurn(this.app).peekTurnExtras(sessionId) ?? {};
-        const ctx = await getReviewAgentTurn(this.app).prepareReviewContext(session, agent, {
-          extraPrompt: extras.extraPrompt,
-          model: turnModel.model,
-          modelParams: turnModel.modelParams,
-          agentSdk: CURSOR_AGENT_SDK_KEY,
-        });
-        const rulesRoot = await this.writePromptRule(session, 'review', {
-          description: 'Baguette review rules (always applied)',
-          body: ctx.systemPrompt,
-        });
-        const plugin = getSdkPlugin(CURSOR_AGENT_SDK_KEY);
-        const reviewerTools = (plugin?.adaptTools ?? toolListToCursorCustomTools)(
-          buildReviewerAgentTools(session, this.app, ctx.turnAgent)
-        );
-        agentOptions = await this.buildAgentOptions(session, {
-          customTools: reviewerTools,
-          settingSources: [],
-          dirs: rulesRoot ? [rulesRoot] : [],
-          model: turnModel.model,
-          modelParams: turnModel.modelParams,
-          agentConfigId: turnAgentConfigId,
-          channel: 'review',
-        });
-      } else {
-        agentOptions = await this._sessionAgentOptions(
-          session,
-          turnModel,
-          turnAgentConfigId,
-          agent
-        );
-      }
-      const cursorAgent = await this.createOrResumeAgent(session, {
-        agentOptions,
-        resumeAgentId,
-        persistAgentId: (cursorId) =>
-          patchAgentInternal(this.app, agent.id, { cursor_agent_id: cursorId }, userId),
-      });
-      const userText = extractUserTextFromUserPayload(parsed);
-      const sendOptions: Record<string, unknown> = {};
-      if (session.plan_mode) {
-        sendOptions.mode = 'plan';
-      }
-
-      const run = await this._sendWithBusyRetry(cursorAgent, session, userText, sendOptions, agent);
-      sessionState.currentRun = run;
-
-      const { allFinishedOk } = await this._streamRunChainWithFollowUps(
-        session,
-        cursorAgent,
-        run,
-        turnUsage,
-        turnModel,
-        { activeKey, channel, writer },
+        turnAgentConfigId: null,
+      }),
+      execute: async ({
         agent,
-        (nextRun) => {
-          sessionState.currentRun = nextRun;
+        channel,
+        activeKey,
+        turnModel,
+        turnAgentConfigId,
+        writer,
+        sessionState,
+      }) => {
+        const sessionId = session.id;
+        const userId = session.user_id;
+        const turnUsage = emptyTurnUsage() as TurnUsage;
+        const resumeAgentId = agent.cursor_agent_id;
+        let agentOptions;
+        if (channel === 'review') {
+          const extras = getReviewAgentTurn(this.app).peekTurnExtras(sessionId) ?? {};
+          const ctx = await getReviewAgentTurn(this.app).prepareReviewContext(session, agent, {
+            extraPrompt: extras.extraPrompt,
+            model: turnModel.model,
+            modelParams: turnModel.modelParams,
+            agentSdk: CURSOR_AGENT_SDK_KEY,
+          });
+          const rulesRoot = await this.writePromptRule(session, 'review', {
+            description: 'Baguette review rules (always applied)',
+            body: ctx.systemPrompt,
+          });
+          const plugin = getSdkPlugin(CURSOR_AGENT_SDK_KEY);
+          const reviewerTools = (plugin?.adaptTools ?? toolListToCursorCustomTools)(
+            buildReviewerAgentTools(session, this.app, ctx.turnAgent)
+          );
+          agentOptions = await this.buildAgentOptions(session, {
+            customTools: reviewerTools,
+            settingSources: [],
+            dirs: rulesRoot ? [rulesRoot] : [],
+            model: turnModel.model,
+            modelParams: turnModel.modelParams,
+            agentConfigId: turnAgentConfigId,
+            channel: 'review',
+          });
+        } else {
+          agentOptions = await this._sessionAgentOptions(
+            session,
+            turnModel,
+            turnAgentConfigId,
+            agent
+          );
         }
-      );
+        const cursorAgent = await this.createOrResumeAgent(session, {
+          agentOptions,
+          resumeAgentId,
+          persistAgentId: (cursorId) =>
+            patchAgentInternal(this.app, agent.id, { cursor_agent_id: cursorId }, userId),
+        });
+        const userText = extractUserTextFromUserPayload(parsed);
 
-      awaitingUser = Boolean(sessionState.endTurnAwaitingUser);
+        const run = await this._sendWithBusyRetry(cursorAgent, session, userText, {}, agent);
+        sessionState.currentRun = run;
 
-      if (allFinishedOk) {
-        turnFinishedOk = true;
-        await this.recordTurnUsage(session, turnUsage, {
+        const { allFinishedOk } = await this._streamRunChainWithFollowUps(
+          session,
+          cursorAgent,
+          run,
+          turnUsage,
           turnModel,
-          patchSessionCost: true,
-          agentConfigId: sessionState.turnAgentConfigId,
-          agentId: agent.id,
-        }).catch((err) =>
-          logger.warn(
-            { sessionId, err: (err as Error).message },
-            'cursor-agent: failed to record turn usage'
-          )
-        );
-        if (!awaitingUser) {
-          if (channel === 'review') {
-            await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'completed', {
-              sdk: 'cursor',
-              turnUsage,
-              agent,
-              turnModel,
-            });
-          } else {
-            await setAgentTurnTerminal(this.app, agent, userId, 'completed');
+          { activeKey, channel, writer },
+          agent,
+          (nextRun) => {
+            sessionState.currentRun = nextRun;
           }
-        }
-      }
-    } catch (err) {
-      awaitingUser = Boolean(sessionState.endTurnAwaitingUser);
-      const thrownLimit = channel === 'review' ? null : cursorUsageLimit(err as Error);
-      if (thrownLimit) {
-        logger.warn({ sessionId, err: (err as Error).message }, 'Cursor usage limit reached');
+        );
+
+        return {
+          outcome: allFinishedOk ? 'completed' : 'none',
+          turnUsage,
+          reviewExtra: { agent },
+        };
+      },
+      recordTurnUsage: (usage, opts) => this.recordTurnUsage(session, usage, opts),
+      onError: async (err, { agent, userId, channel }) => {
+        const thrownLimit = channel === 'review' ? null : cursorUsageLimit(err as Error);
+        if (!thrownLimit) return false;
+        logger.warn(
+          { sessionId: session.id, err: (err as Error).message },
+          'Cursor usage limit reached'
+        );
         await this._handleCursorUsageLimit(session, userId, agent.id, thrownLimit).catch((e) =>
           logger.warn(
-            { sessionId, err: (e as Error).message },
+            { sessionId: session.id, err: (e as Error).message },
             'cursor-agent: usage limit handling failed'
           )
         );
-      } else if ((err as Error).name !== 'AbortError') {
-        handleAppError(this.app, err, { userId, sessionId });
-        logger.error({ sessionId, err: (err as Error).message }, 'Cursor session stream error');
-        try {
-          if (channel === 'review') {
-            await getReviewAgentTurn(this.app).onAgentTurnComplete(session, 'failed', {
-              sdk: 'cursor',
-              error_message: (err as Error).message,
-            });
-          } else {
-            await setAgentTurnTerminal(this.app, agent, userId, 'failed', {
-              error_message: (err as Error).message,
-            });
-          }
-        } catch {
-          // ignore secondary errors
-        }
-        this.app
-          .service('sessions')
-          .emit('app:error', { sessionId, message: (err as Error).message, user_id: userId });
-      } else if (awaitingUser) {
-        turnFinishedOk = true;
-      }
-    } finally {
-      await clearAgentActiveTurnId(this.app, agent, userId).catch(() => {});
-      this._activeSessions.delete(activeKey);
-    }
-
-    if (turnFinishedOk && channel !== 'review') {
-      try {
-        await this.app.service('sessions').onTurnComplete(sessionId, agent.id);
-      } catch (err) {
-        logger.warn(
-          { sessionId, err: (err as Error).message },
-          'cursor-agent: failed to send queued message'
-        );
-      }
-    }
+        return true;
+      },
+    });
   }
 
   /**
@@ -1223,30 +1081,15 @@ ${body}`,
     builderAgentId?: number | null,
     turnId?: number | null
   ) {
-    const db = this.app.get('db');
-    let agentRow;
-    if (channel === 'review') {
-      agentRow = await getReviewerAgent(db, sessionId);
-    } else if (builderAgentId != null) {
-      agentRow = await getAgentById(db, builderAgentId);
-    } else {
-      agentRow = await getPrimaryBuilderAgent(db, sessionId);
-    }
-    if (!agentRow) return;
-    const payload: SystemMessagePayload = { type: 'system', subtype: 'status', status: statusText };
-    await this.app.service('messages').create(
-      {
-        session_id: sessionId,
-        ...(turnId != null ? { turn_id: turnId } : {}),
-        type: 'system',
-        subtype: 'status',
-        message_json: JSON.stringify(payload),
-        ...sessionMessageIdentity(agentRow, {
-          agent_sdk: 'cursor',
-        }),
-      },
-      { provider: undefined, user: { id: userId } }
-    );
+    await persistAgentStatusMessage(this.app, {
+      sessionId,
+      userId,
+      statusText,
+      agentSdk: CURSOR_AGENT_SDK_KEY,
+      channel,
+      builderAgentId,
+      turnId,
+    });
   }
 
   async stopSession(sessionId: number) {
@@ -1346,17 +1189,9 @@ ${body}`,
 
   async isInterruptedSessionResumable(
     session: AgentSessionRow,
-    { channel = 'chat', agent: agentRow }: { channel?: MessageChannel; agent?: AgentRow } = {}
+    opts: { channel?: MessageChannel; agent?: AgentRow } = {}
   ): Promise<boolean> {
-    let agent = agentRow;
-    if (!agent) {
-      agent =
-        channel === 'review'
-          ? ((await getReviewerAgent(this.app.get('db'), session.id)) as AgentRow | undefined)
-          : ((await getPrimaryBuilderAgent(this.app.get('db'), session.id)) as
-              AgentRow | undefined);
-    }
-    return Boolean(agent?.cursor_agent_id);
+    return isAgentSessionResumable(this.app, session, 'cursor_agent_id', opts);
   }
 
   usesCompactionBeforeLoopRepeat(): boolean {
@@ -1365,9 +1200,9 @@ ${body}`,
 }
 
 export function registerCursorAgentService(app: AgentApp, path = CURSOR_AGENT_SERVICE_PATH) {
-  const service = new CursorAgentService();
-  service.setup(app);
-  app.use(path, service, {
+  registerInternalAgentService(app, {
+    service: new CursorAgentService(),
+    path,
     methods: [
       'stopSession',
       'stopTurn',
@@ -1383,13 +1218,7 @@ export function registerCursorAgentService(app: AgentApp, path = CURSOR_AGENT_SE
       'handleMessageCreated',
       'isInterruptedSessionResumable',
     ],
-  });
-  // Internal-only service: drives the agent SDK and must never be reachable over the
-  // HTTP transport (see PUBLIC_SERVICES for the declarative external allow-list).
-  app.service(path).hooks({ before: { all: [disableExternal] } });
-  registerAgentSdk(app, {
     key: CURSOR_AGENT_SDK_KEY,
     label: CURSOR_AGENT_SDK_LABEL,
-    servicePath: path,
   });
 }
