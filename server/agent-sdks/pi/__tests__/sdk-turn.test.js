@@ -239,4 +239,84 @@ describe('processPiSessionStream', () => {
       ]);
     });
   });
+
+  describe('context-overflow recovery', () => {
+    const makeWriter = () => ({
+      log: vi.fn(),
+      apply: vi.fn().mockResolvedValue(undefined),
+      finish: vi.fn().mockResolvedValue(undefined),
+    });
+
+    it('recovered overflow does not fail the turn (real incident replay)', async () => {
+      // Replays session 231 / agent 541: the provider rejected the request with
+      // a context-length error mid-run; Pi ran its overflow recovery (compaction
+      // + fresh retry run) which completed successfully in the same turn.
+      const writer = makeWriter();
+      const { finishedOk } = await processPiSessionStream({
+        writer,
+        subscribe: (listener) => {
+          listener({ type: 'agent_start' });
+          listener({ type: 'turn_start' });
+          listener({ type: 'turn_end', message: { role: 'assistant', stopReason: 'toolUse' } });
+          listener({ type: 'agent_end' });
+          listener({
+            type: 'turn_end',
+            message: {
+              role: 'assistant',
+              stopReason: 'error',
+              rawStopReason: 'failed',
+              errorMessage:
+                "server_error: Requested token count exceeds the model's maximum context length",
+            },
+          });
+          // Recovery: fresh run within the same Baguette turn.
+          listener({ type: 'agent_start' });
+          listener({ type: 'turn_start' });
+          listener({ type: 'turn_end', message: { role: 'assistant', stopReason: 'toolUse' } });
+          listener({
+            type: 'turn_end',
+            message: { role: 'assistant', stopReason: 'stop', content: [] },
+          });
+          listener({ type: 'agent_settled' });
+          listener({ type: 'agent_end' });
+          return () => {};
+        },
+        runPrompt: async () => {},
+      });
+      expect(finishedOk).toBe(true);
+      const verdicts = writer.apply.mock.calls
+        .map((call) => call[0]?.find((op) => op.op === 'turn_result'))
+        .filter(Boolean);
+      // The recovered run settles with an ok verdict, not the overflow error.
+      expect(verdicts).toEqual([
+        expect.objectContaining({
+          payload: expect.objectContaining({ status: 'ok', error_message: null }),
+        }),
+      ]);
+    });
+
+    it('overflow without successful recovery still records failure', async () => {
+      const writer = makeWriter();
+      const { finishedOk } = await processPiSessionStream({
+        writer,
+        subscribe: (listener) => {
+          listener({
+            type: 'turn_end',
+            message: {
+              role: 'assistant',
+              stopReason: 'error',
+              rawStopReason: 'failed',
+              errorMessage: 'server_error: context length exceeded',
+            },
+          });
+          listener({ type: 'agent_settled' });
+          return () => {};
+        },
+        runPrompt: async () => {},
+      });
+      expect(finishedOk).toBe(false);
+      const verdicts = writer.apply.mock.calls.filter((call) => call[0]?.[0]?.op === 'turn_result');
+      expect(verdicts.length).toBe(1);
+    });
+  });
 });

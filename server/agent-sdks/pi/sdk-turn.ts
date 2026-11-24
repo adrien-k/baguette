@@ -93,7 +93,15 @@ export async function processPiSessionStream(
         typeof message?.model === 'string' ? message.model : undefined
       );
       const turnError = assistantTurnErrorMessage(message);
-      if (turnError) markTurnFailed(turnError);
+      if (turnError) {
+        markTurnFailed(turnError);
+      } else {
+        // A successful turn after an error means Pi recovered (e.g. its
+        // context-overflow recovery retried on a fresh run and finished).
+        // The final outcome wins, so don't keep the sticky failure flag.
+        turnFailed = false;
+        lastError = null;
+      }
     }
 
     if (event.type === 'message_end') {
@@ -102,9 +110,17 @@ export async function processPiSessionStream(
       if (turnError) markTurnFailed(turnError);
     }
 
-    if (event.type === 'auto_retry_end' && event.success === false) {
-      turnFailed = true;
-      lastError = errorDetail(event.finalError ?? event.errorMessage, 'Turn failed after retries');
+    if (event.type === 'auto_retry_end') {
+      if (event.success === false) {
+        turnFailed = true;
+        lastError = errorDetail(
+          event.finalError ?? event.errorMessage,
+          'Turn failed after retries'
+        );
+      } else {
+        turnFailed = false;
+        lastError = null;
+      }
     }
 
     let ops = event.type === 'agent_settled' && turnFailed ? null : mapPiEvent(event);
