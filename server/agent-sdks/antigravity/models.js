@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import os from 'node:os';
 import * as cache from '../../lib/cache.js';
-import { AcpProcessClient } from './acp-client.ts';
+import { AcpProcessClient } from '../acp/acp-client.ts';
 import { buildAntigravityEnv, parseExtraEnvJson, resolveAgyBinary } from './env.js';
 
 const MODELS_CACHE_TTL = 60 * 60;
@@ -141,7 +141,7 @@ export function mapAcpSessionModels(sessionResult) {
  * Open an ephemeral `agy acp` session, authenticate with `gemini-api-key` if needed,
  * and close the session cleanly when done.
  *
- * @param {import('./acp-client.ts').AcpClientLike} client
+ * @param {import('../acp/acp-client.ts').AcpClientLike} client
  * @param {{ apiKey?: string | null, cwd?: string }} [opts]
  */
 export async function openEphemeralAcpSession(client, { apiKey = null, cwd = os.tmpdir() } = {}) {

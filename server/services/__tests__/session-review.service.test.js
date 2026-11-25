@@ -17,7 +17,6 @@ import { registerSessionIssuesService } from '../feathers/session-issues.service
 import { getReviewAgentTurn, registerReviewAgentTurn } from '../review-agent-turn.js';
 import { registerAgentsService } from '../feathers/agents.service.js';
 import { registerQueuedMessagesService } from '../feathers/queued-messages.service.js';
-import { registerClaudeAgentService } from '../../agent-sdks/claude/agent-service.ts';
 import { mountAgentConfigs } from '../../test-utils/agent-sdks.js';
 import { registerAgentSdk, registerSdkPlugin } from '../../agent-sdks/registry.js';
 import { claudeAgentSdkPlugin } from '../../agent-sdks/claude/index.js';
@@ -103,7 +102,7 @@ function makeApp(db) {
   registerMessagesService(app);
   registerQueuedMessagesService(app);
   mountAgentConfigs(app);
-  registerClaudeAgentService(app);
+  claudeAgentSdkPlugin.register(app);
   app.use(
     'cursor-agent',
     {

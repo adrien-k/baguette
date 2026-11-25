@@ -8,19 +8,41 @@ session paths, …), and the SDK's own tests.
 ```
 server/
 ├── agent-sdks/          ← everything agent-SDK specific lives here
+│   ├── driver.ts        AgentDriver contract (ACP-shaped)
+│   ├── generic-agent-service.ts  Single Feathers service shared by all SDKs
+│   ├── acp-mapping.ts   Unified ACP SessionUpdate → MessageOp + toolCallBuilders
+│   ├── acp/             AcpProcessDriver, AcpProcessClient, AcpMcpBridge, createAcpPlugin
 │   ├── registry.js      plugin store: registerSdkPlugin / getSdkPlugin / servicePathForSdk / registerAgentSdk
 │   ├── index.js         manifest: the only file that enumerates SDK plugins
 │   ├── __tests__/
 │   ├── claude/
 │   │   ├── meta.js          key/label/servicePath for this SDK
-│   │   ├── index.js         the plugin object (wired below)
+│   │   ├── index.js         the plugin object (registers GenericAgentService + ClaudeDriver)
+│   │   ├── driver.ts        ClaudeDriver implementing AgentDriver
 │   │   ├── adapt-tools.js   plugin.adaptTools — Claude MCP server wrapping
-│   │   ├── agent-service.ts Feathers service mounted on `claude-agent`
-│   │   ├── mapping.ts, sdk-turn.ts, connectivity.js, gateway-models.js, env.js, …
+│   │   ├── connectivity.js, gateway-models.js, env.js, …
 │   │   └── __tests__/       ← claude tests live here
-│   ├── cursor/ … ├── pi/ … ├── mock/ …
+│   ├── cursor/ … ├── pi/ … ├── antigravity/ … ├── mock/ …
 └── services/            ← cross-SDK code only (agents, messages, sessions, agent-configs, …)
 ```
+
+## Config-only ACP agents
+
+If the agent CLI supports the Agent Client Protocol (ACP) over stdio (e.g. `gemini --experimental-acp`, `opencode acp`, `agy acp`), use `createAcpPlugin` from `server/agent-sdks/acp/create-acp-plugin.ts`:
+
+```js
+import { createAcpPlugin } from './acp/create-acp-plugin.ts';
+
+export const myAcpPlugin = createAcpPlugin({
+  key: 'my-agent',
+  label: 'My Agent',
+  binary: 'my-agent',
+  args: ['acp'],
+  modelSelection: 'setModel',
+});
+```
+
+This wires `GenericAgentService`, `AcpProcessDriver`, `AcpMcpBridge`, and `acpToolCallBuilders` with zero service code. For native in-process SDKs, implement `AgentDriver` (`server/agent-sdks/driver.ts`) and mount it with `registerGenericAgentService` (`server/agent-sdks/generic-agent-service.ts`). See [docs/agent-driver-design.md](agent-driver-design.md) for the full driver hook breakdown.
 
 ## The plugin contract
 
@@ -95,8 +117,8 @@ across SDK folders except the manifest.
 
 ## Register a new SDK
 
-1. Create `server/agent-sdks/<sdk>/` with `meta.js`, `agent-service.ts`, helpers, `__tests__/`.
-2. Add the plugin object in `<sdk>/index.js` (capabilities + `adaptTools` + `credentialSchema`).
+1. Create `server/agent-sdks/<sdk>/` with `meta.js`, `driver.ts` (or use `createAcpPlugin`), helpers, `__tests__/`.
+2. Add the plugin object in `<sdk>/index.js` using `registerGenericAgentService` + `acpToolCallBuilders`.
 3. Add **two lines** in `agent-sdks/index.js`:
 
    ```js

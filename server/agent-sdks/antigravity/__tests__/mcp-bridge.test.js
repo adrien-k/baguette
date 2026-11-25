@@ -2,9 +2,9 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { z } from 'zod';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { startAntigravityMcpBridge } from '../mcp-bridge.ts';
+import { startAcpMcpBridge } from '../../acp/mcp-bridge.ts';
 
-describe('startAntigravityMcpBridge', () => {
+describe('startAcpMcpBridge', () => {
   let bridge = null;
   let client = null;
 
@@ -20,7 +20,7 @@ describe('startAntigravityMcpBridge', () => {
   });
 
   it('requires bearer authentication and returns 404 on unknown paths', async () => {
-    bridge = await startAntigravityMcpBridge([]);
+    bridge = await startAcpMcpBridge([]);
 
     const unauth = await fetch(bridge.url, { method: 'POST', body: '{}' });
     expect(unauth.status).toBe(401);
@@ -40,7 +40,7 @@ describe('startAntigravityMcpBridge', () => {
   });
 
   it('serves registered Baguette tools over Streamable HTTP and captures FIFO results', async () => {
-    bridge = await startAntigravityMcpBridge([
+    bridge = await startAcpMcpBridge([
       {
         name: 'CreateTodo',
         description: 'Create a todo item',

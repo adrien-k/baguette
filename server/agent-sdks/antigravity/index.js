@@ -1,9 +1,10 @@
 import { listAntigravityModels, clearAntigravityModelsCache } from './models.js';
 import { runAntigravityConnectivityTest } from './connectivity.js';
 import { resolveAntigravityAgentModelParams } from './model-params.js';
-import { antigravityBuildToolCallComplete, antigravityBuildToolCallStart } from './mapping.ts';
-import { registerAntigravityAgentService } from './agent-service.ts';
+import { acpToolCallBuilders } from '../acp-mapping.ts';
+import { registerGenericAgentService } from '../generic-agent-service.ts';
 import { toolListToAntigravityMcpTools } from './adapt-tools.js';
+import { createAntigravityDriver } from './driver.ts';
 import {
   ANTIGRAVITY_AGENT_SDK_KEY,
   ANTIGRAVITY_AGENT_SDK_LABEL,
@@ -12,7 +13,7 @@ import {
 
 /**
  * Antigravity agent SDK plugin (contract: `agent-sdks/registry.js`).
- * Driven via `agy acp` and `@agentclientprotocol/sdk`.
+ * Driven via `agy acp` and `AcpProcessDriver` + `GenericAgentService`.
  */
 export const antigravityAgentSdkPlugin = {
   key: ANTIGRAVITY_AGENT_SDK_KEY,
@@ -36,7 +37,18 @@ export const antigravityAgentSdkPlugin = {
   },
 
   register(app, { servicePath } = {}) {
-    registerAntigravityAgentService(app, servicePath);
+    registerGenericAgentService(
+      app,
+      {
+        key: ANTIGRAVITY_AGENT_SDK_KEY,
+        label: ANTIGRAVITY_AGENT_SDK_LABEL,
+        servicePath: ANTIGRAVITY_AGENT_SERVICE_PATH,
+        storedSessionIdColumn: 'antigravity_session_id',
+        registerCompactionHook: true,
+        createDriver: ({ app: svcApp, config }) => createAntigravityDriver({ app: svcApp, config }),
+      },
+      servicePath
+    );
   },
 
   clearModelsCache(config) {
@@ -53,10 +65,7 @@ export const antigravityAgentSdkPlugin = {
   },
 
   toolCallBuilders() {
-    return {
-      buildToolCallStart: antigravityBuildToolCallStart,
-      buildToolCallComplete: antigravityBuildToolCallComplete,
-    };
+    return acpToolCallBuilders();
   },
 
   resolveModelParams({ models, modelId }) {

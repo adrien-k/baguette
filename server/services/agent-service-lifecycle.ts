@@ -450,7 +450,11 @@ export async function runAgentTurnLifecycle<TState extends BaseTurnSessionState,
       }).catch((err: Error) =>
         logger.warn({ sessionId, err: err.message }, `${logPrefix}: failed to record turn usage`)
       );
-      if (!awaitingUser) {
+      if (awaitingUser) {
+        if (channel !== 'review') {
+          await setAgentTurnTerminal(app, agent, userId, 'approval');
+        }
+      } else {
         if (channel === 'review') {
           await getReviewAgentTurn(app).onAgentTurnComplete(session, 'completed', {
             sdk,

@@ -1,6 +1,6 @@
 import { isMockAgentSdkEnabled, listMockModels } from '../../../shared/mock-agent-sdk.js';
 import { BadRequest } from 'feathers/errors';
-import { claudeBuildToolCallComplete, claudeBuildToolCallStart } from '../claude/mapping.ts';
+import { acpToolCallBuilders } from '../acp-mapping.ts';
 import { registerMockAgentService } from './agent-service.ts';
 import { MOCK_AGENT_SDK, MOCK_AGENT_SDK_LABEL, MOCK_AGENT_SERVICE_PATH } from './meta.js';
 
@@ -50,10 +50,7 @@ export const mockAgentSdkPlugin = {
   },
 
   toolCallBuilders() {
-    return {
-      buildToolCallStart: claudeBuildToolCallStart,
-      buildToolCallComplete: claudeBuildToolCallComplete,
-    };
+    return acpToolCallBuilders();
   },
 
   resolveModelParams() {

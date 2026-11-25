@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AntigravityAgentService, toAcpMcpServers } from '../agent-service.ts';
+import { GenericAgentService } from '../../generic-agent-service.ts';
+import { toAcpMcpServers } from '../../acp/acp-process-driver.ts';
+import { createAntigravityDriver } from '../driver.ts';
+import {
+  ANTIGRAVITY_AGENT_SDK_KEY,
+  ANTIGRAVITY_AGENT_SDK_LABEL,
+  ANTIGRAVITY_AGENT_SERVICE_PATH,
+} from '../meta.js';
 
 function makeFakeAcpClient(overrides = {}) {
   const listeners = new Set();
@@ -31,10 +38,6 @@ function makeFakeAcpClient(overrides = {}) {
           { modelId: 'gemini-3.8-flash-medium', name: 'Gemini 3.8 Flash (Medium)' },
         ],
         currentModelId: 'gemini-3.8-flash-medium',
-      },
-      modes: {
-        availableModes: [{ id: 'code' }, { id: 'plan' }],
-        currentModeId: 'code',
       },
     }),
     resumeSession: vi.fn().mockResolvedValue({
@@ -127,15 +130,21 @@ function makeApp(overrides = {}) {
   };
 }
 
-function makeWriter() {
-  return {
-    log: vi.fn(),
-    apply: vi.fn().mockResolvedValue(undefined),
-    finish: vi.fn().mockResolvedValue(undefined),
-  };
+function makeAntigravityService(app, driverOverrides = {}) {
+  const service = new GenericAgentService({
+    key: ANTIGRAVITY_AGENT_SDK_KEY,
+    label: ANTIGRAVITY_AGENT_SDK_LABEL,
+    servicePath: ANTIGRAVITY_AGENT_SERVICE_PATH,
+    storedSessionIdColumn: 'antigravity_session_id',
+    registerCompactionHook: true,
+    createDriver: ({ app: svcApp, config }) =>
+      createAntigravityDriver({ app: svcApp, config }, driverOverrides),
+  });
+  service.setup(app);
+  return service;
 }
 
-describe('AntigravityAgentService', () => {
+describe('Antigravity on AcpProcessDriver + GenericAgentService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -173,92 +182,108 @@ describe('AntigravityAgentService', () => {
     ]);
   });
 
-  it('runTurn opens session, sets model variant + plan mode, streams turn, and cleans up', async () => {
+  it('driver opens session, sets model variant, streams prompt, and cleans up', async () => {
     const client = makeFakeAcpClient();
     const bridge = makeFakeBridge();
-    const service = new AntigravityAgentService({
-      spawnClient: () => client,
-      startMcpBridge: vi.fn(async () => bridge),
-    });
-    service.setup(makeApp());
+    const app = makeApp();
+    const driver = createAntigravityDriver(
+      { app, config: null },
+      {
+        spawnClient: () => client,
+        startMcpBridge: vi.fn(async () => bridge),
+      }
+    );
 
-    const persistId = vi.fn();
-    const writer = makeWriter();
-    const result = await service.runTurn({
+    await driver.start({
+      app,
+      sdk: 'antigravity',
       session: { id: 1, user_id: 2 },
-      userText: 'Build feature X',
-      writer,
-      persistAntigravitySessionId: persistId,
-      agentOptions: {
-        cwd: '/tmp/wt',
-        binary: '/usr/bin/agy',
-        env: {},
-        apiKey: null,
-        model: 'gemini-3.8-flash',
-        modelParams: JSON.stringify([{ id: 'reasoning', value: 'low' }]),
-        systemPromptAppend: 'Follow rules.',
-        userMcpServers: [],
-        baguetteTools: [{ name: 'CreateTodo', schema: {}, handler: vi.fn() }],
-        storedAntigravitySessionId: null,
-        channel: 'chat',
+      agent: {
+        id: 11,
+        session_id: 1,
+        name: 'builder',
+        agent_type: 'builder',
+        is_primary: 1,
+        status: 'idle',
       },
+      channel: 'chat',
+      userId: 2,
+      turnId: 1,
+      turnModel: { model: 'gemini-3.8-flash', modelParams: null },
+      turnAgentConfigId: 5,
+      cwd: '/tmp/wt',
+      baguetteTools: [{ name: 'CreateTodo', description: '', schema: {}, handler: vi.fn() }],
     });
 
-    expect(result.outcome).toBe('completed');
-    expect(result.turnUsage?.total_tokens).toBe(15);
+    const opened = await driver.newSession({
+      cwd: '/tmp/wt',
+      systemPromptAppend: 'Follow rules.',
+      model: 'gemini-3.8-flash',
+      modelParams: JSON.stringify([{ id: 'reasoning', value: 'low' }]),
+    });
+
+    const result = await driver.prompt(opened.sessionId, 'Build feature X');
+    await driver.closeSession(opened.sessionId);
+    await driver.close();
+
+    expect(result.stopReason).toBe('end_turn');
+    expect(result.usage?.total_tokens).toBe(15);
     expect(client.initialize).toHaveBeenCalled();
     expect(client.newSession).toHaveBeenCalledWith({
       cwd: '/tmp/wt',
       mcpServers: [bridge.acpServerConfig],
       systemPromptAppend: 'Follow rules.',
     });
-    expect(persistId).toHaveBeenCalledWith('acp-new-1');
     expect(client.setModel).toHaveBeenCalledWith('acp-new-1', 'gemini-3.8-flash-low');
     expect(client.closeSession).toHaveBeenCalledWith('acp-new-1');
     expect(client.close).toHaveBeenCalled();
     expect(bridge.close).toHaveBeenCalled();
   });
 
-  it('runTurn resumes stored session and falls back to newSession on stale resume error', async () => {
+  it('driver resumes stored session and falls back to newSession on stale resume error', async () => {
     const client = makeFakeAcpClient({
       resumeSession: vi.fn().mockRejectedValue(new Error('Session not found')),
     });
-    const service = new AntigravityAgentService({
-      spawnClient: () => client,
-      startMcpBridge: vi.fn(async () => makeFakeBridge()),
-    });
-    service.setup(makeApp());
+    const app = makeApp();
+    const driver = createAntigravityDriver(
+      { app, config: null },
+      {
+        spawnClient: () => client,
+        startMcpBridge: vi.fn(async () => makeFakeBridge()),
+      }
+    );
 
-    const persistId = vi.fn();
-    const res = await service.runTurn({
+    await driver.start({
+      app,
+      sdk: 'antigravity',
       session: { id: 1, user_id: 2 },
-      userText: 'Continue',
-      writer: makeWriter(),
-      persistAntigravitySessionId: persistId,
-      agentOptions: {
-        cwd: '/tmp/wt',
-        binary: 'agy',
-        env: {},
-        apiKey: null,
-        model: null,
-        modelParams: null,
-        systemPromptAppend: null,
-        userMcpServers: [],
-        baguetteTools: [],
-        storedAntigravitySessionId: 'stale-acp-id',
-        channel: 'chat',
+      agent: {
+        id: 11,
+        session_id: 1,
+        name: 'builder',
+        agent_type: 'builder',
+        is_primary: 1,
+        status: 'idle',
       },
+      channel: 'chat',
+      userId: 2,
+      turnId: 1,
+      turnModel: { model: null, modelParams: null },
+      turnAgentConfigId: 5,
+      cwd: '/tmp/wt',
+      baguetteTools: [],
     });
 
-    expect(res.outcome).toBe('completed');
+    const opened = await driver.resume('stale-acp-id', { cwd: '/tmp/wt' });
     expect(client.resumeSession).toHaveBeenCalledWith({
       sessionId: 'stale-acp-id',
       cwd: '/tmp/wt',
       mcpServers: [],
-      systemPromptAppend: null,
+      systemPromptAppend: undefined,
     });
     expect(client.newSession).toHaveBeenCalled();
-    expect(persistId).toHaveBeenCalledWith('acp-new-1');
+    expect(opened.sessionId).toBe('acp-new-1');
+    await driver.close();
   });
 
   it('completeText spawns ephemeral session, applies model, collects chunks, and closes cleanly', async () => {
@@ -274,32 +299,36 @@ describe('AntigravityAgentService', () => {
         return { stopReason: 'end_turn' };
       }),
     });
-    const service = new AntigravityAgentService({ spawnClient: () => client });
-    service.setup(makeApp());
+    const service = makeAntigravityService(makeApp(), { spawnClient: () => client });
 
-    const text = await service.completeText('What is 6*7?', {
+    const text = await service.completeText({
       userId: 2,
       agentConfigId: 5,
+      prompt: 'What is 6*7?',
       model: 'gemini-3.8-flash',
     });
 
     expect(text).toBe('42');
-    expect(client.setConfigOption).toHaveBeenCalledWith('acp-new-1', 'model', 'gemini-3.8-flash');
+    expect(client.setModel).toHaveBeenCalledWith('acp-new-1', 'gemini-3.8-flash');
     expect(client.closeSession).toHaveBeenCalledWith('acp-new-1');
     expect(client.close).toHaveBeenCalled();
   });
 
-  it('stopTurn aborts signal, cancels ACP session, and drops active session state', async () => {
-    const client = makeFakeAcpClient();
-    const service = new AntigravityAgentService({ spawnClient: () => client });
-    service.setup(makeApp());
+  it('stopTurn aborts signal, cancels driver session, and drops active session state', async () => {
+    const driver = { cancel: vi.fn().mockResolvedValue(undefined) };
+    const service = makeAntigravityService(makeApp());
 
     const controller = new AbortController();
     service._activeSessions.set(1, {
       isProcessing: true,
       userId: 2,
-      acpClient: client,
-      acpSessionId: 'acp-live-1',
+      agentId: 11,
+      writer: null,
+      turnId: 1,
+      channel: 'chat',
+      turnAgentConfigId: 5,
+      driver,
+      driverSessionId: 'acp-live-1',
       abortController: controller,
     });
 
@@ -308,13 +337,12 @@ describe('AntigravityAgentService', () => {
 
     await service.stopTurn(1);
     expect(controller.signal.aborted).toBe(true);
-    expect(client.cancel).toHaveBeenCalledWith('acp-live-1');
+    expect(driver.cancel).toHaveBeenCalledWith('acp-live-1');
     expect(service.getActiveSession(1)).toBeNull();
   });
 
   it('isInterruptedSessionResumable checks agent antigravity_session_id', async () => {
-    const service = new AntigravityAgentService();
-    service.setup(makeApp());
+    const service = makeAntigravityService(makeApp());
     await expect(
       service.isInterruptedSessionResumable(
         { id: 1, user_id: 2 },

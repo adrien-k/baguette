@@ -2,8 +2,10 @@ import { listClaudeModels } from './gateway-models.js';
 import { clearClaudeModelsCache } from './anthropic-models.js';
 import { runClaudeConnectivityTest } from './connectivity.js';
 import { resolveClaudeAgentModelParams } from './model-params.js';
-import { claudeToolCallBuilders } from './tool-call-builders.ts';
-import { registerClaudeAgentService } from './agent-service.ts';
+import { acpToolCallBuilders } from '../acp-mapping.ts';
+import { registerGenericAgentService } from '../generic-agent-service.ts';
+import { ClaudeDriver } from './driver.ts';
+import { claudeTiedSessionLoopCompaction } from './loop-compaction.ts';
 import { parseCursorModelPrefsJson } from '../../../shared/cursor-model-prefs.js';
 import { normalizeClaudeCodePickerModelId } from '../../../shared/claude-code-model-list.js';
 import {
@@ -45,7 +47,21 @@ export const claudeAgentSdkPlugin = {
   },
 
   register(app, { servicePath } = {}) {
-    registerClaudeAgentService(app, servicePath);
+    registerGenericAgentService(
+      app,
+      {
+        key: CLAUDE_AGENT_SDK_KEY,
+        label: CLAUDE_AGENT_SDK_LABEL,
+        servicePath: CLAUDE_AGENT_SERVICE_PATH,
+        storedSessionIdColumn: 'claude_session_id',
+        supportsCompactionBeforeLoopRepeat: true,
+        registerCompactionHook: false,
+        emitAppErrorEvenWithWriter: true,
+        compactBeforeLoop: (svcApp, args) => claudeTiedSessionLoopCompaction(svcApp, args),
+        createDriver: ({ app: svcApp, config }) => new ClaudeDriver(svcApp, config),
+      },
+      servicePath
+    );
   },
 
   listModels(config, { refresh = false, user = null } = {}) {
@@ -61,7 +77,7 @@ export const claudeAgentSdkPlugin = {
   },
 
   toolCallBuilders() {
-    return claudeToolCallBuilders();
+    return acpToolCallBuilders();
   },
 
   resolveModelParams({ models, modelId, user }) {

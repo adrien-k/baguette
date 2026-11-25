@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { ClaudeAgentService } from '../agent-service.ts';
+import { ClaudeDriver } from '../driver.ts';
 import {
   CLAUDE_SDK_SUBAGENT_DENIED_MESSAGE,
   claudeSdkSubagentDenyResult,
@@ -25,8 +25,8 @@ describe('reject-sdk-subagent', () => {
   });
 
   it('createCanUseTool denies SDK subagent tools', async () => {
-    const service = new ClaudeAgentService();
-    const canUseTool = service.createCanUseTool();
+    const driver = new ClaudeDriver({}, null);
+    const canUseTool = driver.createCanUseTool();
 
     const denied = await canUseTool('Agent', { prompt: 'explore' });
     expect(denied).toEqual({

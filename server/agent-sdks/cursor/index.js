@@ -2,12 +2,9 @@ import { refreshCursorModels, listCursorModels, clearCursorModelsCache } from '.
 import { runCursorConnectivityTest } from './connectivity.js';
 import { resolveCursorModelParams } from '../../../shared/model-variants.js';
 import { parseCursorModelPrefsJson } from '../../../shared/cursor-model-prefs.js';
-import {
-  cursorBuildToolCallComplete,
-  cursorBuildToolCallProgress,
-  cursorBuildToolCallStart,
-} from './mapping.ts';
-import { registerCursorAgentService } from './agent-service.ts';
+import { acpToolCallBuilders } from '../acp-mapping.ts';
+import { registerGenericAgentService } from '../generic-agent-service.ts';
+import { CursorDriver } from './driver.ts';
 import { toolListToCursorCustomTools } from './adapt-tools.js';
 import { fetchCursorSubscriptionLimits } from './subscription-limits.js';
 import { usageLabelExtras } from './usage-label-extras.js';
@@ -38,7 +35,19 @@ export const cursorAgentSdkPlugin = {
   },
 
   register(app, { servicePath } = {}) {
-    registerCursorAgentService(app, servicePath);
+    registerGenericAgentService(
+      app,
+      {
+        key: CURSOR_AGENT_SDK_KEY,
+        label: CURSOR_AGENT_SDK_LABEL,
+        servicePath: CURSOR_AGENT_SERVICE_PATH,
+        storedSessionIdColumn: 'cursor_agent_id',
+        registerCompactionHook: false,
+        emitAppErrorEvenWithWriter: true,
+        createDriver: ({ app: svcApp, config }) => new CursorDriver(svcApp, config),
+      },
+      servicePath
+    );
   },
 
   clearModelsCache() {
@@ -57,11 +66,7 @@ export const cursorAgentSdkPlugin = {
   },
 
   toolCallBuilders() {
-    return {
-      buildToolCallStart: cursorBuildToolCallStart,
-      buildToolCallComplete: cursorBuildToolCallComplete,
-      buildToolCallProgress: cursorBuildToolCallProgress,
-    };
+    return acpToolCallBuilders();
   },
 
   resolveModelParams({ models, modelId, user }) {

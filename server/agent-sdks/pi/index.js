@@ -1,8 +1,9 @@
 import { listPiModels, clearPiModelsCache } from './models.js';
 import { runPiConnectivityTest } from './connectivity.js';
 import { resolvePiAgentModelParams } from './model-params.js';
-import { piBuildToolCallComplete, piBuildToolCallStart } from './mapping.ts';
-import { registerPiAgentService } from './agent-service.ts';
+import { acpToolCallBuilders } from '../acp-mapping.ts';
+import { registerGenericAgentService } from '../generic-agent-service.ts';
+import { PiDriver } from './driver.ts';
 import { PI_API_KEY_ENV_VARS } from '../../../shared/agent-config-api-key-env.js';
 import {
   DEFAULT_PI_API_KEY_ENV_VAR,
@@ -37,7 +38,18 @@ export const piAgentSdkPlugin = {
   },
 
   register(app, { servicePath } = {}) {
-    registerPiAgentService(app, servicePath);
+    registerGenericAgentService(
+      app,
+      {
+        key: PI_AGENT_SDK_KEY,
+        label: PI_AGENT_SDK_LABEL,
+        servicePath: PI_AGENT_SERVICE_PATH,
+        storedSessionIdColumn: 'pi_session_id',
+        registerCompactionHook: true,
+        createDriver: ({ app: svcApp, config }) => new PiDriver(svcApp, config),
+      },
+      servicePath
+    );
   },
 
   clearModelsCache(config) {
@@ -58,10 +70,7 @@ export const piAgentSdkPlugin = {
   },
 
   toolCallBuilders() {
-    return {
-      buildToolCallStart: piBuildToolCallStart,
-      buildToolCallComplete: piBuildToolCallComplete,
-    };
+    return acpToolCallBuilders();
   },
 
   resolveModelParams({ models, modelId }) {

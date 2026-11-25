@@ -12,10 +12,6 @@ import { resolveDataDirRelativePath } from '../../config.js';
 
 vi.spyOn(Task.prototype, 'start').mockReturnValue(undefined);
 
-vi.mock('../../agent-sdks/claude/agent-service.ts', () => ({
-  getSessionEnv: vi.fn().mockResolvedValue({}),
-}));
-
 vi.mock('../baguette-config.js', async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, loadBaguetteConfig: vi.fn().mockResolvedValue(null) };

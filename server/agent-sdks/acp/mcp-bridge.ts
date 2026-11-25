@@ -5,7 +5,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import type { ZodRawShapeCompat } from '@modelcontextprotocol/sdk/server/zod-compat.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 
-export type AntigravityMcpToolDescriptor = {
+export type AcpMcpToolDescriptor = {
   name: string;
   description?: string;
   schema?: ZodRawShapeCompat;
@@ -17,7 +17,7 @@ export type CapturedMcpToolResult = {
   isError: boolean;
 };
 
-export type AntigravityMcpBridge = {
+export type AcpMcpBridge = {
   url: string;
   token: string;
   acpServerConfig: {
@@ -71,14 +71,14 @@ async function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
 
 /**
  * Start a loopback-only authenticated Streamable HTTP MCP server exposing
- * Baguette's per-turn tools to `agy acp`. Captures tool outputs in a per-tool
- * FIFO queue because Antigravity ACP `tool_call_update` omits `rawOutput` for
- * external MCP tool calls.
+ * Baguette's per-turn tools to an ACP subprocess. Captures tool outputs in a
+ * per-tool FIFO queue so drivers can backfill `tool_call_update` `rawOutput`
+ * when the subprocess omits it for external MCP tool calls.
  */
-export async function startAntigravityMcpBridge(
-  tools: AntigravityMcpToolDescriptor[],
+export async function startAcpMcpBridge(
+  tools: AcpMcpToolDescriptor[],
   { serverName = 'baguette' }: { serverName?: string } = {}
-): Promise<AntigravityMcpBridge> {
+): Promise<AcpMcpBridge> {
   const token = crypto.randomBytes(32).toString('hex');
   const recentResultsByTool = new Map<string, CapturedMcpToolResult[]>();
 

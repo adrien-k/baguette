@@ -18,7 +18,7 @@ vi.mock('../../db.js', () => ({ default: vi.fn() }));
 import { createFeathersApp } from '../../feathers.js';
 import { toAbortableNodeHandler } from '../../lib/feathers-node-handler.js';
 import { createFeathersCookieAuth } from '../../lib/feathers-http-auth.js';
-import { registerClaudeAgentService } from '../../agent-sdks/claude/agent-service.ts';
+import { claudeAgentSdkPlugin } from '../../agent-sdks/claude/index.js';
 import { CLAUDE_AGENT_SERVICE_PATH } from '../../agent-sdks/claude/meta.js';
 
 /** Same middleware stack as server/index.js (minus Express-specific layers). */
@@ -64,7 +64,7 @@ function post(port, { path, method, body, headers = {} }) {
 
 function appWithAgentService() {
   const app = createFeathersApp();
-  registerClaudeAgentService(app);
+  claudeAgentSdkPlugin.register(app);
   return app;
 }
 

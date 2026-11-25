@@ -1,15 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { ok } from '../../server/services/baguette-mcp-tool-result.js';
 import {
-  claudeBuildToolCallComplete,
-  claudeBuildToolCallStart,
-} from '../../server/agent-sdks/claude/mapping.ts';
+  acpBuildToolCallComplete,
+  acpBuildToolCallStart,
+} from '../../server/agent-sdks/acp-mapping.ts';
 import { parseMcpJsonResult } from '../parse-mcp-json-result.js';
 
 describe('parseMcpJsonResult', () => {
-  it('unwraps GitPush approval flags from ok() via claudeBuildToolCallComplete', () => {
-    const start = claudeBuildToolCallStart('p1', 'mcp__baguette__GitPush', { tool: 'GitPush' });
-    const done = claudeBuildToolCallComplete(start, {
+  it('unwraps GitPush approval flags from ok() via acpBuildToolCallComplete', () => {
+    const start = acpBuildToolCallStart('p1', 'mcp__baguette__GitPush', { tool: 'GitPush' });
+    const done = acpBuildToolCallComplete(start, {
       rawResult: ok({ approval_requested: true, request_id: 'req-1' }),
     });
     const parsed = parseMcpJsonResult(done.result);

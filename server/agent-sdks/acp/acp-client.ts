@@ -43,6 +43,7 @@ export type AcpSpawnOptions = {
   cwd?: string;
   env?: Record<string, string | undefined>;
   spawnImpl?: typeof spawn;
+  systemPromptMetaKey?: string;
 };
 
 export interface AcpClientLike {
@@ -87,12 +88,13 @@ function selectPermissionOption(options: PermissionOption[]): PermissionOption |
 }
 
 function buildSystemPromptMeta(
-  systemPromptAppend?: string | null
+  systemPromptAppend: string | null | undefined,
+  metaKey = 'antigravity'
 ): Record<string, unknown> | undefined {
   const trimmed = typeof systemPromptAppend === 'string' ? systemPromptAppend.trim() : '';
   if (!trimmed) return undefined;
   return {
-    antigravity: {
+    [metaKey]: {
       systemPrompt: {
         append: trimmed,
       },
@@ -101,20 +103,22 @@ function buildSystemPromptMeta(
 }
 
 /**
- * Stdio ACP client wrapping a spawned `agy acp` subprocess via `@agentclientprotocol/sdk`.
+ * Generic stdio ACP client wrapping a spawned ACP subprocess via `@agentclientprotocol/sdk`.
  */
 export class AcpProcessClient implements AcpClientLike {
   private readonly child: ChildProcessWithoutNullStreams;
   private readonly connection: ClientConnection;
   private readonly sessionUpdateListeners = new Set<(notification: SessionNotification) => void>();
+  private readonly systemPromptMetaKey: string;
   private stderrBuffer = '';
   private exited = false;
   private spawnError: Error | null = null;
   private closed = false;
   private closePromise: Promise<void> | null = null;
 
-  private constructor(child: ChildProcessWithoutNullStreams) {
+  private constructor(child: ChildProcessWithoutNullStreams, systemPromptMetaKey = 'antigravity') {
     this.child = child;
+    this.systemPromptMetaKey = systemPromptMetaKey;
 
     child.stderr.on('data', (chunk: Buffer | string) => {
       const text = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
@@ -133,7 +137,7 @@ export class AcpProcessClient implements AcpClientLike {
         const detail = signal ? `signal ${signal}` : `exit code ${code ?? 'unknown'}`;
         const tail = this.stderrTail.trim();
         const suffix = tail ? `: ${tail}` : '';
-        this.connection.close(new Error(`Antigravity ACP process exited (${detail})${suffix}`));
+        this.connection.close(new Error(`ACP process exited (${detail})${suffix}`));
       }
     });
 
@@ -178,7 +182,7 @@ export class AcpProcessClient implements AcpClientLike {
       env: options.env ?? process.env,
       stdio: ['pipe', 'pipe', 'pipe'],
     }) as ChildProcessWithoutNullStreams;
-    return new AcpProcessClient(child);
+    return new AcpProcessClient(child, options.systemPromptMetaKey);
   }
 
   get stderrTail(): string {
@@ -246,7 +250,7 @@ export class AcpProcessClient implements AcpClientLike {
     mcpServers?: AcpMcpServer[];
     systemPromptAppend?: string | null;
   }): Promise<AcpSessionWithModels> {
-    const _meta = buildSystemPromptMeta(systemPromptAppend);
+    const _meta = buildSystemPromptMeta(systemPromptAppend, this.systemPromptMetaKey);
     return this.requestWithContext(() =>
       this.connection.agent.request(methods.agent.session.new, {
         cwd,
@@ -267,7 +271,7 @@ export class AcpProcessClient implements AcpClientLike {
     mcpServers?: AcpMcpServer[];
     systemPromptAppend?: string | null;
   }): Promise<AcpSessionWithModels> {
-    const _meta = buildSystemPromptMeta(systemPromptAppend);
+    const _meta = buildSystemPromptMeta(systemPromptAppend, this.systemPromptMetaKey);
     return this.requestWithContext(() =>
       this.connection.agent.request(methods.agent.session.resume, {
         sessionId,

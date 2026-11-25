@@ -1,5 +1,5 @@
 import os from 'node:os';
-import { AcpProcessClient } from './acp-client.ts';
+import { AcpProcessClient } from '../acp/acp-client.ts';
 import { buildAntigravityEnv, parseExtraEnvJson, resolveAgyBinary } from './env.js';
 import { mapAcpSessionModels, openEphemeralAcpSession } from './models.js';
 
