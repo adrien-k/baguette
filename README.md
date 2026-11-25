@@ -137,6 +137,10 @@ For details on the data directory layout, git worktree strategy, and web server 
 
 Connect a Slack workspace under **Admin → Slack** to let agents post updates to a channel. See **[docs/slack.md](docs/slack.md)** for the app setup and required scopes. Plugin install stays in **Settings → Plugins** and can be done by any approved user.
 
+## Public image storage
+
+If GitHub cannot reach your instance (VPN, tunnel, private network), configure **Admin → Public storage** so session images in PR descriptions use your own S3-compatible bucket. The bucket (or CDN in front of it) must allow **public anonymous read** of uploaded objects. Each object name is an unguessable token, so the URL itself is the secret — do not allow public listing. See **[docs/public-object-storage.md](docs/public-object-storage.md)** for fields, URL layout, and policy examples.
+
 ## Security
 
 For the trust model and secrets handling, see **[docs/security.md](docs/security.md)**.

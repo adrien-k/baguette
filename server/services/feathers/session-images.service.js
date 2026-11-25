@@ -19,6 +19,18 @@ import {
   sessionImageFileName,
 } from '../../../shared/session-images.js';
 import { uploadImageAsset } from '../../lib/image-asset-upload.js';
+import { getPublicStorageConfig } from '../../lib/public-storage-config.js';
+import {
+  isPublicStorageConfigured,
+  createUnguessableObjectKey,
+  objectKeyFromPublicUrl,
+  publicObjectUrl,
+  uploadPublicObject,
+  deletePublicObject,
+} from '../../lib/public-object-storage.js';
+import logger from '../../logger.js';
+
+const GROOM_MIN_AGE_MS = 60 * 60 * 1000;
 
 function normalizeAltText(raw) {
   return (
@@ -32,6 +44,63 @@ function normalizeAltText(raw) {
 /** Public image URL for a stored row (the non-attach publish path). */
 function publicImageUrl(row) {
   return publicSessionImageUrl(row, PUBLIC_HOST);
+}
+
+function storedObjectKey(row, storageConfig) {
+  if (row.object_key) return row.object_key;
+  return objectKeyFromPublicUrl(storageConfig?.public_base_url, row.public_url);
+}
+
+async function deleteSessionImageAssets(app, row, storageConfig) {
+  const key = isPublicStorageConfigured(storageConfig) ? storedObjectKey(row, storageConfig) : null;
+  if (key) {
+    try {
+      await deletePublicObject({ config: storageConfig, key });
+    } catch (err) {
+      logger.warn(
+        { err: err?.message, session_id: row.session_id, image_slug: row.image_slug },
+        'Failed to delete public object for session image'
+      );
+    }
+  }
+  const localPath = path.join(IMAGES_DIR, sessionImageFileName(row.image_slug, row.file_ext));
+  await fs.promises.rm(localPath, { force: true }).catch(() => {});
+}
+
+export async function groomSessionImages(app, sessionId = null) {
+  const db = app.get('db');
+  const storageConfig = await getPublicStorageConfig(db);
+  let deleted = 0;
+  const sessionQuery = db('sessions').select('id', 'pr_description');
+  if (sessionId != null) {
+    sessionQuery.where({ id: sessionId });
+  }
+  const sessions = await sessionQuery;
+  const nowMs = Date.now();
+
+  for (const session of sessions) {
+    const referenced = new Set(findSessionImagePlaceholders(session.pr_description));
+    const rows = await db('session_images').where({ session_id: session.id });
+    for (const row of rows) {
+      if (referenced.has(row.image_slug)) continue;
+      const createdMs = new Date(row.created_at).getTime();
+      if (Number.isNaN(createdMs) || nowMs - createdMs < GROOM_MIN_AGE_MS) continue;
+      await deleteSessionImageAssets(app, row, storageConfig);
+      await db('session_images').where({ id: row.id }).delete();
+      deleted += 1;
+    }
+  }
+  return deleted;
+}
+
+export async function deleteAllSessionImagesForArchive(app, sessionId) {
+  const db = app.get('db');
+  const storageConfig = await getPublicStorageConfig(db);
+  const rows = await db('session_images').where({ session_id: sessionId });
+  for (const row of rows) {
+    await deleteSessionImageAssets(app, row, storageConfig);
+    await db('session_images').where({ id: row.id }).delete();
+  }
 }
 
 class SessionImagesService extends KnexService {
@@ -72,6 +141,7 @@ class SessionImagesService extends KnexService {
           media_type: data.media_type,
           alt_text: normalizeAltText(data.alt_text),
           github_url: null,
+          public_url: null,
           created_at: new Date().toISOString(),
         },
         params
@@ -107,10 +177,57 @@ class SessionImagesService extends KnexService {
       user: internal.user,
     });
 
+    const storageConfig = await getPublicStorageConfig(this.app.get('db'));
+    const usePublicStorage = isPublicStorageConfigured(storageConfig);
+
     const resolved = {};
     const failures = [];
     for (const row of rows) {
       if (!bodyWithPlaceholders.includes(`{{image:${row.image_slug}}}`)) continue;
+
+      if (usePublicStorage) {
+        const publishedUrl = row.object_key
+          ? publicObjectUrl(storageConfig.public_base_url, row.object_key)
+          : null;
+        if (
+          publishedUrl &&
+          row.public_url === publishedUrl &&
+          existingPrBody.includes(publishedUrl)
+        ) {
+          resolved[row.image_slug] = { url: publishedUrl, alt_text: row.alt_text };
+          continue;
+        }
+        try {
+          const key = row.object_key || createUnguessableObjectKey(row.file_ext);
+          const imageFilePath = path.join(
+            IMAGES_DIR,
+            sessionImageFileName(row.image_slug, row.file_ext)
+          );
+          const body = await fs.promises.readFile(imageFilePath);
+          await uploadPublicObject({
+            config: storageConfig,
+            key,
+            body,
+            mediaType: row.media_type,
+          });
+          const url = publicObjectUrl(storageConfig.public_base_url, key);
+          await super.patch(row.id, { public_url: url, object_key: key }, internal);
+          const previousKey = objectKeyFromPublicUrl(storageConfig.public_base_url, row.public_url);
+          if (previousKey && previousKey !== key) {
+            await deletePublicObject({ config: storageConfig, key: previousKey }).catch((err) => {
+              logger.warn(
+                { err: err?.message, image_slug: row.image_slug },
+                'Failed to delete the previous public object after re-keying'
+              );
+            });
+          }
+          resolved[row.image_slug] = { url, alt_text: row.alt_text };
+        } catch (err) {
+          failures.push({ image_slug: row.image_slug, message: err?.message ?? String(err) });
+        }
+        continue;
+      }
+
       if (!attachImages) {
         resolved[row.image_slug] = { url: publicImageUrl(row), alt_text: row.alt_text };
         continue;

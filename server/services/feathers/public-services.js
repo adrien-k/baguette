@@ -13,6 +13,7 @@ import { Forbidden } from 'feathers/errors';
  */
 const PUBLIC_SERVICES = [
   'admin/plugins',
+  'admin/public-storage',
   'admin/slack',
   'agent-configs',
   'agent-model-presets',

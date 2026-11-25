@@ -124,6 +124,25 @@ vi.mock('../../lib/image-asset-upload.js', () => ({
   }),
 }));
 
+vi.mock('@aws-sdk/client-s3', () => {
+  class S3Client {
+    constructor() {
+      this.send = vi.fn().mockResolvedValue({});
+    }
+  }
+  class PutObjectCommand {
+    constructor(input) {
+      Object.assign(this, input);
+    }
+  }
+  class DeleteObjectCommand {
+    constructor(input) {
+      Object.assign(this, input);
+    }
+  }
+  return { S3Client, PutObjectCommand, DeleteObjectCommand };
+});
+
 vi.mock('../github.js', async (importOriginal) => {
   const actual = await importOriginal();
   return {
@@ -1010,6 +1029,23 @@ describe('Sessions service - custom methods', () => {
       const row = await db('sessions').where({ id: sessId }).first();
       expect(row.archived_at).toBeFalsy();
       expect(closePR).not.toHaveBeenCalled();
+    });
+
+    it('removes session image rows when archiving', async () => {
+      await db('session_images').insert({
+        session_id: sessId,
+        image_slug: 'arch-img',
+        file_ext: '.png',
+        media_type: 'image/png',
+        alt_text: 'x',
+        github_url: null,
+        public_url: null,
+        created_at: new Date().toISOString(),
+      });
+
+      await app.service('sessions').archive(sessId, params({ id: userId }));
+
+      expect(await db('session_images').where({ session_id: sessId }).first()).toBeUndefined();
     });
 
     it('stops agent, archives session, returns the session row', async () => {

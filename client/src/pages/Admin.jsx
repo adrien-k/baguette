@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
-import { Users, GitBranch, KeyRound, MessageSquare } from 'lucide-react';
+import { Users, GitBranch, KeyRound, MessageSquare, HardDrive } from 'lucide-react';
 import { toastError } from '../utils/toastError.jsx';
 import { instanceSettingsService } from '../feathers.js';
 import { useAuth } from '../hooks/useAuth.jsx';
@@ -16,6 +16,7 @@ import { SettingsSection, SettingsTabHeader } from '../components/SettingsSectio
 import TextInput from '../components/TextInput.jsx';
 import GithubIcon from '../components/svg/GithubIcon.jsx';
 import { PRIMARY_BUTTON_SIZED } from '../utils/buttonStyles.js';
+import PublicStorageTab from './admin/PublicStorageTab.jsx';
 
 const TABS = [
   { id: 'users', label: 'Users', icon: Users },
@@ -23,6 +24,7 @@ const TABS = [
   { id: 'github', label: 'GitHub App', icon: GithubIcon },
   { id: 'secrets', label: 'Secrets', icon: KeyRound },
   { id: 'slack', label: 'Slack', icon: MessageSquare },
+  { id: 'storage', label: 'Public storage', icon: HardDrive },
 ];
 
 const DEFAULT_TAB = TABS[0].id;
@@ -172,6 +174,7 @@ export default function Admin() {
           {activeTab === 'github' && <GithubAppTab />}
           {activeTab === 'secrets' && <SecretsTab scope="global" />}
           {activeTab === 'slack' && <SlackTab />}
+          {activeTab === 'storage' && <PublicStorageTab />}
         </div>
       </div>
     </div>

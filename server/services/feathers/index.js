@@ -9,6 +9,7 @@ import { registerReposService } from './repos.service.js';
 import { registerUserReposService } from './user-repos.service.js';
 import { registerAgentSdkServices } from '../../agent-sdks/index.js';
 import { registerInstanceSettingsService } from './instance-settings.service.js';
+import { registerPublicStorageService } from './public-storage.service.js';
 import { registerAgentConfigsService } from './agent-configs.service.js';
 import { registerMcpServersService } from './mcp-servers.service.js';
 import { registerAgentModelPresetsService } from './agent-model-presets.service.js';
@@ -42,6 +43,7 @@ export function registerFeathersServices(app, { realtime = true } = {}) {
   registerAgentConfigsService(app);
   registerMcpServersService(app);
   registerInstanceSettingsService(app);
+  registerPublicStorageService(app);
   registerAgentModelPresetsService(app);
   registerAgentSdkServices(app);
   registerTasksService(app);

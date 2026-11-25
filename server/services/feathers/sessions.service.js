@@ -81,6 +81,7 @@ import {
   hasSessionImagePlaceholders,
   interpolateSessionImagePlaceholders,
 } from '../../../shared/session-images.js';
+import { deleteAllSessionImagesForArchive, groomSessionImages } from './session-images.service.js';
 import { stringifyModelParamsForStorage } from '../../../shared/agent-session-defaults.js';
 import { teardownSubagentWorktreesForSessionArchive } from '../subagent-worktree.js';
 import {
@@ -770,6 +771,14 @@ export class SessionsService extends KnexService {
     const db = this.app.get('db');
     const session = await db('sessions').where({ id: sessionId }).first();
     const repo = session?.repo_id ? await db('repos').where({ id: session.repo_id }).first() : null;
+    try {
+      await deleteAllSessionImagesForArchive(this.app, sessionId);
+    } catch (err) {
+      logger.warn(
+        { err: err?.message, sessionId },
+        'Failed to remove session images while archiving'
+      );
+    }
     await trimSessionMessagesForArchive(db, sessionId);
     if (!isGlobalSession(session)) {
       await teardownSubagentWorktreesForSessionArchive(this.app, sessionId, session, repo);
@@ -1516,6 +1525,14 @@ export class SessionsService extends KnexService {
               });
             }
           }
+        }
+        try {
+          await groomSessionImages(this.app, session.id);
+        } catch (err) {
+          logger.warn(
+            { err: err?.message, session_id: session.id },
+            'Session image groom failed after PR description sync'
+          );
         }
       }
       await this.app
