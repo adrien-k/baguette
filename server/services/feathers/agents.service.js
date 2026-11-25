@@ -868,10 +868,6 @@ async function beforeRemove(context) {
   if (row.agent_type === 'reviewer') {
     context.app.service('sessions').resetUsageTotals(reviewTurnKey(row.id));
   }
-  const session = await db('sessions').where({ id: row.session_id }).first();
-  if (session?.pinned_agent_id === row.id) {
-    await db('sessions').where({ id: row.session_id }).update({ pinned_agent_id: null });
-  }
   await db('session_messages').where({ agent_id: row.id }).delete();
   await db('queued_messages').where({ agent_id: row.id }).delete();
   await db('usage').where({ agent_id: row.id }).update({ agent_id: null });

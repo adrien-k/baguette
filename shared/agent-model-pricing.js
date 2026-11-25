@@ -242,11 +242,11 @@ function formatListPriceUsd(usd) {
 }
 
 /**
- * Cursor list prices for UI tooltips, or null when the model is not in the table.
+ * Format a `{ input, cacheWrite, cacheRead, output }` rates object for UI tooltips.
+ * @param {{ input: number, cacheWrite?: number|null, cacheRead?: number|null, output: number }|null|undefined} rates
  * @returns {{ header: string, rows: { label: string, value: string }[] }|null}
  */
-export function describeAgentModelPricing(modelId, modelParams) {
-  const rates = lookupAgentModelPricing(modelId, modelParams);
+export function describeRatesPricing(rates) {
   if (!rates) return null;
   const rows = [{ label: 'Input', value: formatListPriceUsd(rates.input) }];
   if (rates.cacheWrite != null) {
@@ -257,6 +257,14 @@ export function describeAgentModelPricing(modelId, modelParams) {
   }
   rows.push({ label: 'Output', value: formatListPriceUsd(rates.output) });
   return { header: 'USD per 1M tokens', rows };
+}
+
+/**
+ * Cursor list prices for UI tooltips, or null when the model is not in the table.
+ * @returns {{ header: string, rows: { label: string, value: string }[] }|null}
+ */
+export function describeAgentModelPricing(modelId, modelParams) {
+  return describeRatesPricing(lookupAgentModelPricing(modelId, modelParams));
 }
 
 /** @param {Record<string, number>} turnUsage @param {ReturnType<typeof rates>} priceRates */

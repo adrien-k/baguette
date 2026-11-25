@@ -1,260 +1,101 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
-
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createTestDb } from '../../test-utils/db.js';
 import { insertSessionWithPrimaryBuilder } from '../../test-utils/session-agents.js';
-import { CursorAgentService } from '../../agent-sdks/cursor/agent-service.ts';
-import { PiAgentService } from '../../agent-sdks/pi/agent-service.ts';
+import { GenericAgentService } from '../../agent-sdks/generic-agent-service.ts';
+import { registerSdkPlugin } from '../../agent-sdks/registry.js';
+import { acpToolCallBuilders } from '../../agent-sdks/acp-mapping.ts';
+
+registerSdkPlugin({
+  key: 'test-awaiting',
+  label: 'TestAwaiting',
+  servicePath: 'test-awaiting-agent',
+  ownerOnlySystemAuth: false,
+  toolCallBuilders: acpToolCallBuilders,
+});
 
 describe('turn end after CreatePlan / AskUserQuestions', () => {
-  describe('CursorAgentService._runTurn', () => {
-    const db = createTestDb();
-    let agentPatch;
-    let app;
+  const db = createTestDb();
+  let agentPatch;
+  let app;
 
-    beforeEach(async () => {
-      vi.clearAllMocks();
-      await db('users').insert({ id: 1, github_id: 1, username: 't' });
-      await db('agent_configs').insert({
-        id: 5,
-        user_id: 1,
-        label: 'Cursor',
-        sdk: 'cursor',
-        api_key_encrypted: null,
-        api_key_env_var: null,
-        created_at: db.fn.now(),
-        updated_at: db.fn.now(),
-      });
-      await insertSessionWithPrimaryBuilder(db, {
-        id: 1,
-        user_id: 1,
-        short_id: 'te001',
-        repo_full_name: 'o/r',
-        base_branch: 'main',
-        initial_prompt: 't',
-        status: 'running',
-        agent_sdk: 'cursor',
-        agent_config_id: 5,
-        model: 'composer-2.5',
-        model_params: JSON.stringify([]),
-        session_path: 'sessions/wt',
-      });
-
-      agentPatch = vi.fn().mockResolvedValue({});
-      app = {
-        get: (key) => (key === 'db' ? db : undefined),
-        service: (name) => {
-          if (name === 'sessions') {
-            return {
-              patch: vi.fn().mockResolvedValue({}),
-              onTurnStart: async () => {},
-              onTurnComplete: async () => {},
-              insertUsageRow: vi.fn().mockResolvedValue(0),
-              emit: vi.fn(),
-            };
-          }
-          if (name === 'agents') {
-            return { patch: agentPatch };
-          }
-          if (name === 'messages') {
-            return { on: vi.fn(), create: vi.fn().mockResolvedValue({}) };
-          }
-          if (name === 'user-repos') {
-            return { find: vi.fn().mockResolvedValue([]) };
-          }
-          return {};
-        },
-        emit: vi.fn(),
-      };
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    agentPatch = vi.fn().mockResolvedValue({});
+    await db('users').insert({ github_id: 1, username: 'u', owner: 1 });
+    await db('agent_configs').insert({ id: 5, user_id: 1, sdk: 'test-awaiting', label: 'Test' });
+    await insertSessionWithPrimaryBuilder(db, {
+      id: 1,
+      user_id: 1,
+      repo_full_name: 'local/repo',
+      base_branch: 'main',
+      short_id: 'ta1',
+      initial_prompt: 'hi',
+      agent_sdk: 'test-awaiting',
+      model: 'test-model',
+      status: 'idle',
+      agent_config_id: 5,
     });
-
-    it('records usage and skips completed patch when awaiting user', async () => {
-      const service = new CursorAgentService();
-      service.setup(app);
-      const recordTurnUsage = vi.spyOn(service, 'recordTurnUsage').mockResolvedValue(undefined);
-
-      vi.spyOn(service, '_sessionAgentOptions').mockResolvedValue({});
-      vi.spyOn(service, 'createOrResumeAgent').mockResolvedValue({});
-      vi.spyOn(service, '_sendWithBusyRetry').mockResolvedValue({});
-      vi.spyOn(service, '_streamRunChainWithFollowUps').mockImplementation(async () => {
-        const state = service._activeSessions.get(1);
-        if (state) state.endTurnAwaitingUser = true;
-        return { allFinishedOk: true };
-      });
-
-      const session = await db('sessions').where({ id: 1 }).first();
-      const builder = await db('agents').where({ session_id: 1, is_primary: 1 }).first();
-      const row = {
-        model: 'composer-2.5',
-        model_params: JSON.stringify([]),
-        agent_config_id: 5,
-      };
-
-      await service._runTurn(
-        session,
-        { type: 'user', message: { role: 'user', content: 'hi' } },
-        row,
-        {
-          turnId: 10,
-          channel: 'chat',
-          agent: builder,
+    app = {
+      get: (k) => (k === 'db' ? db : undefined),
+      service: (name) => {
+        if (name === 'agents') return { patch: agentPatch };
+        if (name === 'messages') {
+          return {
+            create: vi.fn(async (data) => ({ id: 1, ...data })),
+            patch: vi.fn().mockResolvedValue({}),
+          };
         }
-      );
-
-      expect(recordTurnUsage).toHaveBeenCalled();
-      const completedPatch = agentPatch.mock.calls.find(([, data]) => data?.status === 'completed');
-      expect(completedPatch).toBeUndefined();
-    });
+        if (name === 'sessions') {
+          return {
+            onTurnStart: vi.fn().mockResolvedValue(undefined),
+            onTurnComplete: vi.fn().mockResolvedValue(undefined),
+            insertUsageRow: vi.fn().mockResolvedValue(1),
+            emit: vi.fn(),
+          };
+        }
+        return {};
+      },
+      use: vi.fn(),
+      emit: vi.fn(),
+    };
   });
 
-  describe('PiAgentService._runTurn', () => {
-    const piDb = createTestDb();
-    let agentPatch;
-    let app;
-
-    beforeEach(async () => {
-      vi.clearAllMocks();
-      agentPatch = vi.fn().mockResolvedValue({});
-      await piDb('users').insert({ id: 2, github_id: 2, username: 'p' });
-      await piDb('agent_configs').insert({
-        id: 8,
-        user_id: 2,
-        label: 'Pi',
-        sdk: 'pi',
-        api_key_encrypted: null,
-        api_key_env_var: null,
-        created_at: piDb.fn.now(),
-        updated_at: piDb.fn.now(),
-      });
-      await insertSessionWithPrimaryBuilder(piDb, {
-        id: 3,
-        user_id: 2,
-        short_id: 'pi001',
-        repo_full_name: 'o/r',
-        base_branch: 'main',
-        initial_prompt: 't',
-        status: 'running',
-        agent_sdk: 'pi',
-        agent_config_id: 8,
-        model: 'claude-haiku-4-5',
-        session_path: 'sessions/wt',
-      });
-      app = makePiApp(piDb);
+  it('records usage, sets approval status, and skips completed patch when awaiting user', async () => {
+    const recordTurnUsage = vi.fn().mockResolvedValue(undefined);
+    const service = new GenericAgentService({
+      key: 'test-awaiting',
+      label: 'TestAwaiting',
+      servicePath: 'test-awaiting-agent',
+      createDriver: () => ({
+        start: vi.fn().mockResolvedValue(undefined),
+        newSession: vi.fn().mockResolvedValue({ sessionId: 'drv-1' }),
+        resume: vi.fn().mockResolvedValue({ sessionId: 'drv-1' }),
+        prompt: vi.fn().mockResolvedValue({
+          stopReason: 'end_turn',
+          awaitingUser: true,
+          usage: { input_tokens: 5, output_tokens: 5, total_tokens: 10 },
+        }),
+        onUpdate: () => () => {},
+        cancel: vi.fn().mockResolvedValue(undefined),
+        close: vi.fn().mockResolvedValue(undefined),
+        recordTurnUsage,
+      }),
     });
+    service.setup(app);
 
-    function makePiApp(db) {
-      return {
-        get: (key) => (key === 'db' ? db : undefined),
-        service: (name) => {
-          if (name === 'sessions') {
-            return {
-              patch: vi.fn().mockResolvedValue({}),
-              onTurnStart: async () => {},
-              onTurnComplete: async () => {},
-              insertUsageRow: vi.fn().mockResolvedValue(0),
-              emit: vi.fn(),
-            };
-          }
-          if (name === 'users') {
-            return { get: vi.fn().mockResolvedValue({ id: 2, pi_api_key: 'key' }) };
-          }
-          if (name === 'user-repos') {
-            return { find: vi.fn().mockResolvedValue([]) };
-          }
-          if (name === 'agents') {
-            return { patch: agentPatch };
-          }
-          if (name === 'messages') {
-            return { on: vi.fn(), create: vi.fn() };
-          }
-          return {};
-        },
-        emit: vi.fn(),
-      };
-    }
+    const session = await db('sessions').where({ id: 1 }).first();
+    const builder = await db('agents').where({ session_id: 1, is_primary: 1 }).first();
+    await service._runTurn(
+      session,
+      { type: 'user', subtype: 'human', message: { role: 'user', content: 'hi' } },
+      { model: 'test-model', model_params: null, agent_config_id: 5 },
+      { turnId: 10, channel: 'chat', agent: builder }
+    );
 
-    it('records usage and skips completed patch when awaiting user', async () => {
-      const service = new PiAgentService();
-      service.app = app;
-      service.setup(service.app);
-      const recordTurnUsage = vi.spyOn(service, 'recordTurnUsage').mockResolvedValue(0);
-
-      vi.spyOn(service, 'buildAgentOptions').mockResolvedValue({
-        cwd: '/tmp',
-        modelRuntime: {},
-        customTools: [],
-      });
-      vi.spyOn(service, 'runTurn').mockImplementation(async ({ activeSessionState }) => {
-        if (activeSessionState) activeSessionState.endTurnAwaitingUser = true;
-        return {
-          outcome: 'completed',
-          turnUsage: {
-            input_tokens: 1,
-            output_tokens: 2,
-            cache_read_tokens: 0,
-            cache_write_tokens: 0,
-            reasoning_tokens: 0,
-            total_tokens: 3,
-            model: 'claude-haiku-4-5',
-          },
-        };
-      });
-
-      const session = await piDb('sessions').where({ id: 3 }).first();
-      const builder = await piDb('agents').where({ session_id: 3, is_primary: 1 }).first();
-      const row = {
-        model: 'claude-haiku-4-5',
-        agent_config_id: 8,
-      };
-
-      await service._runTurn(
-        session,
-        { type: 'user', message: { role: 'user', content: 'hi' } },
-        row,
-        { turnId: 11, channel: 'chat', agent: builder }
-      );
-
-      expect(recordTurnUsage).toHaveBeenCalled();
-      const completedPatch = agentPatch.mock.calls.find(([, data]) => data?.status === 'completed');
-      expect(completedPatch).toBeUndefined();
-    });
-
-    it('patches stopped (not failed) when the turn outcome is stopped', async () => {
-      const service = new PiAgentService();
-      service.app = app;
-      service.setup(service.app);
-      vi.spyOn(service, 'buildAgentOptions').mockResolvedValue({
-        cwd: '/tmp',
-        modelRuntime: {},
-        customTools: [],
-      });
-      vi.spyOn(service, 'runTurn').mockResolvedValue({
-        outcome: 'stopped',
-        turnUsage: {
-          input_tokens: 0,
-          output_tokens: 0,
-          cache_read_tokens: 0,
-          cache_write_tokens: 0,
-          reasoning_tokens: 0,
-          total_tokens: 0,
-          model: null,
-        },
-      });
-
-      const session = await piDb('sessions').where({ id: 3 }).first();
-      const builder = await piDb('agents').where({ session_id: 3, is_primary: 1 }).first();
-      const row = { model: 'claude-haiku-4-5', agent_config_id: 8 };
-
-      await service._runTurn(
-        session,
-        { type: 'user', message: { role: 'user', content: 'hi' } },
-        row,
-        { turnId: 12, channel: 'chat', agent: builder }
-      );
-
-      const stoppedPatch = agentPatch.mock.calls.find(([, data]) => data?.status === 'stopped');
-      expect(stoppedPatch).toBeDefined();
-      const failedPatch = agentPatch.mock.calls.find(([, data]) => data?.status === 'failed');
-      expect(failedPatch).toBeUndefined();
-    });
+    expect(recordTurnUsage).toHaveBeenCalled();
+    const completedPatch = agentPatch.mock.calls.find(([, data]) => data?.status === 'completed');
+    expect(completedPatch).toBeUndefined();
+    const approvalPatch = agentPatch.mock.calls.find(([, data]) => data?.status === 'approval');
+    expect(approvalPatch).toBeTruthy();
   });
 });

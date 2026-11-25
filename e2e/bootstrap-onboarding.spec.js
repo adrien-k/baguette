@@ -57,7 +57,8 @@ test.describe('bootstrap onboarding without GitHub', () => {
     await expect(page.getByText('Invited', { exact: true })).toBeVisible();
     await expect(page.getByRole('main').getByText('dev', { exact: true })).toBeVisible();
     await expect(page.locator('span').filter({ hasText: /^Admin$/ })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Remove admin' })).toBeDisabled();
+    await page.getByRole('button', { name: 'Actions for dev' }).click();
+    await expect(page.getByRole('menuitem', { name: 'Remove admin' })).toBeDisabled();
     await saveE2eScreenshot(page, 'admin-users.png', { fullPage: true });
 
     await page.getByRole('button', { name: 'GitHub App' }).click();

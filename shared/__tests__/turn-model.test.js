@@ -2,8 +2,10 @@ import { describe, it, expect } from 'vitest';
 import {
   attachSessionTurnModelFields,
   findLastTurnStartIndex,
+  isGitPushOutcomeMessage,
   isHumanUserMessage,
   isMcpUserMessage,
+  isTurnStartingUserMessage,
   requireTurnModelFromRow,
   resolveTurnModel,
   turnModelCreateFields,
@@ -171,6 +173,19 @@ describe('isMcpUserMessage', () => {
     const mcp = { type: 'user', source: 'mcp', content: 'ping' };
     expect(isMcpUserMessage(mcp)).toBe(true);
     expect(isHumanUserMessage(mcp)).toBe(false);
+  });
+});
+
+describe('isGitPushOutcomeMessage', () => {
+  it('starts a turn without being treated as a human user reply', () => {
+    const msg = {
+      type: 'user',
+      subtype: 'git_push_outcome',
+      content: 'GitPush approval resolved.\nOutcome: pushed.',
+    };
+    expect(isGitPushOutcomeMessage(msg)).toBe(true);
+    expect(isHumanUserMessage(msg)).toBe(false);
+    expect(isTurnStartingUserMessage(msg)).toBe(true);
   });
 });
 

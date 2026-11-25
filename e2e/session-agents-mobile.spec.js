@@ -16,7 +16,7 @@ import {
 test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 
 test.describe('session agents in the session list (mock)', () => {
-  test('mobile: last-opened session auto-expands its other agents; caret toggles', async ({
+  test('mobile: session row toggle shows/hides agent tree and builder toggle nests subagents', async ({
     page,
   }) => {
     await devLogin(page);
@@ -39,54 +39,48 @@ test.describe('session agents in the session list (mock)', () => {
     await sendSessionChatMessage(page, MOCK_E2E_SUBAGENT_PROMPT);
     await expect(page.getByText(MOCK_E2E_SUBAGENT_SUMMARY)).toBeVisible({ timeout: 120_000 });
 
-    // Back to the mobile list: the builder row is always visible and the
-    // last-opened session auto-expands its other agents.
+    // Back to the mobile list: the last-opened session auto-expands its agent tree.
     await page.locator('main a[href^="/repos/"]').first().click();
     const builderRow = sessionAgentTreeRow(page, 'Builder');
     const subagentRow = sessionAgentTreeRow(page, MOCK_E2E_SUBAGENT_NAME);
     await expect(builderRow).toBeVisible({ timeout: 30_000 });
-    await expect(subagentRow).toBeVisible();
-
-    // The caret collapses the other agents (the builder row stays) and re-expands them.
-    const toggle = page.getByTestId('agent-tree-toggle');
-    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    await toggle.click();
     await expect(subagentRow).toBeHidden();
-    await expect(builderRow).toBeVisible();
-    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    await toggle.click();
+
+    // Expand subagents nested under the builder.
+    const subagentsToggle = builderRow.getByTestId('builder-subagents-toggle');
+    await expect(subagentsToggle).toHaveAttribute('aria-expanded', 'false');
+    await subagentsToggle.click();
     await expect(subagentRow).toBeVisible();
-    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(subagentsToggle).toHaveAttribute('aria-expanded', 'true');
+
+    // The session row toggle collapses and re-expands the entire agent tree on mobile.
+    const sessionToggle = page.getByTestId('session-agents-toggle').first();
+    await expect(sessionToggle).toHaveAttribute('aria-expanded', 'true');
+    await sessionToggle.click();
+    await expect(builderRow).toBeHidden();
+    await expect(sessionToggle).toHaveAttribute('aria-expanded', 'false');
+    await sessionToggle.click();
+    await expect(builderRow).toBeVisible();
+    await expect(sessionToggle).toHaveAttribute('aria-expanded', 'true');
   });
 
   test.describe('desktop viewport', () => {
     test.use({ viewport: { width: 1280, height: 800 } });
 
-    test('builder row always visible, other agents collapsed unless selected', async ({ page }) => {
+    test('agent tree only shows on the selected session', async ({ page }) => {
       await devLogin(page);
 
       const repoId = await createLocalRepo(page);
       await startMockBuilderSession(page, repoId, MOCK_E2E_QUICK_TURN_PROMPT);
       await expectMockQuickTurnComplete(page);
 
-      // Spawn an MCP subagent from the primary builder.
-      await sendSessionChatMessage(page, MOCK_E2E_SUBAGENT_PROMPT);
-      await expect(page.getByText(MOCK_E2E_SUBAGENT_SUMMARY)).toBeVisible({ timeout: 120_000 });
+      // Selected session shows its agent tree.
+      await expect(sessionAgentTreeRow(page, 'Builder')).toBeVisible({ timeout: 30_000 });
 
-      // Leave the session (nothing selected): every entry shows its builder row,
-      // but the other agents stay collapsed behind the caret.
+      // Leave the session (nothing selected): no agent tree rows are shown.
       await page.goto(`/repos/${repoId}`);
-      const builderRow = sessionAgentTreeRow(page, 'Builder');
-      await expect(builderRow).toBeVisible({ timeout: 30_000 });
-      const subagentRow = sessionAgentTreeRow(page, MOCK_E2E_SUBAGENT_NAME);
-      await expect(subagentRow).toBeHidden();
-
-      // The caret expands the other agents without selecting the session.
-      const toggle = page.getByTestId('agent-tree-toggle');
-      await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-      await toggle.click();
-      await expect(subagentRow).toBeVisible();
-      await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      await expect(page.getByTestId('mini-session-entry').first()).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('session-agent-tree')).toHaveCount(0);
     });
   });
 });

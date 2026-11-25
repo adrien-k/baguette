@@ -73,7 +73,10 @@ function wrapBaguetteToolHandler(session, app, name, handler) {
           toolName: name,
         })
       : result;
-    if (baguetteToolPausesForUserAfterSuccess(name, args) && baguetteMcpToolSucceeded(guarded)) {
+    if (
+      baguetteToolPausesForUserAfterSuccess(name, args, guarded) &&
+      baguetteMcpToolSucceeded(guarded)
+    ) {
       await markAwaitingUserAfterTurnEndingBaguetteTool(app, session);
     }
     return guarded;

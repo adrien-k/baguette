@@ -348,6 +348,7 @@ export function createAuthRoutes(app) {
             access_token: accessToken,
             status: isFirstUser ? USER_STATUS_APPROVED : USER_STATUS_PENDING,
             admin: isFirstUser,
+            owner: isFirstUser,
           },
           {}
         );
@@ -395,6 +396,7 @@ export function createAuthRoutes(app) {
               username: 'bootstrap',
               status: USER_STATUS_APPROVED,
               admin: true,
+              owner: true,
               onboarding_completed: false,
             },
             { transaction: { trx } }
@@ -415,6 +417,7 @@ export function createAuthRoutes(app) {
           username: created.username,
           approved: true,
           admin: true,
+          owner: true,
           onboarding_completed: false,
           is_first_user: true,
         },
@@ -455,6 +458,7 @@ export function createAuthRoutes(app) {
         status: resolveUserStatus(identity),
         approved: isApprovedUser(identity),
         admin: !!identity.admin,
+        owner: !!identity.owner,
         onboarding_completed: !!identity.onboarding_completed,
         color_scheme: identity.color_scheme === 'light' ? 'light' : 'dark',
         github_linked: identity.github_id != null,
@@ -500,6 +504,7 @@ export function createAuthRoutes(app) {
           username: user.username,
           approved: isApprovedUser(user),
           admin: !!user.admin,
+          owner: !!user.owner,
           onboarding_completed: !!user.onboarding_completed,
           is_first_user: await userIsFirst(user.id),
         },
@@ -673,6 +678,7 @@ export function createAuthRoutes(app) {
           username: loaded.user.username,
           approved: true,
           admin: !!loaded.user.admin,
+          owner: !!loaded.user.owner,
           onboarding_completed: !!loaded.user.onboarding_completed,
           is_first_user: await userIsFirst(loaded.user.id),
         },

@@ -83,6 +83,7 @@ export const MOCK_E2E_GITPUSH_FORCE_PROMPT = 'e2e mock request a force push appr
 export const MOCK_E2E_GITPUSH_TARGET_BRANCH = 'development';
 export const MOCK_E2E_GITPUSH_REASON = 'Fast-forward development with the committed e2e work.';
 export const MOCK_E2E_GITPUSH_SUMMARY = 'E2E GitPush approval requested.';
+export const MOCK_E2E_GITPUSH_OUTCOME_SUMMARY = 'E2E GitPush outcome acknowledged.';
 
 /**
  * @param {object | null | undefined} parsed - normalized user payload (`normalizeUserPayloadForStorage`)
@@ -109,7 +110,7 @@ export function mockUserPromptText(parsed) {
   return '';
 }
 
-/** @returns {'full' | 'quick' | 'subagent-e2e' | 'plan-create-non-interactive' | 'plan-create' | 'plan-run' | 'ask-question' | 'ask-answer' | 'gitpush-session-e2e' | 'gitpush-e2e' | 'gitpush-force-e2e'} */
+/** @returns {'full' | 'quick' | 'subagent-e2e' | 'plan-create-non-interactive' | 'plan-create' | 'plan-run' | 'ask-question' | 'ask-answer' | 'gitpush-session-e2e' | 'gitpush-e2e' | 'gitpush-force-e2e' | 'gitpush-outcome'} */
 export function mockAgentScenarioForPrompt(promptText) {
   const text = (promptText ?? '').trim().toLowerCase();
   if (text.includes(MOCK_E2E_SUBAGENT_PROMPT.toLowerCase())) return 'subagent-e2e';
@@ -121,6 +122,7 @@ export function mockAgentScenarioForPrompt(promptText) {
   if (text === 'proceed with the plan.') return 'plan-run';
   if (text.includes(MOCK_E2E_ASK_QUESTION_PROMPT.toLowerCase())) return 'ask-question';
   if (text.includes(MOCK_E2E_ASK_QUESTION_TEXT.toLowerCase())) return 'ask-answer';
+  if (text.includes('gitpush approval resolved.')) return 'gitpush-outcome';
   if (text.includes(MOCK_E2E_GITPUSH_FORCE_PROMPT.toLowerCase())) return 'gitpush-force-e2e';
   if (text.includes(MOCK_E2E_GITPUSH_SESSION_PROMPT.toLowerCase())) return 'gitpush-session-e2e';
   if (text.includes(MOCK_E2E_GITPUSH_PROMPT.toLowerCase())) return 'gitpush-e2e';

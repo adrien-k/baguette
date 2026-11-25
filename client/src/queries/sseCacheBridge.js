@@ -10,6 +10,7 @@ import {
   sessionPlansService,
   sessionTodosService,
   agentModelPresetsService,
+  usageModelPricingService,
 } from '../feathers.js';
 import {
   sessionKeys,
@@ -22,6 +23,7 @@ import {
   sessionIssueKeys,
   sessionPlanKeys,
   sessionTodoKeys,
+  usageModelPricingKeys,
 } from './keys.js';
 import { runAfterReconnectResync } from './reconnectResync.js';
 import { getRealtimeScope } from './realtimeScope.js';
@@ -233,6 +235,12 @@ export function startSseCacheBridge(queryClient) {
   const onLoopChange = live(() => loopEvent(queryClient));
   const onPresetChange = live((preset) => upsertPresetEvent(queryClient, preset));
   const onPresetRemove = live((preset) => removePresetEvent(queryClient, preset));
+  const onUsageModelPricingPatched = live(() => {
+    void queryClient.invalidateQueries({
+      queryKey: usageModelPricingKeys.all,
+      refetchType: 'active',
+    });
+  });
 
   sessionsService.on('created', onSessionUpsert);
   sessionsService.on('updated', onSessionUpsert);
@@ -266,6 +274,7 @@ export function startSseCacheBridge(queryClient) {
   agentModelPresetsService.on('created', onPresetChange);
   agentModelPresetsService.on('patched', onPresetChange);
   agentModelPresetsService.on('removed', onPresetRemove);
+  usageModelPricingService.on('patched', onUsageModelPricingPatched);
 
   return () => {
     sessionsService.off('created', onSessionUpsert);
@@ -298,5 +307,6 @@ export function startSseCacheBridge(queryClient) {
     agentModelPresetsService.off('created', onPresetChange);
     agentModelPresetsService.off('patched', onPresetChange);
     agentModelPresetsService.off('removed', onPresetRemove);
+    usageModelPricingService.off('patched', onUsageModelPricingPatched);
   };
 }

@@ -21,6 +21,11 @@ export function isMcpUserMessage(parsed) {
   return parsed?.type === 'user' && (parsed.source === 'mcp' || parsed.subtype === 'mcp');
 }
 
+/** Server-initiated message reporting the outcome of a GitPush approval modal. */
+export function isGitPushOutcomeMessage(parsed) {
+  return parsed?.type === 'user' && parsed.subtype === 'git_push_outcome';
+}
+
 /** User or MCP message that can be steered into the active turn (`force` on messages.create). */
 export function isSteerableUserMessage(parsed) {
   return isHumanUserMessage(parsed) || isMcpUserMessage(parsed);
@@ -33,6 +38,7 @@ export function isHumanUserMessage(parsed) {
   if (isBaguetteUserMessage(parsed)) return false;
   if (isLoopUserMessage(parsed)) return false;
   if (isMcpUserMessage(parsed)) return false;
+  if (isGitPushOutcomeMessage(parsed)) return false;
   if (typeof parsed.content === 'string') return true;
   if (Array.isArray(parsed.content)) {
     return !parsed.content.some((b) => b.type === 'tool_result');
@@ -50,7 +56,8 @@ export function isTurnStartingUserMessage(msg) {
     isHumanUserMessage(msg) ||
     isBaguetteUserMessage(msg) ||
     isLoopUserMessage(msg) ||
-    isMcpUserMessage(msg)
+    isMcpUserMessage(msg) ||
+    isGitPushOutcomeMessage(msg)
   );
 }
 

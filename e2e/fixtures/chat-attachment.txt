@@ -1,0 +1,1 @@
+Baguette e2e chat attachment fixture.

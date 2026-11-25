@@ -45,6 +45,7 @@ const LOADERS = {
   Zhipu: () => import('@lobehub/icons-static-avatar/avatars/zhipu.webp?url'),
   Minimax: () => import('@lobehub/icons-static-avatar/avatars/minimax.webp?url'),
   Pi: () => import('@lobehub/icons-static-avatar/avatars/pi.webp?url'),
+  Antigravity: () => import('@lobehub/icons-static-avatar/avatars/antigravity.webp?url'),
   LobeHub: () => import('@lobehub/icons-static-avatar/avatars/lobehub.webp?url'),
 };
 

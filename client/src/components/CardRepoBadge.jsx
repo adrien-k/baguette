@@ -2,7 +2,7 @@ import { Bot, FolderGit2 } from 'lucide-react';
 import GithubIcon from './svg/GithubIcon.jsx';
 import SlackIcon from './svg/SlackIcon.jsx';
 import { useRepoContext } from '../context/RepoContext.jsx';
-import { repoAccessMode, repoAccessModeLabel } from '../utils/repoDisplayName.js';
+import { repoAccessMode } from '../utils/repoDisplayName.js';
 
 function ModeIcon({ mode, className }) {
   if (mode === 'slack') return <SlackIcon className={className} />;
@@ -46,11 +46,6 @@ export default function CardRepoBadge({
     <span className={`gap-1 text-xs text-faint ${outerClass} ${className}`.trim()}>
       <ModeIcon mode={mode} className={`w-3 h-3 shrink-0 ${iconClass}`} />
       <span className={labelClass}>{label}</span>
-      {mode === 'local' ? (
-        <span className="text-[10px] bg-control-hover text-secondary px-1 py-0.5 rounded font-mono shrink-0">
-          {repoAccessModeLabel(repo ?? repoFullName)}
-        </span>
-      ) : null}
     </span>
   );
 }

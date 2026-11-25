@@ -96,4 +96,13 @@ describe('gitPushApprovalTriggers', () => {
     expect(gitPushNeedsApproval({}, { ...SESSION, auto_push: false })).toBe(true);
     expect(gitPushNeedsApproval({}, SESSION)).toBe(false);
   });
+
+  it('skips approval for configured fixed push branches', () => {
+    expect(gitPushNeedsApproval({ branch: 'development' }, SESSION, ['development'])).toBe(false);
+    expect(
+      gitPushNeedsApproval({ branch: 'development', source_branch: 'subagent/topic' }, SESSION, [
+        'development',
+      ])
+    ).toBe(false);
+  });
 });

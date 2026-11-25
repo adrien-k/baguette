@@ -52,6 +52,7 @@ import { nextVisibleSession } from './session/sessionListDisplay.js';
 import { resolveSidePanelTab, SIDE_PANEL_TAB_IDS } from './session/sessionSidePanelTabs.js';
 import { enrichChatMessages } from '../utils/enrichChatMessages.js';
 import { mergeAgentsWithSessionEmbeds } from '../utils/sessionAgents.js';
+import { firstSessionBuilder } from '../utils/sessionAgentList.js';
 import { useSessionColumnLayout } from '../hooks/useSessionColumnLayout.js';
 import { useCursorModelPrefs } from '../hooks/useAgentPreferences.js';
 import {
@@ -150,28 +151,37 @@ export default function Session() {
     [agentsForChat, primaryBuilder]
   );
   const agentParam = searchParams.get('agent');
+  const [defaultAgentForSession, setDefaultAgentForSession] = useState({
+    sessionId: null,
+    agentId: null,
+  });
   const activeAgent = useMemo(() => {
     if (!agentsForChat.length) return null;
     const parsedId = agentParam ? Number(agentParam) : null;
     if (parsedId != null && agentsForChat.some((a) => a.id === parsedId)) {
       return agentsForChat.find((a) => a.id === parsedId) ?? null;
     }
-    const pinnedId = sessionFromHook?.id === sessionId ? sessionFromHook?.pinned_agent_id : null;
-    if (
-      pinnedId != null &&
-      agentsForChat.some((a) => a.id === pinnedId && a.agent_type === 'builder')
-    ) {
-      return agentsForChat.find((a) => a.id === pinnedId) ?? null;
+    if (defaultAgentForSession.sessionId === sessionId && defaultAgentForSession.agentId != null) {
+      const existing = agentsForChat.find((a) => a.id === defaultAgentForSession.agentId);
+      if (existing) return existing;
     }
-    return primaryBuilderForChat ?? agentsForChat[0] ?? null;
-  }, [
-    agentsForChat,
-    agentParam,
-    primaryBuilderForChat,
-    sessionFromHook?.pinned_agent_id,
-    sessionFromHook?.id,
-    sessionId,
-  ]);
+    return firstSessionBuilder(agentsForChat) ?? primaryBuilderForChat ?? agentsForChat[0] ?? null;
+  }, [agentsForChat, agentParam, defaultAgentForSession, primaryBuilderForChat, sessionId]);
+
+  useEffect(() => {
+    if (agentParam) {
+      setDefaultAgentForSession((prev) => {
+        if (prev.sessionId === null && prev.agentId === null) return prev;
+        return { sessionId: null, agentId: null };
+      });
+      return;
+    }
+    if (sessionId == null || !activeAgent?.id) return;
+    setDefaultAgentForSession((prev) => {
+      if (prev.sessionId === sessionId && prev.agentId === activeAgent.id) return prev;
+      return { sessionId, agentId: activeAgent.id };
+    });
+  }, [agentParam, sessionId, activeAgent?.id]);
   const {
     messages: hookMessages,
     loading: messagesLoading,
@@ -310,6 +320,7 @@ export default function Session() {
 
   const { cursorModelPrefs, setCursorModelPref } = useCursorModelPrefs();
   const { pushing, beginLocalPush, endLocalPush } = useSessionPushInProgress(gitSession?.id);
+  const [pulling, setPulling] = useState(false);
   const [showPushModal, setShowPushModal] = useState(false);
   const [pushRequest, setPushRequest] = useState(null);
   const [activeTaskModal, setActiveTaskModal] = useState(null);
@@ -334,8 +345,9 @@ export default function Session() {
     [setSearchParams]
   );
   const handleReviewerCleared = useCallback(() => {
-    if (primaryBuilder) selectAgent(primaryBuilder);
-  }, [primaryBuilder, selectAgent]);
+    const fallback = firstSessionBuilder(agentsForChat) ?? primaryBuilder;
+    if (fallback) selectAgent(fallback);
+  }, [agentsForChat, primaryBuilder, selectAgent]);
   const [creatingSession, setCreatingSession] = useState(false);
   const [createSessionError, setCreateSessionError] = useState(null);
   const [newSessionFormKey, setNewSessionFormKey] = useState(0);
@@ -768,6 +780,24 @@ export default function Session() {
     setShowPushModal(true);
   };
 
+  const handlePull = async () => {
+    if (!session?.id || pulling) return;
+    setPulling(true);
+    try {
+      const result = await sessionsService.pull({ id: session.id });
+      await refreshCommitsToPush();
+      toast.success(result?.message?.includes('skipping') ? result.message : 'Pulled successfully');
+    } catch (err) {
+      if (err.data?.conflict) {
+        toastError('Pull failed due to merge conflicts — resolve them in the worktree', err);
+      } else {
+        toastError('Pull failed', err);
+      }
+    } finally {
+      setPulling(false);
+    }
+  };
+
   const handlePushConfirmed = async ({
     forceMode,
     branch,
@@ -1133,6 +1163,7 @@ export default function Session() {
     open: addBuilderOpen,
     modalKey: addBuilderModalKey,
     initialPrompt: addBuilderInitialPrompt,
+    initialFiles: addBuilderInitialFiles,
     initialLabel: addBuilderInitialLabel,
     adding: addBuilderSaving,
     composerClearNonce: addBuilderComposerClearNonce,
@@ -1480,6 +1511,8 @@ export default function Session() {
                     commitsToPush={commitsToPush}
                     onPush={handlePush}
                     pushing={pushing}
+                    onPull={handlePull}
+                    pulling={pulling}
                     onDeletePermanently={handleSessionDeletedPermanently}
                     onOpenAddBuilder={handleOpenAddBuilder}
                     addBuilderOpen={addBuilderOpen}
@@ -1649,6 +1682,7 @@ export default function Session() {
             key={addBuilderModalKey}
             sessionId={gitSession.id}
             initialPrompt={addBuilderInitialPrompt}
+            initialFiles={addBuilderInitialFiles}
             defaultLabel={addBuilderInitialLabel}
             recipes={addBuilderRecipes}
             initialAgentConfigId={
@@ -1658,7 +1692,7 @@ export default function Session() {
             initialModelParams={
               primaryBuilderForChat?.model_params ?? gitSession.model_params ?? null
             }
-            onConfirm={(opts) => void confirmAddBuilder(opts)}
+            onConfirm={(opts) => confirmAddBuilder(opts)}
             onCancel={closeAddBuilderModal}
             saving={addBuilderSaving}
           />

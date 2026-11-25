@@ -692,3 +692,64 @@ describe('Users service - invite', () => {
     );
   });
 });
+
+describe('Users service - owner', () => {
+  it('owner can transfer ownership to another approved user (single owner, promotes to admin)', async () => {
+    await db('users').where({ id: user1.id }).update({ owner: 1 });
+    user1 = await db('users').where({ id: user1.id }).first();
+
+    const transferred = await app.service('users').transferOwner({ id: user2.id }, params(user1));
+    expect(transferred.owner).toBe(true);
+    expect(transferred.admin).toBe(true);
+
+    const oldOwner = await db('users').where({ id: user1.id }).first();
+    const newOwner = await db('users').where({ id: user2.id }).first();
+    expect(oldOwner.owner).toBe(0);
+    expect(newOwner.owner).toBe(1);
+    expect(newOwner.admin).toBe(1);
+  });
+
+  it('non-owner (even admin) cannot transfer ownership', async () => {
+    await db('users').where({ id: user1.id }).update({ owner: 1 });
+    await db('users').where({ id: user2.id }).update({ admin: 1 });
+    user2 = await db('users').where({ id: user2.id }).first();
+
+    await expect(
+      app.service('users').transferOwner({ id: user2.id }, params(user2))
+    ).rejects.toThrow(/Owner required/);
+  });
+
+  it('cannot transfer ownership to a pending user', async () => {
+    await db('users').where({ id: user1.id }).update({ owner: 1 });
+    user1 = await db('users').where({ id: user1.id }).first();
+
+    await expect(
+      app.service('users').transferOwner({ id: pendingUser.id }, params(user1))
+    ).rejects.toThrow(/approved user/);
+  });
+
+  it('cannot demote, revoke, or delete the owner even when another admin exists', async () => {
+    await db('users').where({ id: user1.id }).update({ owner: 1 });
+    await db('users').where({ id: user2.id }).update({ admin: 1 });
+    user1 = await db('users').where({ id: user1.id }).first();
+    user2 = await db('users').where({ id: user2.id }).first();
+
+    await expect(
+      app.service('users').setAdmin({ admin: false }, setAdminParams(user2, user1.id))
+    ).rejects.toThrow(/Cannot demote the owner/);
+    await expect(app.service('users').reject(user1.id, params(user2))).rejects.toThrow(
+      /Cannot revoke the owner/
+    );
+    await expect(app.service('users').remove(user1.id, params(user2))).rejects.toThrow(
+      /Cannot delete the owner/
+    );
+  });
+
+  it('strips owner from external patch payloads', async () => {
+    await app
+      .service('users')
+      .patch(user2.id, { owner: true, color_scheme: 'light' }, params(user2));
+    const row = await db('users').where({ id: user2.id }).first();
+    expect(row.owner).toBe(0);
+  });
+});

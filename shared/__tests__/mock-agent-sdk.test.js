@@ -13,4 +13,10 @@ describe('mockAgentScenarioForPrompt', () => {
     );
     expect(mockAgentScenarioForPrompt(MOCK_E2E_CREATE_PLAN_PROMPT)).toBe('plan-create');
   });
+
+  it('matches gitpush approval outcome prompts without running full tool tour', () => {
+    expect(mockAgentScenarioForPrompt('GitPush approval resolved.\nOutcome: pushed.')).toBe(
+      'gitpush-outcome'
+    );
+  });
 });

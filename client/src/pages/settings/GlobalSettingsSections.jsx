@@ -27,6 +27,11 @@ import { useGetRepos } from '../../hooks/useGetRepos.js';
 import { useCurrentUser } from '../../context/CurrentUserContext.jsx';
 import Toggle from '../../components/Toggle.jsx';
 import { USER_STATUS_APPROVED, USER_STATUS_REVOKED } from '@baguette/shared/user-status.js';
+import UserAccountActionsMenu from '../../components/UserAccountActionsMenu.jsx';
+import {
+  AccountStatusLabel,
+  buildUserAccountActionItems,
+} from '../../utils/userAccountActions.jsx';
 
 function formatUserLastIpLine(user) {
   if (!user.last_ip) return null;
@@ -318,11 +323,14 @@ export function AllRepositoriesSection() {
 
 export function UsersTab() {
   const { github } = useAuth();
+  const { currentUser, refetch: refetchCurrentUser } = useCurrentUser();
   const githubConfigured = Boolean(github?.configured);
   const [users, setUsers] = useState([]);
   const [inviteUsername, setInviteUsername] = useState('');
   const [inviteBusy, setInviteBusy] = useState(false);
   const [inviteResult, setInviteResult] = useState(null);
+  const [confirmTransferOwner, setConfirmTransferOwner] = useState(null);
+  const [transferBusy, setTransferBusy] = useState(false);
 
   const load = () => {
     usersService
@@ -358,6 +366,21 @@ export function UsersTab() {
       load();
     } catch (err) {
       toastError(admin ? 'Failed to grant admin' : 'Failed to remove admin', err);
+    }
+  };
+
+  const handleTransferOwnerConfirm = async () => {
+    if (!confirmTransferOwner) return;
+    setTransferBusy(true);
+    try {
+      await usersService.transferOwner({ id: confirmTransferOwner.id });
+      setConfirmTransferOwner(null);
+      load();
+      await refetchCurrentUser();
+    } catch (err) {
+      toastError('Failed to transfer ownership', err);
+    } finally {
+      setTransferBusy(false);
     }
   };
 
@@ -455,10 +478,26 @@ export function UsersTab() {
           {users.map((u) => {
             const lastIpLine = formatUserLastIpLine(u);
             const isLastAdmin = !!u.admin && adminCount <= 1;
+            const isOwner = !!u.owner;
             let accountStatus = 'pending';
             if (u.invite_pending) accountStatus = 'invited';
             else if (u.status === USER_STATUS_APPROVED) accountStatus = 'approved';
             else if (u.status === USER_STATUS_REVOKED) accountStatus = 'revoked';
+            const actionItems = buildUserAccountActionItems({
+              accountStatus,
+              u,
+              isOwner,
+              isLastAdmin,
+              currentUserOwner: !!currentUser?.owner,
+              inviteBusy,
+              handlers: {
+                onSetAdmin: handleSetAdmin,
+                onTransferOwner: setConfirmTransferOwner,
+                onInvite: handleInvite,
+                onReject: handleReject,
+                onApprove: handleApprove,
+              },
+            });
             return (
               <div key={u.id} className="flex items-center justify-between py-3 gap-3">
                 <div className="flex items-center gap-3 min-w-0">
@@ -466,6 +505,9 @@ export function UsersTab() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 min-w-0">
                       <div className="text-sm text-fg font-medium truncate">{u.username}</div>
+                      {isOwner ? (
+                        <span className="text-xs text-accent font-medium shrink-0">Owner</span>
+                      ) : null}
                       {u.admin ? <span className="text-xs text-accent shrink-0">Admin</span> : null}
                     </div>
                     <div className="text-xs text-faint">
@@ -477,52 +519,13 @@ export function UsersTab() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
-                  <button
-                    type="button"
-                    onClick={() => handleSetAdmin(u.id, !u.admin)}
-                    disabled={isLastAdmin}
-                    title={isLastAdmin ? 'Cannot demote the last admin' : undefined}
-                    className="text-xs text-fg-muted hover:text-fg disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {u.admin ? 'Remove admin' : 'Make admin'}
-                  </button>
-                  {accountStatus === 'invited' ? (
-                    <>
-                      <span className="text-xs text-accent hidden sm:inline">Invited</span>
-                      <span className="w-2 h-2 rounded-full bg-brand sm:hidden" />
-                      <button
-                        type="button"
-                        onClick={() => handleInvite({ id: u.id })}
-                        disabled={inviteBusy}
-                        className="text-xs text-fg-muted hover:text-fg disabled:opacity-50"
-                      >
-                        New invite link
-                      </button>
-                    </>
-                  ) : null}
-                  {accountStatus === 'approved' ? (
-                    <>
-                      <span className="text-xs text-success hidden sm:inline">Approved</span>
-                      <span className="w-2 h-2 rounded-full bg-ok sm:hidden" />
-                      <button
-                        type="button"
-                        onClick={() => handleReject(u.id)}
-                        disabled={isLastAdmin}
-                        title={isLastAdmin ? 'Cannot revoke the last admin' : undefined}
-                        className="text-xs text-danger hover:text-danger ml-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        Revoke
-                      </button>
-                    </>
-                  ) : null}
                   {accountStatus === 'pending' ? (
                     <>
-                      <span className="text-xs text-accent hidden sm:inline">Pending</span>
-                      <span className="w-2 h-2 rounded-full bg-brand sm:hidden" />
+                      <AccountStatusLabel accountStatus={accountStatus} />
                       <button
                         type="button"
                         onClick={() => handleApprove(u.id)}
-                        className="text-xs bg-ok hover:bg-ok-hover text-on-solid px-3 py-1 rounded ml-1"
+                        className="text-xs bg-ok hover:bg-ok-hover text-on-solid px-3 py-1 rounded"
                       >
                         Approve
                       </button>
@@ -534,26 +537,53 @@ export function UsersTab() {
                         Reject
                       </button>
                     </>
-                  ) : null}
-                  {accountStatus === 'revoked' ? (
-                    <>
-                      <span className="text-xs text-danger hidden sm:inline">Revoked</span>
-                      <span className="w-2 h-2 rounded-full bg-danger sm:hidden" />
-                      <button
-                        type="button"
-                        onClick={() => handleApprove(u.id)}
-                        className="text-xs bg-ok hover:bg-ok-hover text-on-solid px-3 py-1 rounded ml-1"
-                      >
-                        Approve
-                      </button>
-                    </>
-                  ) : null}
+                  ) : (
+                    <AccountStatusLabel accountStatus={accountStatus} />
+                  )}
+                  <UserAccountActionsMenu
+                    items={actionItems}
+                    ariaLabel={`Actions for ${u.username}`}
+                  />
                 </div>
               </div>
             );
           })}
         </div>
       </SettingsSection>
+
+      {confirmTransferOwner && (
+        <Modal maxWidth="max-w-md" padding="p-5">
+          <ModalHeader
+            title="Transfer ownership?"
+            onClose={() => !transferBusy && setConfirmTransferOwner(null)}
+          />
+          <p className={`${TEXT_MUTED} text-sm mb-4`}>
+            Transfer instance ownership to{' '}
+            <strong className={TEXT_PRIMARY}>{confirmTransferOwner.username}</strong>? You will
+            remain an admin, and{' '}
+            <strong className={TEXT_PRIMARY}>{confirmTransferOwner.username}</strong> will become
+            the sole owner (and admin) with access to default system authentication.
+          </p>
+          <ModalActions className="flex justify-end gap-2 mt-4">
+            <button
+              type="button"
+              onClick={() => setConfirmTransferOwner(null)}
+              disabled={transferBusy}
+              className="px-4 py-2 text-sm text-secondary hover:text-fg"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleTransferOwnerConfirm}
+              disabled={transferBusy}
+              className={PRIMARY_BUTTON_SIZED}
+            >
+              {transferBusy ? 'Transferring…' : 'Transfer ownership'}
+            </button>
+          </ModalActions>
+        </Modal>
+      )}
     </div>
   );
 }

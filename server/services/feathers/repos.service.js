@@ -24,11 +24,58 @@ import {
   findPublicRemoteRepos,
 } from '../github.js';
 import { loadBaguetteConfig } from '../baguette-config.js';
-import { requireUser, requireAdmin } from './hooks.js';
+import { requireUser, requireAdmin, only } from './hooks.js';
+import { parseAgentFixedPushBranches } from '../../../shared/agent-fixed-push-branches.js';
 import { getGithubToken } from '../agent-settings.js';
 import { REPOS_DIR, normalizeRepoPathForStorage, resolveRepoPath } from '../../config.js';
 
 import { gitHubOriginFromFullName, isLocalRepo } from '../../../shared/repo-origin.js';
+
+const WRITABLE_REPO_FIELDS = ['agent_fixed_push_branches'];
+
+function formatRepoRow(repo) {
+  if (!repo) return repo;
+  return {
+    ...repo,
+    agent_fixed_push_branches: parseAgentFixedPushBranches(repo),
+  };
+}
+
+function formatReposResult(context) {
+  if (Array.isArray(context.result)) {
+    context.result = context.result.map(formatRepoRow);
+  } else if (context.result?.data) {
+    context.result.data = context.result.data.map(formatRepoRow);
+  } else if (context.result) {
+    context.result = formatRepoRow(context.result);
+  }
+  return context;
+}
+
+function serializeAgentFixedPushBranchesOnWrite(context) {
+  if (
+    context.method !== 'patch' ||
+    !Object.prototype.hasOwnProperty.call(context.data, 'agent_fixed_push_branches')
+  ) {
+    return context;
+  }
+  const branches = parseAgentFixedPushBranches({
+    agent_fixed_push_branches: context.data.agent_fixed_push_branches,
+  });
+  context.data.agent_fixed_push_branches = branches.length ? JSON.stringify(branches) : null;
+  return context;
+}
+
+/** Patches are limited to repo settings; caller must be linked via user_repos. */
+async function requireLinkedUserRepo(context) {
+  if (context.method !== 'patch' || context.id == null) return context;
+  const db = context.app.get('db');
+  const userId = context.params.user?.id;
+  const link = await db('user_repos').where({ user_id: userId, repo_id: context.id }).first();
+  if (!link) throw new NotFound('Repository not found');
+  delete context.params.knex;
+  return context;
+}
 
 function assertCompatibleExistingRepo(repo, { origin, accessMode }) {
   if (!repo) return;
@@ -114,7 +161,8 @@ class ReposService extends KnexService {
         'repos.access_mode',
         'repos.created_at',
         'user_repos.id as user_repo_id',
-        'user_repos.show_in_all_sessions'
+        'user_repos.show_in_all_sessions',
+        'repos.agent_fixed_push_branches'
       )
       .whereNull('repos.deleted_at')
       .orderBy('repos.full_name');
@@ -142,12 +190,19 @@ class ReposService extends KnexService {
           : Promise.resolve(false)
       )
     );
-    return repos.map((r, i) => ({
-      ...r,
-      session_count: countMap[r.id] ?? 0,
-      exists_on_fs: existsOnFs[i],
-      show_in_all_sessions: r.show_in_all_sessions !== 0 && r.show_in_all_sessions !== false,
-    }));
+    return repos.map((r, i) =>
+      formatRepoRow({
+        ...r,
+        session_count: countMap[r.id] ?? 0,
+        exists_on_fs: existsOnFs[i],
+        show_in_all_sessions: r.show_in_all_sessions !== 0 && r.show_in_all_sessions !== false,
+      })
+    );
+  }
+
+  async get(id, params) {
+    const row = await super.get(id, params);
+    return formatRepoRow(row);
   }
 
   /**
@@ -540,6 +595,14 @@ const reposHooks = {
     all: [requireUser],
     findAll: [requireAdmin],
     remove: [requireAdmin],
+    patch: [
+      requireLinkedUserRepo,
+      serializeAgentFixedPushBranchesOnWrite,
+      only(WRITABLE_REPO_FIELDS),
+    ],
+  },
+  after: {
+    patch: [formatReposResult],
   },
 };
 
@@ -554,6 +617,7 @@ export function registerReposService(app, path = 'repos') {
     methods: [
       'find',
       'get',
+      'patch',
       'create',
       'remove',
       'findRemote',

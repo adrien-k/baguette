@@ -45,6 +45,7 @@ import {
   createWorktree,
   gitCommitsToPush,
   gitPush,
+  gitPull,
   upsertPR,
   getOpenPR,
   getOpenPRByNumber,
@@ -133,6 +134,7 @@ vi.mock('../github.js', async (importOriginal) => {
     createWorktree: vi.fn().mockResolvedValue({ worktreePath: '/tmp/test-worktree' }),
     gitCommitsToPush: vi.fn().mockResolvedValue(0),
     gitPush: vi.fn().mockResolvedValue({ ok: true, branch: 'feature-branch' }),
+    gitPull: vi.fn().mockResolvedValue({ ok: true }),
     upsertPR: vi.fn().mockResolvedValue({ url: 'https://github.com/o/r/pull/1', number: 1 }),
     getOpenPRByNumber: vi.fn(),
     getOpenPR: vi.fn().mockResolvedValue(null),
@@ -647,6 +649,45 @@ describe('Sessions service - custom methods', () => {
 
       const row = await db('sessions').where({ id: sessId }).first();
       expect(row.pr_status).toBe('merged');
+    });
+  });
+
+  // ── pull ───────────────────────────────────────────────────────────────────
+
+  describe('pull', () => {
+    beforeEach(async () => {
+      const session = await db('sessions').where({ id: sessId }).first();
+      await db('repos')
+        .where({ id: session.repo_id })
+        .update({ origin: 'https://github.com/test/repo.git', access_mode: 'github' });
+      await db('sessions')
+        .where({ id: sessId })
+        .update({ remote_branch: 'feature-branch', session_path: '/tmp/wt' });
+      gitPull.mockResolvedValue({ ok: true });
+    });
+
+    it('pulls the remote branch into the worktree', async () => {
+      const result = await app.service('sessions').pull({ id: sessId }, params({ id: userId }));
+
+      expect(gitPull).toHaveBeenCalled();
+      expect(result).toEqual({ ok: true });
+    });
+
+    it('rejects when session has no remote branch', async () => {
+      await db('sessions').where({ id: sessId }).update({ remote_branch: null });
+      await expect(
+        app.service('sessions').pull({ id: sessId }, params({ id: userId }))
+      ).rejects.toBeBadRequestError();
+      expect(gitPull).not.toHaveBeenCalled();
+    });
+
+    it('returns skip message when remote branch is missing on origin', async () => {
+      gitPull.mockResolvedValueOnce({
+        ok: true,
+        message: 'Remote branch not found, skipping pull',
+      });
+      const result = await app.service('sessions').pull({ id: sessId }, params({ id: userId }));
+      expect(result.message).toContain('skipping pull');
     });
   });
 
@@ -1707,6 +1748,45 @@ describe('Sessions service - find, get, create', () => {
       expect(ids.indexOf(archivedId)).toBeGreaterThan(ids.indexOf(staleActiveId));
       expect(ids.slice(0, 3)).toEqual([mergedRecentId, sessId1, staleActiveId]);
       expect(ids[ids.length - 1]).toBe(archivedId);
+    });
+
+    it('honors $sort instead of default list ordering', async () => {
+      const olderId = await insertTestSession(db, {
+        user_id: userId1,
+        repo_id: repoId,
+        repo_full_name: 'test/repo',
+        base_branch: 'main',
+        initial_prompt: 'Older create',
+        short_id: 'oldcrt',
+        status: 'completed',
+        created_at: '2026-01-01T00:00:00.000Z',
+        last_activity_at: '2026-05-01T00:00:00.000Z',
+      });
+      const newerId = await insertTestSession(db, {
+        user_id: userId1,
+        repo_id: repoId,
+        repo_full_name: 'test/repo',
+        base_branch: 'main',
+        initial_prompt: 'Newer create',
+        short_id: 'newcrt',
+        status: 'completed',
+        created_at: '2026-03-01T00:00:00.000Z',
+        last_activity_at: '2026-01-01T00:00:00.000Z',
+      });
+
+      const byActivity = await app.service('sessions').find({
+        query: { $limit: 20 },
+        ...params({ id: userId1 }),
+      });
+      const activityIds = (byActivity.data ?? byActivity).map((s) => s.id);
+      expect(activityIds.indexOf(olderId)).toBeLessThan(activityIds.indexOf(newerId));
+
+      const byCreated = await app.service('sessions').find({
+        query: { $sort: { created_at: -1 }, $limit: 20 },
+        ...params({ id: userId1 }),
+      });
+      const createdIds = (byCreated.data ?? byCreated).map((s) => s.id);
+      expect(createdIds.indexOf(newerId)).toBeLessThan(createdIds.indexOf(olderId));
     });
 
     it('excludes archived sessions when include_archived is false', async () => {
@@ -3568,6 +3648,48 @@ describe('Sessions service - find, get, create', () => {
         .get('db')('queued_messages')
         .where({ session_id: created.id, kind: 'turn' });
       expect(remaining).toHaveLength(1);
+      flushSpy.mockRestore();
+    });
+
+    it('flushes queued git_push_outcome when onTurnComplete runs on an approval session', async () => {
+      const created = await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
+
+      const builderAgent = await db('agents')
+        .where({ session_id: created.id, is_primary: 1 })
+        .first();
+      await app
+        .get('db')('queued_messages')
+        .insert({
+          session_id: created.id,
+          user_id: userId1,
+          kind: 'turn',
+          agent_id: builderAgent.id,
+          agent_sdk: builderAgent.agent_sdk,
+          model: builderAgent.model,
+          message_json: JSON.stringify({
+            type: 'user',
+            subtype: 'git_push_outcome',
+            content: 'GitPush approval resolved.\nOutcome: pushed.',
+            message: {
+              role: 'user',
+              content: 'GitPush approval resolved.\nOutcome: pushed.',
+            },
+          }),
+          created_at: new Date().toISOString(),
+        });
+
+      await db('agents')
+        .where({ session_id: created.id, is_primary: 1 })
+        .update({ status: 'approval' });
+
+      const flushSpy = vi
+        .spyOn(app.service('sessions'), 'flushNextQueuedTurn')
+        .mockResolvedValue(undefined);
+      await app.service('sessions').onTurnComplete(created.id);
+
+      expect(flushSpy).toHaveBeenCalledWith(created.id, builderAgent.id);
       flushSpy.mockRestore();
     });
 

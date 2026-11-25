@@ -1,28 +1,21 @@
+import { parseAgentFixedPushBranches } from '../../../../shared/agent-fixed-push-branches.js';
+import { gitPushRequiresApproval } from '../../../../shared/git-push-approval.js';
+
 /**
  * Mirrors approval vs direct-push branching in `server/services/mcp/tools/git-push.js`.
+ * @param {string[] | null | undefined} agentFixedPushBranches from the linked repo (Settings)
  */
-export function gitPushNeedsApproval(args, session) {
-  const force = args?.force;
-  const isForcePush = force === 'lease' || force === 'force';
-  const branch = typeof args?.branch === 'string' && args.branch ? args.branch : null;
-  const sourceBranch =
-    typeof args?.source_branch === 'string' && args.source_branch.trim()
-      ? args.source_branch.trim()
-      : null;
-
-  if (!session) {
-    if (isForcePush) return true;
-    if (branch) return true;
-    if (sourceBranch) return true;
-    return false;
-  }
-
-  const sessionBranch = session.remote_branch || session.local_branch || null;
-  const localBranch = session.local_branch || null;
-  const isNonSessionBranch = branch && branch !== sessionBranch && branch !== localBranch;
-  const autoPushOff = !session.auto_push;
-
-  return isForcePush || isNonSessionBranch || autoPushOff || !!sourceBranch;
+export function gitPushNeedsApproval(args, session, agentFixedPushBranches = null) {
+  const fixed =
+    agentFixedPushBranches ??
+    (session ? parseAgentFixedPushBranches(session.agent_fixed_push_branches) : []);
+  return gitPushRequiresApproval({
+    force: args?.force,
+    branch: args?.branch,
+    source_branch: args?.source_branch,
+    session: session ?? null,
+    agentFixedPushBranches: fixed,
+  });
 }
 
 /** Human-readable triggers that require GitPush user approval (matches git-push MCP handler). */

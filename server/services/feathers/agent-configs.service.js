@@ -279,16 +279,51 @@ async function validateAgentConfigWrite(context) {
   }
 
   let effectiveSdk = data.sdk;
-  if (effectiveSdk === undefined && context.method === 'patch' && context.id != null) {
-    const row = await context.service._ownedRow(context.id, context.params.user?.id);
-    effectiveSdk = row.sdk;
+  let existingRow = null;
+  if (context.method === 'patch' && context.id != null) {
+    existingRow = await context.service._ownedRow(context.id, context.params.user?.id);
+    if (effectiveSdk === undefined) {
+      effectiveSdk = existingRow.sdk;
+    }
   }
 
   const plugin = getSdkPlugin(effectiveSdk);
-  const schema =
-    plugin?.credentialSchema ??
-    context.service.getSdkMeta?.(effectiveSdk)?.credentialSchema ??
-    null;
+  const meta = context.service.getSdkMeta?.(effectiveSdk);
+  const schema = plugin?.credentialSchema ?? meta?.credentialSchema ?? null;
+
+  if (context.params?.provider) {
+    const ownerOnlySystemAuth =
+      plugin?.ownerOnlySystemAuth !== undefined
+        ? plugin.ownerOnlySystemAuth !== false
+        : meta?.ownerOnlySystemAuth !== false;
+    if (ownerOnlySystemAuth) {
+      let hasApiKey;
+      if (data.api_key !== undefined) {
+        hasApiKey = typeof data.api_key === 'string' && data.api_key.trim().length > 0;
+      } else if (context.method === 'patch') {
+        hasApiKey = Boolean(existingRow?.api_key_encrypted);
+      } else {
+        hasApiKey = false;
+      }
+      if (!hasApiKey) {
+        const userId = context.params.user?.id;
+        const userRow =
+          userId != null
+            ? await context.service.options
+                .Model('users')
+                .where({ id: userId })
+                .select('owner')
+                .first()
+            : null;
+        const isOwner = Boolean(userRow?.owner ?? context.params.user?.owner);
+        if (!isOwner) {
+          throw new Forbidden(
+            'An API key is required. Only the instance owner can save this configuration without an API key.'
+          );
+        }
+      }
+    }
+  }
 
   if (data.api_url !== undefined) {
     if (schema?.hasApiUrl && typeof plugin?.normalizeApiUrl === 'function') {

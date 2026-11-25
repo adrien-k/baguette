@@ -284,32 +284,20 @@ export function sessionAgentTreeRow(page, name) {
 }
 
 /**
- * Open an agent's chat from the sidebar agent tree. Skips the disclosure caret
- * (always the first button on the builder row) so the row's name button is clicked.
+ * Open an agent's chat from the sidebar agent tree. Clicks the row’s stretched
+ * overlay (first button in the row, not the subagent disclosure toggle).
  */
 export async function selectAgentInTree(page, name) {
   const row = sessionAgentTreeRow(page, name);
   await expect(row).toBeVisible({ timeout: 30_000 });
-  await row.locator('button:not([data-testid="agent-tree-toggle"])').first().click();
-}
-
-/** Pin/unpin control for a secondary builder row (hover the row first on desktop). */
-export function agentTreePinButton(page, agentName) {
-  return sessionAgentTreeRow(page, agentName).getByRole('button', {
-    name: new RegExp(`^(Pin|Unpin) agent — ${escapeRegExp(agentName)}`),
-  });
+  await row.locator('button:not([data-testid="builder-subagents-toggle"])').first().click();
 }
 
 export async function hoverAgentTreeRow(page, agentName) {
   await sessionAgentTreeRow(page, agentName).hover();
 }
 
-export async function clickAgentTreePin(page, agentName) {
-  await hoverAgentTreeRow(page, agentName);
-  await agentTreePinButton(page, agentName).click();
-}
-
-/** Session URL with `agent` query removed so the pinned default applies on load. */
+/** Session URL with `agent` query removed so the default builder applies on load. */
 export function sessionChatUrlWithoutAgentQuery(page) {
   const url = new URL(page.url());
   url.searchParams.delete('agent');
@@ -350,8 +338,18 @@ export async function openStartSubagentModalFromComposer(page) {
   await expect(page.getByRole('heading', { name: 'Add builder' })).toBeVisible();
 }
 
+/** Open **Add builder** from the button at the top of the agent tree (works with an empty composer). */
+export async function openAddBuilderModalFromAgentTree(page) {
+  const addBuilderControl = page.getByTestId('agent-tree-add-builder');
+  await addBuilderControl.click();
+  await expect(page.getByRole('heading', { name: 'Add builder' })).toBeVisible();
+}
+
 export async function confirmStartSubagentModal(page) {
-  await page.getByRole('button', { name: 'Add builder' }).click();
+  const form = page.locator('form', {
+    has: page.getByPlaceholder(ADD_BUILDER_MODAL_PLACEHOLDER),
+  });
+  await form.getByRole('button', { name: 'Add builder', exact: true }).click();
 }
 
 /**
@@ -377,6 +375,37 @@ export async function addManualBuilderAgent(page, name) {
 
 export async function sessionChatComposer(page) {
   return page.getByPlaceholder(/Message .+\.\.\./);
+}
+
+export const ADD_BUILDER_MODAL_PLACEHOLDER =
+  'Optional — leave empty to open the builder with no initial message';
+
+export function addBuilderModalComposer(page) {
+  return page.getByPlaceholder(ADD_BUILDER_MODAL_PLACEHOLDER);
+}
+
+/** Attach a local file via the Add builder modal paperclip. */
+export async function attachFileInAddBuilderModal(page, filePath) {
+  const modalForm = page.locator('form', {
+    has: page.getByPlaceholder(ADD_BUILDER_MODAL_PLACEHOLDER),
+  });
+  const fileChooserPromise = page.waitForEvent('filechooser');
+  await modalForm.getByRole('button', { name: 'Attach files' }).click();
+  const fileChooser = await fileChooserPromise;
+  await fileChooser.setFiles(filePath);
+}
+
+/** Attach a local file via the chat composer paperclip (before opening Add builder). */
+export async function attachFileInChatComposer(page, filePath) {
+  const fileChooserPromise = page.waitForEvent('filechooser');
+  const chatComposer = await sessionChatComposer(page);
+  await expect(chatComposer).toBeVisible();
+  await chatComposer
+    .locator('xpath=ancestor::form[1]')
+    .getByRole('button', { name: 'Attach files' })
+    .click();
+  const fileChooser = await fileChooserPromise;
+  await fileChooser.setFiles(filePath);
 }
 
 export async function sendSessionChatMessage(page, text) {

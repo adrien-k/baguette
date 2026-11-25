@@ -9,6 +9,7 @@
 import { claudeAgentSdkPlugin } from './claude/index.js';
 import { cursorAgentSdkPlugin } from './cursor/index.js';
 import { piAgentSdkPlugin } from './pi/index.js';
+import { antigravityAgentSdkPlugin } from './antigravity/index.js';
 import { mockAgentSdkPlugin } from './mock/index.js';
 import { registerSdkPlugin } from './registry.js';
 
@@ -17,6 +18,7 @@ const allSdkPlugins = [
   claudeAgentSdkPlugin,
   cursorAgentSdkPlugin,
   piAgentSdkPlugin,
+  antigravityAgentSdkPlugin,
   mockAgentSdkPlugin,
 ];
 

@@ -11,8 +11,8 @@ import { createTestDb, insertTestSession } from '../../test-utils/db.js';
 import { ensureReviewerAgentRow } from '../agents-db.js';
 import { SessionsService } from '../feathers/sessions.service.js';
 import { emptyTurnUsage } from '../turn-usage.js';
-import { ClaudeAgentService } from '../../agent-sdks/claude/agent-service.ts';
-import { CursorAgentService } from '../../agent-sdks/cursor/agent-service.ts';
+import { recordClaudeTurnUsage } from '../../agent-sdks/claude/record-turn-usage.js';
+import { recordCursorTurnUsage } from '../../agent-sdks/cursor/record-turn-usage.js';
 import { clearAllUsageTotals } from '../../agent-sdks/claude/usage-totals.js';
 import { estimateAgentTurnCostUsd } from '../../../shared/agent-model-pricing.js';
 
@@ -103,10 +103,14 @@ function makeUsageHarness() {
   sessions.setup(app);
   sessions._patch = patch;
 
-  const claude = new ClaudeAgentService();
-  claude.setup(app);
-  const cursor = new CursorAgentService();
-  cursor.setup(app);
+  const claude = {
+    recordTurnUsage: (session, agentConfigId, result, opts) =>
+      recordClaudeTurnUsage(app, session, agentConfigId, result, opts),
+  };
+  const cursor = {
+    recordTurnUsage: (session, turnUsage, opts) =>
+      recordCursorTurnUsage(app, session, turnUsage, opts),
+  };
   return { sessions, claude, cursor };
 }
 

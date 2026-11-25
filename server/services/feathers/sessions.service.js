@@ -27,6 +27,7 @@ import {
   gitFetch,
   gitCommitsToPush,
   gitPush,
+  gitPull,
   mergePR,
   markPRReady,
   markPRDraft,
@@ -1370,6 +1371,33 @@ export class SessionsService extends KnexService {
     return { ok: true, pr_status };
   }
 
+  async pull(_data, params) {
+    const session = params.resolvedSession;
+    if (isGlobalSession(session)) throw new BadRequest('Global sessions cannot pull');
+    if (!session?.session_path) throw new BadRequest('Session has no worktree');
+    if (!session.remote_branch) throw new BadRequest('No remote branch to pull');
+    const cwd = resolveDataDirRelativePath(session.session_path);
+    const user = await this.app.service('users').get(session.user_id, {});
+    const auth = await sessionGitAuth(this.app, session, user);
+    if (auth.mode === 'local') throw new BadRequest('This repository has no remote to pull from');
+    if (auth.mode === 'github' && !auth.token) {
+      throw new BadRequest('No GitHub token configured');
+    }
+    try {
+      const result = await gitPull(cwd, session.remote_branch, auth);
+      if (result?.message) {
+        return { ok: true, message: result.message };
+      }
+      return { ok: true };
+    } catch (err) {
+      const message = err?.message || 'Pull failed';
+      const conflict = /CONFLICT|conflict/i.test(message);
+      const badRequest = new BadRequest(message);
+      if (conflict) badRequest.data = { conflict: true };
+      throw badRequest;
+    }
+  }
+
   async push(data, params) {
     const session = params.resolvedSession;
     if (isGlobalSession(session)) throw new BadRequest('Global sessions cannot push');
@@ -2153,6 +2181,9 @@ export class SessionsService extends KnexService {
     }
 
     if (isBuilderAgentAwaitingUser(agent)) {
+      if (agent?.id != null && (await this.hasQueuedGitPushOutcome(db, sessionId, agent.id))) {
+        await this.flushNextQueuedTurn(sessionId, agent.id);
+      }
       this.emit('turn:complete', { session_id: sessionId, user_id: session.user_id });
       return;
     }
@@ -2210,6 +2241,21 @@ export class SessionsService extends KnexService {
     );
   }
 
+  /** Check whether `queued_messages` has a pending `git_push_outcome` turn for this agent. */
+  async hasQueuedGitPushOutcome(db, sessionId, agentId) {
+    const rows = await db('queued_messages')
+      .where({ session_id: sessionId, kind: 'turn', agent_id: agentId })
+      .select('message_json');
+    return rows.some((r) => {
+      try {
+        const parsed = JSON.parse(r.message_json || '{}');
+        return parsed?.type === 'user' && parsed.subtype === 'git_push_outcome';
+      } catch {
+        return false;
+      }
+    });
+  }
+
   /** Flush the oldest queued turn message for this session and agent. */
   async flushNextQueuedTurn(sessionId, agentId) {
     if (agentId == null) return;
@@ -2234,11 +2280,23 @@ export class SessionsService extends KnexService {
       user: { id: queued.user_id },
     });
     const loopSubtype = loopUserRowSubtypeFromMessageJson(queued.message_json);
+    let gitPushSubtype = null;
+    if (!loopSubtype) {
+      try {
+        const parsed = JSON.parse(queued.message_json || '{}');
+        if (parsed?.type === 'user' && parsed.subtype === 'git_push_outcome') {
+          gitPushSubtype = 'git_push_outcome';
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    const rowSubtype = loopSubtype ?? gitPushSubtype;
     await this.app.service('messages').create(
       {
         session_id: sessionId,
         type: 'user',
-        ...(loopSubtype ? { subtype: loopSubtype } : {}),
+        ...(rowSubtype ? { subtype: rowSubtype } : {}),
         message_json: queued.message_json,
         agent_id: queued.agent_id ?? agentRow.id,
         agent_sdk: queued.agent_sdk,
@@ -2302,28 +2360,6 @@ function normalizeUsageLimitOnWrite(context) {
   if (context.params.provider && context.data) delete context.data.usage_limit_spent;
   const error = usageLimitFieldsError(context.data || {});
   if (error) throw new BadRequest(error);
-  return context;
-}
-
-async function validatePinnedAgentOnPatch(context) {
-  if (context.data?.pinned_agent_id === undefined) return context;
-  const raw = context.data.pinned_agent_id;
-  if (raw === null || raw === '') {
-    context.data.pinned_agent_id = null;
-    return context;
-  }
-  const agentId = Number(raw);
-  if (!Number.isFinite(agentId)) throw new BadRequest('Invalid pinned_agent_id');
-  const sessionId = Number(context.id);
-  if (!Number.isFinite(sessionId)) return context;
-  const agent = await getAgentById(context.app.get('db'), agentId);
-  if (!agent || agent.session_id !== sessionId) {
-    throw new BadRequest('pinned_agent_id must belong to this session');
-  }
-  if (agent.agent_type !== 'builder') {
-    throw new BadRequest('pinned_agent_id must be a builder');
-  }
-  context.data.pinned_agent_id = agentId;
   return context;
 }
 
@@ -3235,6 +3271,7 @@ export function registerSessionsService(app, path = 'sessions') {
       'merge',
       'setPrDraft',
       'push',
+      'pull',
       'recordGitPushApprovalOutcome',
       'archive',
       'restore',
@@ -3295,12 +3332,12 @@ function applySessionListFilters(context) {
 }
 
 function applyGroupSort(context) {
-  if (context.params.knex) {
-    delete context.params.query?.$sort;
-    context.params.knex = context.params.knex
-      .orderByRaw('CASE WHEN archived_at IS NOT NULL THEN 1 ELSE 0 END ASC')
-      .orderBy('last_activity_at', 'desc');
-  }
+  if (!context.params.knex) return context;
+  // Dashboard list uses a fixed sort; callers that pass $sort own ordering (e.g. last-created lookup).
+  if (context.params.query?.$sort != null) return context;
+  context.params.knex = context.params.knex
+    .orderByRaw('CASE WHEN archived_at IS NOT NULL THEN 1 ELSE 0 END ASC')
+    .orderBy('last_activity_at', 'desc');
   return context;
 }
 
@@ -3331,7 +3368,6 @@ const sessionsHooks = {
       requireOwnSession,
       coerceIsSharedOnWrite,
       normalizeUsageLimitOnWrite,
-      validatePinnedAgentOnPatch,
       clampAutoPushForLocalRepo,
       touchPrMetadataUpdatedAtOnPatch,
       redirectAgentFieldsOnSessionPatch,
@@ -3359,6 +3395,7 @@ const sessionsHooks = {
     merge: [resolveSessionFromData, requireOwnResolvedSession],
     setPrDraft: [resolveSessionFromData, requireOwnResolvedSession],
     push: [resolveSessionFromData, requireOwnResolvedSession],
+    pull: [resolveSessionFromData, requireOwnResolvedSession],
     recordGitPushApprovalOutcome: [resolveSessionFromData, requireOwnResolvedSession],
     archive: [resolveSessionFromData, requireOwnResolvedSession],
     restore: [resolveSessionFromData, requireOwnResolvedSession],

@@ -1,26 +1,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { MessageStreamWriter } from '../message-stream-writer.ts';
-import {
-  mapClaudeMessage,
-  claudeBuildToolCallStart,
-  claudeBuildToolCallComplete,
-} from '../../server/agent-sdks/claude/mapping.ts';
-import {
-  mapCursorEvent,
-  cursorBuildToolCallStart,
-  cursorBuildToolCallComplete,
-  cursorBuildToolCallProgress,
-} from '../../server/agent-sdks/cursor/mapping.ts';
+import { mapAcpUpdate, acpToolCallBuilders } from '../../server/agent-sdks/acp-mapping.ts';
 
-const claudeBuilders = {
-  buildToolCallStart: claudeBuildToolCallStart,
-  buildToolCallComplete: claudeBuildToolCallComplete,
-};
-const cursorBuilders = {
-  buildToolCallStart: cursorBuildToolCallStart,
-  buildToolCallComplete: cursorBuildToolCallComplete,
-  buildToolCallProgress: cursorBuildToolCallProgress,
-};
+const acpBuilders = acpToolCallBuilders();
 
 describe('MessageStreamWriter', () => {
   afterEach(() => {
@@ -35,7 +17,7 @@ describe('MessageStreamWriter', () => {
       createRow: vi.fn(),
       patchRow: vi.fn(),
       appendRaw,
-      builders: claudeBuilders,
+      builders: acpBuilders,
     });
 
     await writer.log({ type: 'test', value: 1 });
@@ -49,25 +31,18 @@ describe('MessageStreamWriter', () => {
       turnId: 2,
       createRow,
       patchRow: vi.fn(),
-      builders: claudeBuilders,
+      builders: acpBuilders,
     });
 
-    const sdkMsg = /** @type {any} */ ({
-      type: 'assistant',
-      message: {
-        role: 'assistant',
-        content: [
-          {
-            type: 'tool_use',
-            id: 'tu_plan',
-            name: 'ExitPlanMode',
-            input: { plan: '# Do the thing\n\nStep 1.' },
-          },
-        ],
-      },
+    const update = /** @type {any} */ ({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'tu_plan',
+      name: 'ExitPlanMode',
+      status: 'completed',
+      rawInput: { plan: '# Do the thing\n\nStep 1.' },
     });
-    await writer.log(sdkMsg);
-    await writer.apply(mapClaudeMessage(sdkMsg));
+    await writer.log(update);
+    await writer.apply(mapAcpUpdate(update));
 
     expect(createRow).toHaveBeenCalledTimes(1);
     const payload = JSON.parse(createRow.mock.calls[0][0].message_json);
@@ -84,27 +59,32 @@ describe('MessageStreamWriter', () => {
       turnId: 2,
       createRow,
       patchRow,
-      builders: claudeBuilders,
-    });
-
-    const first = /** @type {any} */ ({
-      type: 'system',
-      subtype: 'thinking_tokens',
-      estimated_tokens: 10,
-      estimated_tokens_delta: 10,
-      uuid: 'a',
-    });
-    const second = /** @type {any} */ ({
-      type: 'system',
-      subtype: 'thinking_tokens',
-      estimated_tokens: 14,
-      estimated_tokens_delta: 4,
-      uuid: 'b',
+      builders: acpBuilders,
     });
 
     vi.useFakeTimers();
-    await writer.apply(mapClaudeMessage(first));
-    await writer.apply(mapClaudeMessage(second));
+    await writer.apply([
+      {
+        op: 'system',
+        payload: {
+          type: 'system',
+          subtype: 'thinking_tokens',
+          estimated_tokens: 10,
+          estimated_tokens_delta: 10,
+        },
+      },
+    ]);
+    await writer.apply([
+      {
+        op: 'system',
+        payload: {
+          type: 'system',
+          subtype: 'thinking_tokens',
+          estimated_tokens: 14,
+          estimated_tokens_delta: 4,
+        },
+      },
+    ]);
     await vi.runAllTimersAsync();
 
     expect(createRow).toHaveBeenCalledTimes(1);
@@ -128,49 +108,49 @@ describe('MessageStreamWriter', () => {
       turnId: 3,
       createRow,
       patchRow: vi.fn(),
-      builders: cursorBuilders,
+      builders: acpBuilders,
     });
 
-    const feed = async (sdkMsg) => {
-      await writer.log(sdkMsg);
-      await writer.apply(mapCursorEvent(sdkMsg));
+    const feed = async (update) => {
+      await writer.log(update);
+      await writer.apply(mapAcpUpdate(update));
     };
 
     await feed(
       /** @type {any} */ ({
-        type: 'tool_call',
-        call_id: 'call_plan',
+        sessionUpdate: 'tool_call',
+        toolCallId: 'call_plan',
         name: 'createPlan',
-        status: 'running',
-        args: { plan: '' },
+        status: 'in_progress',
+        rawInput: { plan: '' },
       })
     );
     await feed(
       /** @type {any} */ ({
-        type: 'tool_call',
-        call_id: 'call_plan',
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'call_plan',
         name: 'createPlan',
-        status: 'running',
-        args: { plan: '**Context:** the README needs' },
+        status: 'in_progress',
+        rawInput: { plan: '**Context:** the README needs' },
       })
     );
     await feed(
       /** @type {any} */ ({
-        type: 'tool_call',
-        call_id: 'call_plan',
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'call_plan',
         name: 'createPlan',
-        status: 'running',
-        args: { plan: '**Context:** the README needs a second joke.' },
+        status: 'in_progress',
+        rawInput: { plan: '**Context:** the README needs a second joke.' },
       })
     );
     await feed(
       /** @type {any} */ ({
-        type: 'tool_call',
-        call_id: 'call_plan',
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'call_plan',
         name: 'createPlan',
         status: 'completed',
-        args: { plan },
-        result: { status: 'success', value: {} },
+        rawInput: { plan },
+        rawOutput: { status: 'success', value: {} },
       })
     );
 
@@ -189,7 +169,19 @@ describe('MessageStreamWriter', () => {
       turnId: 2,
       createRow,
       patchRow,
-      builders: cursorBuilders,
+      builders: {
+        ...acpBuilders,
+        buildToolCallProgress: (prev, raw) => ({
+          ...prev,
+          result: {
+            step_count: raw.conversationSteps.length,
+            steps: raw.conversationSteps.map((s) => ({
+              kind: 'assistant',
+              text: s.assistantMessage?.text,
+            })),
+          },
+        }),
+      },
     });
 
     await writer.apply([
@@ -218,7 +210,7 @@ describe('MessageStreamWriter', () => {
       turnId: 2,
       createRow,
       patchRow,
-      builders: claudeBuilders,
+      builders: acpBuilders,
     });
 
     await writer.appendAssistantText('a');
@@ -238,7 +230,7 @@ describe('MessageStreamWriter', () => {
       turnId: 2,
       createRow,
       patchRow,
-      builders: claudeBuilders,
+      builders: acpBuilders,
     });
 
     await writer.apply([
@@ -265,7 +257,7 @@ describe('MessageStreamWriter', () => {
       turnId: 2,
       createRow,
       patchRow,
-      builders: claudeBuilders,
+      builders: acpBuilders,
     });
 
     await writer.apply([
@@ -285,7 +277,7 @@ describe('MessageStreamWriter', () => {
       turnId: 2,
       createRow,
       patchRow,
-      builders: claudeBuilders,
+      builders: acpBuilders,
     });
 
     await writer.apply([
@@ -306,7 +298,7 @@ describe('MessageStreamWriter', () => {
       turnId: 2,
       createRow,
       patchRow,
-      builders: claudeBuilders,
+      builders: acpBuilders,
     });
 
     await writer.apply([{ op: 'assistant_text', text: 'All done.' }]);
@@ -334,7 +326,7 @@ describe('MessageStreamWriter', () => {
       turnId: 2,
       createRow,
       patchRow,
-      builders: claudeBuilders,
+      builders: acpBuilders,
     });
 
     await writer.startTool('tool-1', 'Bash', { command: 'sleep 9' });

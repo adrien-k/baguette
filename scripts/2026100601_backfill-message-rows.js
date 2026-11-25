@@ -21,9 +21,9 @@ import knexfile from '../knexfile.js';
 import { isBaguetteUserMessage, isHumanUserMessage } from '../shared/turn-model.js';
 import { normalizeUserPayloadForStorage } from '../shared/normalize-user-payload.js';
 import {
-  claudeBuildToolCallComplete,
-  claudeBuildToolCallStart,
-} from '../server/agent-sdks/claude/mapping.ts';
+  acpBuildToolCallComplete,
+  acpBuildToolCallStart,
+} from '../server/agent-sdks/acp-mapping.ts';
 import {
   applySessionMessageWrites,
   forEachSessionMessageGroup,
@@ -104,7 +104,7 @@ function planMessageRowBackfill(rows) {
           continue;
         }
         seenToolCallIds.add(toolUse.id);
-        const start = claudeBuildToolCallStart(
+        const start = acpBuildToolCallStart(
           toolUse.id,
           toolUse.name,
           toolUse.input ?? {},
@@ -112,7 +112,7 @@ function planMessageRowBackfill(rows) {
         );
         const tr = toolResultsById.get(toolUse.id);
         const completed = tr
-          ? claudeBuildToolCallComplete(start, {
+          ? acpBuildToolCallComplete(start, {
               name: toolUse.name,
               args: toolUse.input,
               rawResult: tr.content,

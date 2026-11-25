@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { formatClaudeToolResult } from '../tool-result.js';
-import { claudeBuildToolCallComplete, claudeBuildToolCallStart } from '../mapping.ts';
+import {
+  acpBuildToolCallComplete as claudeBuildToolCallComplete,
+  acpBuildToolCallStart as claudeBuildToolCallStart,
+} from '../../acp-mapping.ts';
 
 describe('formatClaudeToolResult', () => {
   it('joins text blocks from tool_result content array', () => {

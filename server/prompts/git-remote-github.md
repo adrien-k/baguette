@@ -24,9 +24,9 @@ IMPORTANT: Do not run `git push`, `git pull`, or `git fetch` in the shell — us
 
 Baguette pushes the session worktree after each turn when auto-push is on — you usually do **not** call **`GitPush`** for that. Call **`GitPush`** when the user asks, auto-push is off, you need **`force`**, a **non-session target branch**, or you are pushing **from a ref other than the session worktree HEAD**.
 
-**`source_branch`** — push commits from another local ref **without merging into the session worktree first**. Common pattern: run an **isolated subagent** that commits on **`subagent_local_branch`**, then call **`GitPush`** with **`source_branch`** set to that branch so the user can approve publishing those commits. Pair with **`branch`** to land on a **shared integration branch** (for example `development`) instead of the session PR branch. Refspec is `source_branch:target`; user approval is always required.
+**`source_branch`** — push commits from another local ref **without merging into the session worktree first**. Common pattern: run an **isolated subagent** that commits on **`subagent_local_branch`**, then call **`GitPush`** with **`source_branch`** set to that branch so the user can approve publishing those commits. Pair with **`branch`** to land on a **shared integration branch** (for example `development`) instead of the session PR branch. Refspec is `source_branch:target`. User approval is required unless the target branch is in **`agent_fixed_push_branches`** from **`CurrentSessionInfo`** (configured per repo under Settings → Repositories).
 
-Always pass **`reason`**; while approval is open, do not retry **`GitPush`** and do not **`git push`** in the shell.
+Always pass **`reason`**; while approval is open, do not retry **`GitPush`** and do not **`git push`** in the shell. When the tool returns **`approval_requested`**, end your turn immediately (like **`AskUserQuestions`** / interactive **`CreatePlan`**) — Baguette posts the push outcome back in chat and starts your next turn when the user approves or rejects.
 
 ## Embedding screenshots in the PR description
 

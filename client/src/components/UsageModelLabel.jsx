@@ -1,6 +1,10 @@
-import { describeAgentModelPricing } from '@baguette/shared/agent-model-pricing.js';
+import {
+  describeAgentModelPricing,
+  describeRatesPricing,
+} from '@baguette/shared/agent-model-pricing.js';
 import Tooltip from './Tooltip.jsx';
 import { usageModelLabel } from '../utils/usageSeries.js';
+import { useUsageModelPricing } from '../hooks/useUsageModelPricing.js';
 
 function PricingTooltipContent({ pricing }) {
   return (
@@ -21,7 +25,12 @@ function PricingTooltipContent({ pricing }) {
 /** Model name on the Usage page; shows list prices on hover when known. */
 export default function UsageModelLabel({ model, className = '', title }) {
   const label = usageModelLabel(model);
-  const pricing = model ? describeAgentModelPricing(model) : null;
+  const { customPricingByModel } = useUsageModelPricing({ enabled: Boolean(model) });
+  const customRates = model ? customPricingByModel.get(model) : null;
+  let pricing = null;
+  if (model) {
+    pricing = customRates ? describeRatesPricing(customRates) : describeAgentModelPricing(model);
+  }
   const fallbackTitle = title ?? (model || undefined);
 
   const inner = (

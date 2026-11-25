@@ -19,6 +19,7 @@ import {
 } from '../../utils/agentConfigCredentialOverrides.js';
 import { agentConfigSecretPlaceholder } from '../../utils/agentConfigSecretPlaceholder.js';
 import { useSdkMetas } from '../../hooks/useSdkMetas.js';
+import { useCurrentUser } from '../../context/CurrentUserContext.jsx';
 import { GHOST_BUTTON_CLASS, PRIMARY_BUTTON_SIZED } from '../../utils/buttonStyles.js';
 import { INPUT_CLASS } from '../../utils/ui.js';
 
@@ -38,6 +39,7 @@ function extraEnvJsonText(value, pretty = false) {
 
 export default function AgentConfigModal({ onClose, config, onSaved, onConfigUpdated, onDelete }) {
   const isEdit = Boolean(config?.id);
+  const { currentUser } = useCurrentUser();
   const { pickerMetas, getMeta, loading: metasLoading, error: metasError } = useSdkMetas();
   const [liveConfig, setLiveConfig] = useState(config);
   const [label, setLabel] = useState('');
@@ -173,7 +175,17 @@ export default function AgentConfigModal({ onClose, config, onSaved, onConfigUpd
 
   const secretPlaceholder = agentConfigSecretPlaceholder(schema, apiKeyEnvVar);
   const secretLabel = schema?.secretLabel ?? 'API key';
-  const secretHint = schema?.secretHint ?? null;
+  const isOwner = Boolean(currentUser?.owner);
+  const ownerOnlySystemAuth = getMeta(sdk)?.ownerOnlySystemAuth !== false;
+  const needsApiKey = ownerOnlySystemAuth && !isOwner;
+  const hasApiKey = apiKeyDirty
+    ? Boolean(apiKey?.trim())
+    : Boolean(isEdit && config?.api_key_configured);
+  const secretHint =
+    schema?.secretHint ??
+    (needsApiKey
+      ? 'Required. Only the instance owner can use default system authentication without an API key.'
+      : null);
 
   const pickerConfig = liveConfig?.id ? liveConfig : null;
   const agentConfigId = config?.id ?? liveConfig?.id ?? null;
@@ -357,7 +369,7 @@ export default function AgentConfigModal({ onClose, config, onSaved, onConfigUpd
             type="button"
             className={PRIMARY_BUTTON_SIZED}
             onClick={handleSave}
-            disabled={saving || !label.trim() || !sdk}
+            disabled={saving || !label.trim() || !sdk || (needsApiKey && !hasApiKey)}
           >
             {saving ? 'Saving…' : 'Save'}
           </button>

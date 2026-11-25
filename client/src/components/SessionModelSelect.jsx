@@ -22,6 +22,7 @@ import { useMediaQuery } from '../hooks/useMediaQuery.js';
 import { formatAgentSdkDisplayName } from '@baguette/shared/agent-sdk-display.js';
 import { DROPDOWN_PANEL_CLASS } from '../utils/dropdownPanel.js';
 import { useSdkMetas } from '../hooks/useSdkMetas.js';
+import { useUsageModelPricing } from '../hooks/useUsageModelPricing.js';
 
 function modelDescriptionTooltip(model, label) {
   const description = typeof model?.description === 'string' ? model.description.trim() : '';
@@ -196,9 +197,15 @@ export default function SessionModelSelect({
       selectedModelObj?.display_name || selectedModelId || (models.length ? 'Model' : '…');
   }
 
+  const { customPricingByModel } = useUsageModelPricing({
+    enabled: usesAgentPricingTable && Boolean(selectedModelId),
+  });
+
   const pricingKnown =
     !usesAgentPricingTable ||
-    (selectedModelId && hasAgentModelPricing(selectedModelId, currentParams));
+    (selectedModelId &&
+      (hasAgentModelPricing(selectedModelId, currentParams) ||
+        customPricingByModel.has(selectedModelId)));
 
   const modelOptions = useMemo(() => {
     const opts = models.map((m) => ({

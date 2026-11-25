@@ -8,7 +8,6 @@ import { registerMessagesService } from '../feathers/messages.service.js';
 import { registerReviewAgentTurn } from '../review-agent-turn.js';
 import { registerAgentsService } from '../feathers/agents.service.js';
 import { registerQueuedMessagesService } from '../feathers/queued-messages.service.js';
-import { registerClaudeAgentService } from '../../agent-sdks/claude/agent-service.ts';
 import { mountAgentConfigs } from '../../test-utils/agent-sdks.js';
 import { registerAgentSdk, registerSdkPlugin } from '../../agent-sdks/registry.js';
 import { claudeAgentSdkPlugin } from '../../agent-sdks/claude/index.js';
@@ -56,7 +55,7 @@ function makeApp() {
   registerMessagesService(app);
   registerQueuedMessagesService(app);
   mountAgentConfigs(app);
-  registerClaudeAgentService(app);
+  claudeAgentSdkPlugin.register(app);
   registerAgentSdk(app, { key: 'cursor', label: 'Cursor', servicePath: 'cursor-agent' });
   registerSdkPlugin(claudeAgentSdkPlugin);
   registerReviewAgentTurn(app);
@@ -343,7 +342,7 @@ describe('agents.startReview / continueReview', () => {
     const parsed = JSON.parse(msg.message_json);
     expect(parsed.title).toBe('Review latest changes');
     expect(parsed.content).toContain('check exports');
-    expect(query).toHaveBeenCalled();
+    await vi.waitFor(() => expect(query).toHaveBeenCalled());
   });
 });
 

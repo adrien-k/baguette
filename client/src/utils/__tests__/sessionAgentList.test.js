@@ -1,124 +1,127 @@
 import { describe, it, expect } from 'vitest';
-import { buildSessionAgentList } from '../sessionAgentList.js';
+import {
+  buildSessionAgentTree,
+  firstSessionBuilder,
+  nodeHasDescendantAgent,
+  summarizeNodeDescendants,
+} from '../sessionAgentList.js';
 
 function agent(id, fields = {}) {
   return { id, ref: id, name: `Agent ${id}`, agent_type: 'builder', ...fields };
 }
 
-describe('buildSessionAgentList', () => {
-  it('returns every agent in one flat level with the builder first', () => {
+describe('firstSessionBuilder', () => {
+  it('returns the most recently active builder', () => {
     const agents = [
-      agent(1, { is_primary: 1, agent_type: 'builder' }),
-      agent(3, { agent_type: 'subagent', parent_agent_id: 1, ref: 3 }),
-      agent(2, { agent_type: 'reviewer', ref: 2 }),
+      agent(1, { is_primary: 1, updated_at: '2024-01-01T10:00:00Z' }),
+      agent(2, { is_primary: 0, updated_at: '2024-01-01T15:00:00Z' }),
+      agent(3, { agent_type: 'reviewer', updated_at: '2024-01-01T20:00:00Z' }),
+      agent(4, { agent_type: 'subagent', parent_agent_id: 1, updated_at: '2024-01-01T22:00:00Z' }),
     ];
-    const list = buildSessionAgentList(agents);
-    expect(list.map((a) => a.id)).toEqual([1, 2, 3]);
+    expect(firstSessionBuilder(agents)?.id).toBe(2);
   });
 
-  it('places the session-pinned agent in the primary slot when it is not the primary', () => {
+  it('breaks ties by ref ascending', () => {
     const agents = [
-      agent(1, { is_primary: 1, updated_at: '2024-01-01T23:00:00Z' }),
-      agent(2, { agent_type: 'builder', is_primary: 0, updated_at: '2024-01-01T10:00:00Z' }),
-      agent(3, { agent_type: 'subagent', updated_at: '2024-01-01T20:00:00Z' }),
+      agent(2, { ref: 2, is_primary: 0, updated_at: '2024-01-01T10:00:00Z' }),
+      agent(1, { ref: 1, is_primary: 1, updated_at: '2024-01-01T10:00:00Z' }),
     ];
-    const list = buildSessionAgentList(agents, 2);
-    expect(list.map((a) => a.id)).toEqual([2, 1, 3]);
+    expect(firstSessionBuilder(agents)?.id).toBe(1);
   });
 
-  it('keeps the primary second when a more active agent is pinned', () => {
+  it('returns null when no builders exist', () => {
+    expect(firstSessionBuilder([])).toBeNull();
+    expect(firstSessionBuilder(null)).toBeNull();
+    expect(firstSessionBuilder([agent(1, { agent_type: 'reviewer' })])).toBeNull();
+  });
+});
+
+describe('buildSessionAgentTree', () => {
+  it('orders builders by last activity desc and places reviewer after builders', () => {
     const agents = [
-      agent(1, { is_primary: 1, updated_at: '2024-01-01T00:00:00Z' }),
-      agent(2, { agent_type: 'builder', is_primary: 0, updated_at: '2024-01-01T05:00:00Z' }),
-      agent(3, { agent_type: 'subagent', updated_at: '2024-01-01T23:00:00Z' }),
+      agent(1, { is_primary: 1, updated_at: '2024-01-01T10:00:00Z' }),
+      agent(2, { is_primary: 0, updated_at: '2024-01-01T14:00:00Z' }),
+      agent(3, { agent_type: 'reviewer', updated_at: '2024-01-01T20:00:00Z' }),
+      agent(4, { is_primary: 0, updated_at: '2024-01-01T12:00:00Z' }),
     ];
-    const list = buildSessionAgentList(agents, 2);
-    expect(list.map((a) => a.id)).toEqual([2, 1, 3]);
+    const tree = buildSessionAgentTree(agents);
+    expect(tree.builders.map((n) => n.agent.id)).toEqual([2, 4, 1]);
+    expect(tree.reviewers.map((n) => n.agent.id)).toEqual([3]);
+    expect(tree.orphans).toEqual([]);
   });
 
-  it('uses the pinned agent as head when it matches the primary', () => {
+  it('nests subagents under their parent builder ordered by last activity desc', () => {
     const agents = [
-      agent(1, { is_primary: 1, updated_at: '2024-01-01T00:00:00Z' }),
-      agent(2, { agent_type: 'subagent', updated_at: '2024-01-01T20:00:00Z' }),
+      agent(1, { is_primary: 1, updated_at: '2024-01-01T10:00:00Z' }),
+      agent(2, { is_primary: 0, updated_at: '2024-01-01T15:00:00Z' }),
+      agent(3, { agent_type: 'subagent', parent_agent_id: 1, updated_at: '2024-01-01T11:00:00Z' }),
+      agent(4, { agent_type: 'subagent', parent_agent_id: 1, updated_at: '2024-01-01T13:00:00Z' }),
+      agent(5, { agent_type: 'subagent', parent_agent_id: 2, updated_at: '2024-01-01T16:00:00Z' }),
     ];
-    const list = buildSessionAgentList(agents, 1);
-    expect(list.map((a) => a.id)).toEqual([1, 2]);
+    const tree = buildSessionAgentTree(agents);
+    expect(tree.builders.map((n) => n.agent.id)).toEqual([2, 1]);
+    expect(tree.builders[0].children.map((n) => n.agent.id)).toEqual([5]);
+    expect(tree.builders[1].children.map((n) => n.agent.id)).toEqual([4, 3]);
   });
 
-  it('ignores parent_agent_id — subagents are not nested', () => {
-    const agents = [
-      agent(1, { is_primary: 1 }),
-      agent(2, { agent_type: 'builder', is_primary: 0, ref: 2 }),
-      agent(3, { agent_type: 'subagent', parent_agent_id: 2, ref: 3 }),
-      agent(4, { agent_type: 'subagent', parent_agent_id: 99, ref: 4 }),
-    ];
-    const list = buildSessionAgentList(agents);
-    expect(list.map((a) => a.id)).toEqual([1, 2, 3, 4]);
-  });
-
-  it('orders subagents by last activity, most recent first', () => {
-    const agents = [
-      agent(1, { is_primary: 1, updated_at: '2024-01-01T00:00:00Z' }),
-      agent(2, { agent_type: 'subagent', updated_at: '2024-01-01T10:00:00Z' }),
-      agent(3, { agent_type: 'subagent', updated_at: '2024-01-01T12:00:00Z' }),
-      agent(4, { agent_type: 'reviewer', updated_at: '2024-01-01T11:00:00Z' }),
-    ];
-    const list = buildSessionAgentList(agents);
-    expect(list.map((a) => a.id)).toEqual([1, 3, 4, 2]);
-  });
-
-  it('keeps the builder pinned first even when others were active later', () => {
-    const agents = [
-      agent(1, { is_primary: 1, updated_at: '2024-01-01T00:00:00Z' }),
-      agent(2, { agent_type: 'subagent', updated_at: '2024-01-01T23:00:00Z' }),
-      agent(3, { agent_type: 'subagent', updated_at: '2024-01-01T09:00:00Z' }),
-    ];
-    const list = buildSessionAgentList(agents);
-    expect(list.map((a) => a.id)).toEqual([1, 2, 3]);
-  });
-
-  it('breaks ties in ref-ascending order', () => {
+  it('supports recursively nested subagents', () => {
     const agents = [
       agent(1, { is_primary: 1 }),
-      agent(3, { agent_type: 'subagent', updated_at: '2024-01-01T10:00:00Z' }),
-      agent(2, { agent_type: 'subagent', updated_at: '2024-01-01T10:00:00Z' }),
+      agent(2, { agent_type: 'subagent', parent_agent_id: 1 }),
+      agent(3, { agent_type: 'subagent', parent_agent_id: 2 }),
     ];
-    const list = buildSessionAgentList(agents);
-    expect(list.map((a) => a.id)).toEqual([1, 2, 3]);
+    const tree = buildSessionAgentTree(agents);
+    expect(tree.builders[0].children.map((n) => n.agent.id)).toEqual([2]);
+    expect(tree.builders[0].children[0].children.map((n) => n.agent.id)).toEqual([3]);
   });
 
-  it('sorts agents without a timestamp after recently active ones', () => {
+  it('attaches subagents with unknown parent_agent_id to the primary builder', () => {
     const agents = [
-      agent(1, { is_primary: 1 }),
-      agent(2, { agent_type: 'subagent', updated_at: '2024-01-01T10:00:00Z' }),
-      agent(3, { agent_type: 'subagent' }),
-      agent(4, { agent_type: 'subagent', updated_at: '2024-01-01T09:00:00Z' }),
+      agent(1, { is_primary: 1, updated_at: '2024-01-01T10:00:00Z' }),
+      agent(2, { is_primary: 0, updated_at: '2024-01-01T15:00:00Z' }),
+      agent(3, { agent_type: 'subagent', parent_agent_id: 999 }),
     ];
-    const list = buildSessionAgentList(agents);
-    expect(list.map((a) => a.id)).toEqual([1, 2, 4, 3]);
+    const tree = buildSessionAgentTree(agents);
+    const primaryNode = tree.builders.find((n) => n.agent.id === 1);
+    expect(primaryNode.children.map((n) => n.agent.id)).toEqual([3]);
   });
 
-  it('parses SQLite CURRENT_TIMESTAMP values as UTC', () => {
+  it('breaks ties in ref-ascending order and parses SQLite timestamps as UTC', () => {
     const agents = [
-      agent(1, { is_primary: 1, updated_at: '2024-01-01T12:00:00Z' }),
-      agent(2, { agent_type: 'subagent', updated_at: '2024-01-01 12:00:01' }),
-      agent(3, { agent_type: 'subagent', updated_at: '2024-01-01T13:00:00Z' }),
+      agent(1, { is_primary: 1, ref: 1, updated_at: '2024-01-01T12:00:00Z' }),
+      agent(2, { is_primary: 0, ref: 2, updated_at: '2024-01-01 12:00:01' }),
+      agent(4, { is_primary: 0, ref: 4, updated_at: '2024-01-01T12:00:00Z' }),
+      agent(3, { is_primary: 0, ref: 3, updated_at: '2024-01-01T12:00:00Z' }),
     ];
-    const list = buildSessionAgentList(agents);
-    expect(list.map((a) => a.id)).toEqual([1, 3, 2]);
+    const tree = buildSessionAgentTree(agents);
+    expect(tree.builders.map((n) => n.agent.id)).toEqual([2, 1, 3, 4]);
   });
 
-  it('sorts by last activity when no primary builder exists', () => {
+  it('returns empty sections for empty input', () => {
+    expect(buildSessionAgentTree([])).toEqual({ builders: [], reviewers: [], orphans: [] });
+    expect(buildSessionAgentTree(null)).toEqual({ builders: [], reviewers: [], orphans: [] });
+  });
+});
+
+describe('nodeHasDescendantAgent & summarizeNodeDescendants', () => {
+  it('detects nested descendants and summarizes live status', () => {
     const agents = [
-      agent(2, { agent_type: 'subagent', updated_at: '2024-01-01T10:00:00Z' }),
-      agent(1, { agent_type: 'builder', updated_at: '2024-01-01T12:00:00Z' }),
+      agent(1, { is_primary: 1, status: 'stopped' }),
+      agent(2, { agent_type: 'subagent', parent_agent_id: 1, status: 'stopped' }),
+      agent(3, { agent_type: 'subagent', parent_agent_id: 2, status: 'running' }),
     ];
-    const list = buildSessionAgentList(agents);
-    expect(list.map((a) => a.id)).toEqual([1, 2]);
-  });
+    const [root] = buildSessionAgentTree(agents).builders;
+    expect(nodeHasDescendantAgent(root, 1)).toBe(false);
+    expect(nodeHasDescendantAgent(root, 2)).toBe(true);
+    expect(nodeHasDescendantAgent(root, 3)).toBe(true);
+    expect(nodeHasDescendantAgent(root, '3')).toBe(true);
+    expect(nodeHasDescendantAgent(root, 99)).toBe(false);
 
-  it('returns an empty list for no agents', () => {
-    expect(buildSessionAgentList([])).toEqual([]);
-    expect(buildSessionAgentList(null)).toEqual([]);
+    expect(summarizeNodeDescendants(root)).toEqual({
+      count: 2,
+      hasRunning: true,
+      hasApproval: false,
+      hasFailed: false,
+    });
   });
 });

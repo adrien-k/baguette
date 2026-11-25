@@ -66,6 +66,7 @@ export function sdkPluginPublicMeta(plugin) {
     appliesUserModelPrefs: plugin.appliesUserModelPrefs === true,
     storedSessionIdColumn: plugin.storedSessionIdColumn ?? null,
     requiresApiKey: plugin.requiresApiKey !== false,
+    ownerOnlySystemAuth: plugin.ownerOnlySystemAuth !== false,
     credentialSchema: plugin.credentialSchema ?? null,
   };
 }

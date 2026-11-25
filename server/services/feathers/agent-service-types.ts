@@ -56,6 +56,7 @@ export type AgentRow = {
   claude_session_id?: string | null;
   cursor_agent_id?: string | null;
   pi_session_id?: string | null;
+  antigravity_session_id?: string | null;
   current_turn_id?: number;
   active_turn_id?: number | null;
   initial_prompt?: string | null;
@@ -74,7 +75,6 @@ export type AgentSessionRow = {
   session_path?: string | null;
   absolute_session_path?: string | null;
   plugins?: string | null;
-  plan_mode?: boolean | null;
   remote_branch?: string | null;
   agent_preferences?: string | null;
   [key: string]: unknown;

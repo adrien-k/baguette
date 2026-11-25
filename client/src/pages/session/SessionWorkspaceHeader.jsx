@@ -125,7 +125,7 @@ export default function SessionWorkspaceHeader({
                 {showRepoDetails ? (
                   <CardRepoBadge
                     show
-                    truncate={false}
+                    truncate
                     nowrap
                     className="hidden md:inline-flex"
                     isGlobal={isGlobalSession(headerSession)}

@@ -24,6 +24,7 @@ import McpServersSection from '../components/McpServersSection.jsx';
 import RepoSearchInput from '../components/RepoSearchInput.jsx';
 import PublicRepoSearchInput from '../components/PublicRepoSearchInput.jsx';
 import GroupedRepositoriesList from '../components/GroupedRepositoriesList.jsx';
+import RepoFixedPushBranchesControl from '../components/RepoFixedPushBranchesControl.jsx';
 import { SecretsTab, SkillsTab, PluginsTab } from './settings/GlobalSettingsSections.jsx';
 import AgentSettingsTab from './settings/AgentSettingsTab.jsx';
 import AccountSettingsTab from './settings/AccountSettingsTab.jsx';
@@ -78,6 +79,7 @@ function RepositoriesTab({ settings, onSave }) {
   const [unlinkingId, setUnlinkingId] = useState(null);
   const [confirmUnlink, setConfirmUnlink] = useState(null);
   const [togglingShowInAllId, setTogglingShowInAllId] = useState(null);
+  const [savingFixedPushId, setSavingFixedPushId] = useState(null);
   const [githubToken, setGithubToken] = useState(null);
   const [githubTokenDirty, setGithubTokenDirty] = useState(false);
   const [githubTokenSaving, setGithubTokenSaving] = useState(false);
@@ -133,6 +135,21 @@ function RepositoriesTab({ settings, onSave }) {
       toastError('Failed to create repository', err);
     } finally {
       setAddingLocal(false);
+    }
+  };
+
+  const handleFixedPushBranchesSave = async (repo, branches) => {
+    if (!repo?.id) return false;
+    setSavingFixedPushId(repo.id);
+    try {
+      await reposService.patch(repo.id, { agent_fixed_push_branches: branches });
+      await refetchRepos();
+      return true;
+    } catch (err) {
+      toastError('Failed to save agent push branches', err);
+      return false;
+    } finally {
+      setSavingFixedPushId(null);
     }
   };
 
@@ -372,6 +389,11 @@ function RepositoriesTab({ settings, onSave }) {
                       />
                       Include in &ldquo;All sessions&rdquo; view
                     </label>
+                    <RepoFixedPushBranchesControl
+                      repo={r}
+                      saving={savingFixedPushId === r.id}
+                      onSave={handleFixedPushBranchesSave}
+                    />
                   </div>
                   <button
                     onClick={() => handleUnlinkClick(r)}

@@ -12,10 +12,6 @@ import { Task } from '../task.js';
 // Prevent actual process spawning
 vi.spyOn(Task.prototype, 'start').mockReturnValue(undefined);
 
-vi.mock('../../agent-sdks/claude/agent-service.ts', () => ({
-  getSessionEnv: vi.fn().mockResolvedValue({}),
-}));
-
 describe('Tasks service — in-memory', () => {
   let app;
   let userId1, userId2;

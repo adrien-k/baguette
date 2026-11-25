@@ -29,10 +29,12 @@ import {
   collectRunningBashToolsForDock,
   runningBashToolIds,
 } from '@baguette/shared/running-tools.js';
+import { collectInteractiveToolsForDock } from '@baguette/shared/interactive-tools-dock.js';
 import ChatRunningBashDock from '../../components/chat/ChatRunningBashDock.tsx';
 import ChatCostSummary from '../../components/chat/ChatCostSummary.tsx';
 import ChatSessionPlanLinks from '../../components/chat/ChatSessionPlanLinks.tsx';
 import ChatPushChangesButton from '../../components/chat/ChatPushChangesButton.tsx';
+import ChatPullButton from '../../components/chat/ChatPullButton.tsx';
 import ChatQuickActionButton, {
   CHAT_ACTION_BUTTON_CLASS,
 } from '../../components/chat/ChatQuickActionButton.tsx';
@@ -131,6 +133,8 @@ export default function ChatView({
   commitsToPush = 0,
   onPush,
   pushing = false,
+  onPull,
+  pulling = false,
   onDeletePermanently,
   onOpenAddBuilder,
   addBuilderOpen = false,
@@ -417,7 +421,9 @@ export default function ChatView({
     sessionPath: session?.absolute_session_path,
     sessionTurnActive: isRunning,
   });
-  const pinnedRunningBashIds = runningBashToolIds(runningBashDock);
+  const interactiveToolDock = collectInteractiveToolsForDock(displayMessages);
+  const toolDockItems = [...runningBashDock, ...interactiveToolDock];
+  const pinnedToolDockIds = runningBashToolIds(toolDockItems);
 
   // Manual fallback for a session that auto-restart could not resume on its own. `can_continue` is set
   // by the server; the literal string covers sessions stopped before that flag existed.
@@ -797,7 +803,7 @@ export default function ChatView({
                     sessionPath={session.absolute_session_path}
                     sessionId={session.id}
                     agentName={agentDisplayName}
-                    pinnedRunningBashIds={pinnedRunningBashIds}
+                    pinnedToolDockIds={pinnedToolDockIds}
                     agents={agents}
                     onSelectAgent={onSelectAgent}
                     tasks={tasks}
@@ -817,7 +823,7 @@ export default function ChatView({
                     agentName={agentDisplayName}
                     messageIndex={item.index}
                     allMessages={displayMessages}
-                    pinnedRunningBashIds={pinnedRunningBashIds}
+                    pinnedToolDockIds={pinnedToolDockIds}
                     agents={agents}
                     onSelectAgent={onSelectAgent}
                     tasks={tasks}
@@ -908,6 +914,13 @@ export default function ChatView({
                     {isOwner && canTogglePrDraftStatus(session) && (
                       <PrDraftToggleButton session={session} className={CHAT_ACTION_BUTTON_CLASS} />
                     )}
+                    <ChatPullButton
+                      session={session}
+                      readonly={readonly || !isOwner}
+                      onPull={onPull}
+                      pulling={pulling}
+                      className={CHAT_ACTION_BUTTON_CLASS}
+                    />
                     <ChatPushChangesButton
                       session={session}
                       readonly={readonly || !isOwner}
@@ -924,9 +937,9 @@ export default function ChatView({
               {session && showSessionChatFooterExtras && !isRunning && !isProvisioning && (
                 <ChatCostSummary usage={sessionUsage} loading={sessionUsageLoading} />
               )}
-              {runningBashDock.length > 0 && (
+              {toolDockItems.length > 0 && (
                 <ChatRunningBashDock
-                  items={runningBashDock}
+                  items={toolDockItems}
                   sessionPath={session?.absolute_session_path}
                   sessionId={session?.id}
                   agents={agents}

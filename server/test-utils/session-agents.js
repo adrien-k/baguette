@@ -8,6 +8,7 @@ export async function insertSessionWithPrimaryBuilder(db, sessionFields) {
     claude_session_id,
     cursor_agent_id,
     pi_session_id,
+    antigravity_session_id,
     status: sessionStatus = 'stopped',
     ...sessionOnly
   } = sessionFields;
@@ -25,6 +26,7 @@ export async function insertSessionWithPrimaryBuilder(db, sessionFields) {
     claude_session_id: claude_session_id ?? null,
     cursor_agent_id: cursor_agent_id ?? null,
     pi_session_id: pi_session_id ?? null,
+    antigravity_session_id: antigravity_session_id ?? null,
     current_turn_id: 0,
   });
   return sessionId;

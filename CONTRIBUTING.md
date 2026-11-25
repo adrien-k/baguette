@@ -29,7 +29,7 @@ Run Baguette from a git checkout when you are changing the server, client, or te
 git clone <repository-url>
 cd baguette
 npm install
-cp .env.dev.example .env   # optional: SDK test keys, DATA_DIR, DOMAIN overrides
+cp .env.example .env   # optional: SDK test keys, DATA_DIR, DOMAIN overrides
 npm run migrate
 npm run dev
 ```
@@ -64,7 +64,7 @@ Baguette authenticates to GitHub through a GitHub App, so you choose which repos
 
 ### Live agent-SDK integration tests
 
-Optional **live agent-SDK tests** (`*.live.test.js`) call a real model and skip unless set. Copy the `SDK_TESTS_*` block from `.env.dev.example` (Claude / Cursor / Pi keys + model; `SDK_TESTS_MOCK=1` for the mock SDK). Do not set them in CI unless you intend to pay for those calls. The `agents-integration-test` Baguette task in `.baguette.yaml` runs Pi, Claude, and Cursor live tests on cheap OpenCode Go / Cursor models using Baguette secrets.
+Optional **live agent-SDK tests** (`*.live.test.js`) call a real model and skip unless set. Copy the `SDK_TESTS_*` block from `.env.example` (Claude / Cursor / Pi / Antigravity keys + model; `SDK_TESTS_MOCK=1` for the mock SDK). Do not set them in CI unless you intend to pay for those calls. The `agents-integration-test` Baguette task in `.baguette.yaml` runs Pi, Claude, and Cursor live tests on cheap OpenCode Go / Cursor models using Baguette secrets.
 
 ## Code style
 

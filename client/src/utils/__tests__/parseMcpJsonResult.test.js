@@ -44,6 +44,21 @@ describe('parseMcpJsonResult', () => {
     expect(parsed?.markdown).toBe('From string');
   });
 
+  it('merges approval outcome over stale inner content when given result.data only', () => {
+    const inner = {
+      ok: true,
+      approval_requested: true,
+      request_id: 'req-ui',
+    };
+    const parsed = parseMcpJsonResult({
+      content: [{ type: 'text', text: JSON.stringify(inner) }],
+      approval_requested: false,
+      approval_outcome: 'canceled',
+    });
+    expect(parsed?.approval_outcome).toBe('canceled');
+    expect(parsed?.approval_requested).toBe(false);
+  });
+
   it('flattens a nested subagent payload from { data: { agent_id, ref, subagent } }', () => {
     const parsed = parseMcpJsonResult({
       data: {

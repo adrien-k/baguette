@@ -166,4 +166,8 @@ export function registerFeathersRealtime(app) {
     if (!data?.session_id) return null;
     return channelsForSessionId(app, data.session_id);
   });
+
+  if (app.services['usage-model-pricing']) {
+    app.service('usage-model-pricing').publish('patched', () => app.channel('authenticated'));
+  }
 }

@@ -43,7 +43,7 @@ Baguette proxies session dev servers via subdomain routing. Each session's previ
 
 ### Development
 
-By default, local Baguette uses `DOMAIN=127.0.0.1.traefik.me` ([wildcard DNS to `127.0.0.1`](https://traefik.me/)), so previews work at `session-<id>.127.0.0.1.traefik.me` without extra DNS setup. Open the dev UI at `http://www.127.0.0.1.traefik.me:5173` (see `.env.dev.example`).
+By default, local Baguette uses `DOMAIN=127.0.0.1.traefik.me` ([wildcard DNS to `127.0.0.1`](https://traefik.me/)), so previews work at `session-<id>.127.0.0.1.traefik.me` without extra DNS setup. Open the dev UI at `http://www.127.0.0.1.traefik.me:5173` (see `.env.example`).
 
 #### Localhost (optional)
 

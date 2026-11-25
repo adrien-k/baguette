@@ -1,5 +1,6 @@
 import { ArrowUpToLine, MonitorPlay } from 'lucide-react';
 import { isGlobalSession } from '@baguette/shared/session-scope.js';
+import { isLocalRepo } from '../utils/repoDisplayName.js';
 import PrStatusBadge from './PrStatusBadge.jsx';
 import PreviewServicesDropdown from './PreviewServicesDropdown.jsx';
 import ToolbarButton, { SESSION_TOOLS_CONTAINER_CLASS } from './ToolbarButton.jsx';
@@ -28,6 +29,14 @@ function canShowSessionPushTool(session, { readonly, onPush } = {}) {
 export function canShowChatPushChangesBar(session, { readonly, onPush, commitsToPush = 0 } = {}) {
   if (commitsToPush <= 0) return false;
   return canShowSessionPushTool(session, { readonly, onPush });
+}
+
+/** Pull CTA in the chat footer when the session has a GitHub remote. */
+export function canShowChatPullButton(session, { readonly, onPull } = {}) {
+  if (!canShowSessionPushTool(session, { readonly, onPush: onPull })) return false;
+  if (!session?.remote_branch) return false;
+  if (session.repo_full_name && isLocalRepo(session.repo_full_name)) return false;
+  return true;
 }
 
 function canShowTool(tool, session, { readonly, onPush } = {}) {

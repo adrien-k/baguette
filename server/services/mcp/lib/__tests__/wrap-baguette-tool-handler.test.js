@@ -4,6 +4,7 @@ vi.mock('../../../feathers/agents.service.js', () => ({
   patchAgentInternal: vi.fn().mockResolvedValue({}),
 }));
 
+import { ok } from '../../../baguette-mcp-tool-result.js';
 import { patchAgentInternal } from '../../../feathers/agents.service.js';
 import { wrapBaguetteToolList } from '../wrap-baguette-tool-handler.js';
 
@@ -260,6 +261,46 @@ describe('wrapBaguetteToolList', () => {
 
     expect(sessionState.endTurnAwaitingUser).toBe(false);
     expect(patch).not.toHaveBeenCalled();
+  });
+
+  it('marks awaiting user after GitPush approval request', async () => {
+    patchAgentInternal.mockClear();
+    const sessionState = { channel: 'chat', endTurnAwaitingUser: false };
+    const builder = {
+      id: 5,
+      agent_sdk: 'cursor',
+      agent_type: 'builder',
+      is_primary: 1,
+      session_id: 42,
+    };
+    const app = {
+      get: (key) => {
+        if (key === 'db') {
+          return makeDb({ sessionRow: { id: 42 }, builder, reviewer: null });
+        }
+        return undefined;
+      },
+      service: (name) => {
+        if (name === 'cursor-agent') {
+          return { getActiveSession: () => sessionState };
+        }
+        return null;
+      },
+    };
+    const session = { id: 42, user_id: 7 };
+    const tools = wrapBaguetteToolList(session, app, [
+      {
+        name: 'GitPush',
+        description: 'push',
+        schema: {},
+        handler: async () => ok({ approval_requested: true, request_id: 'req-1' }),
+      },
+    ]);
+
+    await tools[0].handler({ reason: 'test' });
+
+    expect(sessionState.endTurnAwaitingUser).toBe(true);
+    expect(patchAgentInternal).toHaveBeenCalledWith(app, 5, { status: 'approval' }, 7);
   });
 
   it('does not mark awaiting user for non turn-ending tools', async () => {

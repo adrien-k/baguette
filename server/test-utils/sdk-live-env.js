@@ -28,7 +28,7 @@ function truthyFlag(value) {
 }
 
 /**
- * @param {'claude' | 'cursor' | 'pi' | 'mock'} sdk
+ * @param {'claude' | 'cursor' | 'pi' | 'antigravity' | 'mock'} sdk
  * @returns {{
  *   sdk: string,
  *   enabled: boolean,
@@ -51,6 +51,22 @@ export function readLiveSdkEnv(sdk) {
       apiUrl: null,
       model: MOCK_STANDARD_MODEL_ID,
       modelParams: null,
+      timeoutMs,
+    };
+  }
+
+  if (sdk === 'antigravity') {
+    const modelRaw = trimEnv('SDK_TESTS_ANTIGRAVITY_MODEL');
+    const apiKey = trimEnv('SDK_TESTS_ANTIGRAVITY_API_KEY');
+    const modelParams = trimEnv('SDK_TESTS_ANTIGRAVITY_MODEL_PARAMS');
+    return {
+      sdk,
+      enabled: Boolean(modelRaw) || truthyFlag(process.env.SDK_TESTS_ANTIGRAVITY),
+      apiKey: apiKey || null,
+      apiKeyEnvVar: undefined,
+      apiUrl: null,
+      model: modelRaw || 'gemini-3.8-flash',
+      modelParams: modelParams || null,
       timeoutMs,
     };
   }

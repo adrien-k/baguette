@@ -10,6 +10,7 @@ import ToolCallBlock from './chat/ToolCallBlock.tsx';
 import BaguetteBlock from './chat/BaguetteBlock.tsx';
 import PlanReviewBlock from './chat/PlanReviewBlock.tsx';
 import AskUserAnswerBlock from './chat/AskUserAnswerBlock.tsx';
+import GitPushOutcomeBlock from './chat/GitPushOutcomeBlock.tsx';
 import CopyButton from './chat/CopyButton.tsx';
 import {
   isHumanUserMessage,
@@ -17,6 +18,7 @@ import {
   isMcpUserMessage,
 } from '@baguette/shared/turn-model.js';
 import { isSlackUserMessage } from '@baguette/shared/slack-user-message.js';
+import { hasHumanUserReplyAfter } from '@baguette/shared/running-tools.js';
 import InjectedUserTurnBlock from './chat/InjectedUserTurnBlock.jsx';
 import McpAgentBlock from './chat/McpAgentBlock.tsx';
 import SlackBlock from './chat/SlackBlock.tsx';
@@ -54,7 +56,7 @@ export type ChatMessageProps = {
   agentName?: string;
   messageIndex: number | null;
   allMessages: ChatMessageView[] | null;
-  pinnedRunningBashIds?: Set<string>;
+  pinnedToolDockIds?: Set<string>;
   agents?: Array<{
     id: number;
     ref?: number;
@@ -135,6 +137,39 @@ function TypedUserMessage({ message }: { message: TypedMessageView & { type: 'us
 
   if (isSlackUserMessage(message)) {
     return <SlackBlock message={message} />;
+  }
+
+  if (message.subtype === 'git_push_outcome') {
+    const payload = message as {
+      outcome?: 'pushed' | 'canceled' | 'failed';
+      error?: string;
+      target_branch?: string | null;
+      source_branch?: string | null;
+    };
+    const userText = userMessagePlainText(message);
+    return (
+      <div className="group bg-control rounded-lg p-3 sm:p-4 border border-strong ml-4 sm:ml-8">
+        <div className="text-xs text-muted mb-1 font-medium flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <UserAuthorLabel author={message.author} />
+            {message.created_at && (
+              <MessageTimestamp
+                createdAt={message.created_at}
+                className="text-faint font-normal shrink-0"
+              />
+            )}
+          </div>
+          <UserMessageModelBadge message={message} />
+        </div>
+        <GitPushOutcomeBlock
+          outcome={payload.outcome ?? null}
+          error={payload.error}
+          targetBranch={payload.target_branch}
+          sourceBranch={payload.source_branch}
+          fallbackText={userText}
+        />
+      </div>
+    );
   }
 
   const userText = userMessagePlainText(message);
@@ -229,7 +264,7 @@ function TypedMessage(
     sessionPath,
     sessionId,
     agentName = 'Agent',
-    pinnedRunningBashIds,
+    pinnedToolDockIds,
     userReplied,
     agents,
     onSelectAgent,
@@ -249,7 +284,7 @@ function TypedMessage(
 
     case 'tool_call': {
       const call = message as TypedMessageView & { call_id?: string | null };
-      if (pinnedRunningBashIds?.has(call.call_id ?? `tool-${message.id}`)) return null;
+      if (pinnedToolDockIds?.has(call.call_id ?? `tool-${message.id}`)) return null;
       return (
         <ToolCallBlock
           message={message}
@@ -331,14 +366,10 @@ export default function ChatMessage(props: ChatMessageProps) {
     return null;
   }
 
-  const userReplied = (() => {
-    if (!allMessages || messageIndex == null) return false;
-    return allMessages.slice(messageIndex + 1).some((m) => {
-      if (!isHumanUserMessage(m)) return false;
-      const source = (m as { source?: string }).source;
-      return source !== 'baguette' && source !== 'loop';
-    });
-  })();
+  const userReplied =
+    allMessages != null && messageIndex != null
+      ? hasHumanUserReplyAfter(allMessages, messageIndex)
+      : false;
 
   return (
     <TypedMessage {...props} message={message as TypedMessageView} userReplied={userReplied} />

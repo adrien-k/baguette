@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   describeCursorModelPricing,
+  describeRatesPricing,
   estimateCursorTurnCostUsd,
   estimateCostUsdFromRates,
   hasAgentModelPricing,
@@ -151,5 +152,19 @@ describe('cursor-model-pricing', () => {
       priceRates
     );
     expect(cost).toBeCloseTo(0.00161646, 6);
+  });
+
+  it('formats custom rates via describeRatesPricing', () => {
+    expect(describeRatesPricing(null)).toBeNull();
+    expect(
+      describeRatesPricing({ input: 1.5, cacheWrite: null, cacheRead: 0.25, output: 6 })
+    ).toEqual({
+      header: 'USD per 1M tokens',
+      rows: [
+        { label: 'Input', value: '$1.5' },
+        { label: 'Cache read', value: '$0.25' },
+        { label: 'Output', value: '$6' },
+      ],
+    });
   });
 });

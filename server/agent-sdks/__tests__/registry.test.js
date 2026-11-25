@@ -10,6 +10,7 @@ import {
 import { claudeAgentSdkPlugin } from '../claude/index.js';
 import { cursorAgentSdkPlugin } from '../cursor/index.js';
 import { piAgentSdkPlugin } from '../pi/index.js';
+import { antigravityAgentSdkPlugin } from '../antigravity/index.js';
 import { mockAgentSdkPlugin } from '../mock/index.js';
 import {
   ANTHROPIC_API_KEY_ENV,
@@ -78,6 +79,7 @@ describe('agent SDK plugin registry', () => {
       appliesUserModelPrefs: false,
       storedSessionIdColumn: null,
       requiresApiKey: true,
+      ownerOnlySystemAuth: true,
       credentialSchema: null,
     });
   });
@@ -129,6 +131,22 @@ describe('built-in SDK plugin contract', () => {
     ).toBe('lr_…');
     expect(piAgentSdkPlugin.credentialSchema.hasApiUrl).toBe(false);
 
+    expect(antigravityAgentSdkPlugin).toMatchObject({
+      key: 'antigravity',
+      label: 'Antigravity',
+      servicePath: 'antigravity-agent',
+      supportsModelParams: true,
+      requiresModelParamsOnTurn: false,
+      usesAgentPricingTable: true,
+      storedSessionIdColumn: 'antigravity_session_id',
+      requiresApiKey: false,
+    });
+    expect(antigravityAgentSdkPlugin.credentialSchema).toMatchObject({
+      envVarOptions: null,
+      defaultEnvVar: null,
+      hasApiUrl: false,
+    });
+
     expect(mockAgentSdkPlugin).toMatchObject({
       requiresApiKey: false,
       supportsModelParams: false,
@@ -156,6 +174,13 @@ describe('built-in SDK plugin contract', () => {
     expect(typeof claudeAgentSdkPlugin.resetUsageTotals).toBe('function');
 
     expect(piAgentSdkPlugin.hasStoredSession({ pi_session_id: 'pi-1' })).toBe(true);
+    expect(antigravityAgentSdkPlugin.hasStoredSession({ antigravity_session_id: 'agy-1' })).toBe(
+      true
+    );
+    expect(antigravityAgentSdkPlugin.hasStoredSession({})).toBe(false);
+    expect(antigravityAgentSdkPlugin.normalizePickerModelId('gemini-3.8-flash')).toBe(
+      'gemini-3.8-flash'
+    );
     expect(mockAgentSdkPlugin.hasStoredSession({ claude_session_id: 'sess' })).toBe(false);
     expect(mockAgentSdkPlugin.adaptTools([{ name: 'x' }])).toEqual([]);
   });
