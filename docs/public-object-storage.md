@@ -6,13 +6,13 @@ Configure an S3-compatible bucket under **Admin → Public storage**. Baguette u
 
 ## Admin fields
 
-| Field                                     | Purpose                                                                                                            |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| **Endpoint URL**                          | S3 API host (e.g. `https://s3.eu-west-1.amazonaws.com` or your MinIO URL).                                         |
-| **Bucket name**                           | Target bucket.                                                                                                     |
-| **Region**                                | Optional; required by some providers (e.g. AWS).                                                                   |
-| **Access key id** / **Secret access key** | Credentials for PUT/DELETE against the bucket. Encrypted at rest; the secret is **never** returned to the browser. |
-| **Public base URL**                       | Origin where anonymous clients read objects (custom domain, CDN, or provider public URL).                          |
+| Field                                     | Purpose                                                                                                                                                                                                                                                        |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Endpoint URL**                          | S3 API host (e.g. `https://s3.eu-west-1.amazonaws.com` or your MinIO URL).                                                                                                                                                                                     |
+| **Bucket name**                           | Target bucket.                                                                                                                                                                                                                                                 |
+| **Region**                                | Optional; required by some providers (e.g. AWS).                                                                                                                                                                                                               |
+| **Access key id** / **Secret access key** | Optional. Static credentials for PUT/DELETE against the bucket (encrypted at rest; the secret is **never** returned to the browser). Leave both empty on EC2, ECS, or EKS so Baguette uses the instance or task IAM role via the AWS default credential chain. |
+| **Public base URL**                       | Origin where anonymous clients read objects (custom domain, CDN, or provider public URL).                                                                                                                                                                      |
 
 **Test connection** only checks API credentials: Baguette writes and deletes a small object under `baguette/_health/`. It does **not** verify that the public base URL is reachable or that anonymous GET works — configure bucket policy or CDN access separately.
 

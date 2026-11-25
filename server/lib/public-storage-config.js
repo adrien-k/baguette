@@ -53,7 +53,8 @@ export function publicStorageConfiguredFromRow(row) {
   const accessKey = row?.public_storage_access_key_id?.trim();
   const secretEnc = row?.public_storage_secret_access_key_encrypted?.trim();
   const baseUrl = row?.public_storage_public_base_url?.trim();
-  return !!(endpoint && bucket && accessKey && secretEnc && baseUrl);
+  const credentialsOk = (accessKey && secretEnc) || (!accessKey && !secretEnc);
+  return !!(endpoint && bucket && baseUrl && credentialsOk);
 }
 
 export async function publicStorageSettingsShape(db) {

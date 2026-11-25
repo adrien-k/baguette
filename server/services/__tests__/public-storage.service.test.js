@@ -10,11 +10,13 @@ import { invalidatePublicStorageCache } from '../../lib/public-storage-config.js
 
 const s3Mocks = vi.hoisted(() => ({
   send: vi.fn().mockResolvedValue({}),
+  clientConfigs: [],
 }));
 
 vi.mock('@aws-sdk/client-s3', () => {
   class S3Client {
-    constructor() {
+    constructor(config) {
+      s3Mocks.clientConfigs.push(config ?? {});
       this.send = s3Mocks.send;
     }
   }
@@ -41,6 +43,7 @@ let app;
 beforeEach(async () => {
   invalidatePublicStorageCache();
   s3Mocks.send.mockReset();
+  s3Mocks.clientConfigs.length = 0;
   s3Mocks.send.mockResolvedValue({});
   app = feathers();
   app.set('db', db);
@@ -115,6 +118,30 @@ describe('patch', () => {
       /Admin required|Forbidden/
     );
   });
+
+  it('marks configured when credentials are omitted (IAM role)', async () => {
+    const patched = await service().patch(
+      1,
+      {
+        endpoint_url: 'https://s3.amazonaws.com',
+        bucket: 'pub',
+        region: 'us-east-1',
+        access_key_id: '',
+        public_base_url: 'https://cdn.example.com/',
+        secret_access_key: '',
+      },
+      adminParams
+    );
+    expect(patched).toEqual({
+      configured: true,
+      endpoint_url: 'https://s3.amazonaws.com',
+      bucket: 'pub',
+      region: 'us-east-1',
+      access_key_id: null,
+      public_base_url: 'https://cdn.example.com/',
+      secret_configured: false,
+    });
+  });
 });
 
 describe('remove', () => {
@@ -159,5 +186,23 @@ describe('test', () => {
     const result = await service().test({}, adminParams);
     expect(result).toEqual({ ok: true });
     expect(s3Mocks.send).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses the default credential chain when keys are omitted', async () => {
+    await service().patch(
+      1,
+      {
+        endpoint_url: 'https://s3.amazonaws.com',
+        bucket: 'pub',
+        region: 'us-east-1',
+        access_key_id: '',
+        public_base_url: 'https://cdn.example.com',
+        secret_access_key: '',
+      },
+      adminParams
+    );
+    const result = await service().test({}, adminParams);
+    expect(result).toEqual({ ok: true });
+    expect(s3Mocks.clientConfigs[0]?.credentials).toBeUndefined();
   });
 });

@@ -191,17 +191,21 @@ export default function PublicStorageTab() {
             </label>
 
             <label className="block text-sm font-medium text-secondary">
-              Access key id
+              Access key id <span className="text-faint font-normal">(optional)</span>
               <TextInput
                 className="mt-1 w-full font-mono text-sm"
                 value={form.access_key_id}
                 onChange={setField('access_key_id')}
                 autoComplete="off"
               />
+              <span className="mt-1 block text-xs text-faint">
+                Leave blank on EC2 (or ECS/EKS) to use the instance task IAM role instead of static
+                keys.
+              </span>
             </label>
 
             <label className="block text-sm font-medium text-secondary">
-              Secret access key
+              Secret access key <span className="text-faint font-normal">(optional)</span>
               <TextInput
                 type="password"
                 className="mt-1 w-full font-mono text-sm"

@@ -4,15 +4,18 @@ import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client
 /** Prefix scoped by the public-read policy. The rest of the key is the secret. */
 const OBJECT_KEY_PREFIX = 'baguette/';
 
+function hasExplicitCredentials(config) {
+  return !!(config.access_key_id && config.secret_access_key);
+}
+
+function hasInstanceCredentials(config) {
+  return !config.access_key_id && !config.secret_access_key;
+}
+
 export function isPublicStorageConfigured(config) {
   if (!config) return false;
-  return !!(
-    config.endpoint_url &&
-    config.bucket &&
-    config.access_key_id &&
-    config.secret_access_key &&
-    config.public_base_url
-  );
+  const credentialsOk = hasExplicitCredentials(config) || hasInstanceCredentials(config);
+  return !!(config.endpoint_url && config.bucket && config.public_base_url && credentialsOk);
 }
 
 /**
@@ -40,15 +43,18 @@ export function publicObjectUrl(publicBaseUrl, key) {
 }
 
 function s3Client(config) {
-  return new S3Client({
+  const clientConfig = {
     region: config.region?.trim() || 'us-east-1',
     endpoint: config.endpoint_url,
     forcePathStyle: true,
-    credentials: {
+  };
+  if (hasExplicitCredentials(config)) {
+    clientConfig.credentials = {
       accessKeyId: config.access_key_id,
       secretAccessKey: config.secret_access_key,
-    },
-  });
+    };
+  }
+  return new S3Client(clientConfig);
 }
 
 export async function uploadPublicObject({ config, key, body, mediaType }) {
