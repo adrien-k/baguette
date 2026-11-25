@@ -4,6 +4,7 @@ import { encrypt } from '../../lib/encrypt.js';
 import {
   getPublicStorageConfig,
   invalidatePublicStorageCache,
+  mergePublicStorageTestOverrides,
   publicStorageSettingsShape,
 } from '../../lib/public-storage-config.js';
 import {
@@ -83,8 +84,9 @@ class PublicStorageService {
     return publicStorageSettingsShape(this.db);
   }
 
-  async test(_data, _params) {
-    const config = await getPublicStorageConfig(this.db);
+  async test(data, _params) {
+    const saved = await getPublicStorageConfig(this.db);
+    const config = mergePublicStorageTestOverrides(saved, data ?? {});
     if (!isPublicStorageConfigured(config)) {
       throw new BadRequest('Public object storage is not fully configured');
     }

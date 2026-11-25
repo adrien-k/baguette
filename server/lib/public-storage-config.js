@@ -69,3 +69,37 @@ export async function publicStorageSettingsShape(db) {
     secret_configured: Boolean(row?.public_storage_secret_access_key_encrypted?.trim()),
   };
 }
+
+const TEST_OVERRIDE_FIELDS = [
+  'endpoint_url',
+  'bucket',
+  'region',
+  'access_key_id',
+  'public_base_url',
+];
+
+function normalizeTestOverrideText(value) {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  const trimmed = String(value).trim();
+  return trimmed || null;
+}
+
+/**
+ * Merge unsaved admin form values into saved config for test connection.
+ * Omitted fields keep saved values; secret_access_key omitted keeps the saved secret.
+ * @param {Awaited<ReturnType<typeof loadPublicStorageConfig>>} saved
+ * @param {Record<string, unknown>} [data]
+ */
+export function mergePublicStorageTestOverrides(saved, data = {}) {
+  const config = { ...saved };
+  for (const key of TEST_OVERRIDE_FIELDS) {
+    if (data[key] === undefined) continue;
+    config[key] = normalizeTestOverrideText(data[key]);
+  }
+  if (data.secret_access_key !== undefined) {
+    const secret = typeof data.secret_access_key === 'string' ? data.secret_access_key.trim() : '';
+    config.secret_access_key = secret || null;
+  }
+  return config;
+}

@@ -4,7 +4,12 @@ import { toastError } from '../../utils/toastError.jsx';
 import { publicStorageService } from '../../feathers.js';
 import { SettingsSection, SettingsTabHeader } from '../../components/SettingsSection.jsx';
 import TextInput from '../../components/TextInput.jsx';
+import MaskedSecretInput from '../../components/MaskedSecretInput.jsx';
 import { PRIMARY_BUTTON_SIZED } from '../../utils/buttonStyles.js';
+import {
+  buildPublicStorageTestPayload,
+  canTestPublicStorageConnection,
+} from '../../utils/publicStorageTestPayload.js';
 
 const EMPTY_FORM = {
   endpoint_url: '',
@@ -18,6 +23,7 @@ export default function PublicStorageTab() {
   const [loaded, setLoaded] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [secretAccessKey, setSecretAccessKey] = useState('');
+  const [secretDirty, setSecretDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [grooming, setGrooming] = useState(false);
@@ -39,6 +45,7 @@ export default function PublicStorageTab() {
           public_base_url: row.public_base_url ?? '',
         });
         setSecretAccessKey('');
+        setSecretDirty(false);
       })
       .catch((err) => toastError('Failed to load public storage', err));
   }, []);
@@ -60,8 +67,7 @@ export default function PublicStorageTab() {
         access_key_id: form.access_key_id.trim(),
         public_base_url: form.public_base_url.trim(),
       };
-      const secret = secretAccessKey.trim();
-      if (secret) payload.secret_access_key = secret;
+      if (secretDirty) payload.secret_access_key = secretAccessKey ?? '';
       await publicStorageService.patch(1, payload);
       toast.success('Public storage saved');
       load();
@@ -72,10 +78,23 @@ export default function PublicStorageTab() {
     }
   };
 
+  const canTest = canTestPublicStorageConnection(
+    form,
+    secretAccessKey,
+    secretConfigured,
+    secretDirty
+  );
+
   const handleTest = async () => {
     setTesting(true);
     try {
-      await publicStorageService.test(1);
+      const payload = buildPublicStorageTestPayload(
+        form,
+        secretAccessKey,
+        secretConfigured,
+        secretDirty
+      );
+      await publicStorageService.test(payload);
       toast.success('Connection test succeeded');
     } catch (err) {
       toastError('Public storage test failed', err);
@@ -119,7 +138,7 @@ export default function PublicStorageTab() {
 
   if (!loaded) return <p className="text-faint">Loading…</p>;
 
-  const secretPlaceholder = secretConfigured ? 'Saved — leave blank to keep' : '';
+  const secretMasked = secretConfigured ? 'saved' : null;
 
   return (
     <div>
@@ -137,12 +156,16 @@ export default function PublicStorageTab() {
           description={
             configured
               ? 'Public storage is configured. Session description sync uploads images to the bucket.'
-              : 'Not configured — PR bodies use instance image URLs or GitHub attachments when available.'
+              : canTest
+                ? 'Settings are complete in the form but not saved yet — save to enable bucket uploads on PR sync.'
+                : 'Not configured — PR bodies use instance image URLs or GitHub attachments when available.'
           }
         >
           <p className="text-sm text-fg">
             {configured ? (
               <span className="text-success font-medium">Configured</span>
+            ) : canTest ? (
+              <span className="text-secondary font-medium">Not configured — save required</span>
             ) : (
               <span className="text-faint">Not configured</span>
             )}
@@ -206,14 +229,16 @@ export default function PublicStorageTab() {
 
             <label className="block text-sm font-medium text-secondary">
               Secret access key <span className="text-faint font-normal">(optional)</span>
-              <TextInput
-                type="password"
-                className="mt-1 w-full font-mono text-sm"
-                value={secretAccessKey}
-                onChange={(e) => setSecretAccessKey(e.target.value)}
-                placeholder={secretPlaceholder}
-                autoComplete="new-password"
-              />
+              <div className="mt-1">
+                <MaskedSecretInput
+                  maskedValue={secretMasked}
+                  placeholder="Secret access key"
+                  onChange={(val, dirty) => {
+                    setSecretAccessKey(val ?? '');
+                    setSecretDirty(dirty);
+                  }}
+                />
+              </div>
             </label>
 
             <label className="block text-sm font-medium text-secondary">
@@ -238,7 +263,7 @@ export default function PublicStorageTab() {
                 type="button"
                 className="text-sm text-secondary hover:text-fg disabled:text-faint px-3 py-2"
                 onClick={handleTest}
-                disabled={testing || !configured}
+                disabled={testing || !canTest}
               >
                 {testing ? 'Testing…' : 'Test connection'}
               </button>

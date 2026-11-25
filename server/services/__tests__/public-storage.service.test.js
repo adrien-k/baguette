@@ -119,6 +119,26 @@ describe('patch', () => {
     );
   });
 
+  it('clears a stored secret when patch sends an empty secret_access_key', async () => {
+    await service().patch(
+      1,
+      {
+        endpoint_url: 'https://s3.example.com',
+        bucket: 'pub',
+        access_key_id: 'AKIA',
+        public_base_url: 'https://cdn.example.com',
+        secret_access_key: 'old-secret',
+      },
+      adminParams
+    );
+    const patched = await service().patch(1, { secret_access_key: '' }, adminParams);
+    expect(patched.secret_configured).toBe(false);
+    expect(patched.access_key_id).toBe('AKIA');
+    expect(patched.configured).toBe(false);
+    const row = await db('instance_settings').where({ id: 1 }).first();
+    expect(row.public_storage_secret_access_key_encrypted).toBeNull();
+  });
+
   it('marks configured when credentials are omitted (IAM role)', async () => {
     const patched = await service().patch(
       1,
@@ -204,5 +224,53 @@ describe('test', () => {
     const result = await service().test({}, adminParams);
     expect(result).toEqual({ ok: true });
     expect(s3Mocks.clientConfigs[0]?.credentials).toBeUndefined();
+  });
+
+  it('tests unsaved access key credentials from the request body', async () => {
+    const result = await service().test(
+      {
+        endpoint_url: 'https://s3.example.com',
+        bucket: 'pub',
+        region: 'eu-west-1',
+        access_key_id: 'AKIATEST',
+        public_base_url: 'https://cdn.example.com',
+        secret_access_key: 'plain-secret',
+      },
+      adminParams
+    );
+    expect(result).toEqual({ ok: true });
+    expect(s3Mocks.clientConfigs[0]?.credentials).toEqual({
+      accessKeyId: 'AKIATEST',
+      secretAccessKey: 'plain-secret',
+    });
+  });
+
+  it('keeps the saved secret when the test body omits secret_access_key', async () => {
+    await service().patch(
+      1,
+      {
+        endpoint_url: 'https://s3.example.com',
+        bucket: 'pub',
+        access_key_id: 'AKIA',
+        public_base_url: 'https://cdn.example.com',
+        secret_access_key: 'saved-secret',
+      },
+      adminParams
+    );
+    invalidatePublicStorageCache();
+    const result = await service().test(
+      {
+        endpoint_url: 'https://s3.example.com',
+        bucket: 'pub',
+        access_key_id: 'AKIA',
+        public_base_url: 'https://cdn.example.com',
+      },
+      adminParams
+    );
+    expect(result).toEqual({ ok: true });
+    expect(s3Mocks.clientConfigs[0]?.credentials).toEqual({
+      accessKeyId: 'AKIA',
+      secretAccessKey: 'saved-secret',
+    });
   });
 });
