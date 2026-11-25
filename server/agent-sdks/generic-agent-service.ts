@@ -569,17 +569,33 @@ export class GenericAgentService {
     return this.getActiveSession(id);
   }
 
-  async completeText(opts: {
-    userId: number;
-    agentConfigId?: number | null;
-    cwd?: string;
-    prompt: string;
-    model?: string | null;
-  }): Promise<string> {
+  async completeText(
+    promptOrOpts:
+      | string
+      | {
+          userId?: number | null;
+          agentConfigId?: number | null;
+          cwd?: string;
+          prompt: string;
+          model?: string | null;
+          modelParams?: unknown;
+        },
+    maybeOpts?: {
+      userId?: number | null;
+      agentConfigId?: number | null;
+      cwd?: string;
+      model?: string | null;
+      modelParams?: unknown;
+    }
+  ): Promise<string> {
+    const opts =
+      typeof promptOrOpts === 'string'
+        ? { ...(maybeOpts ?? {}), prompt: promptOrOpts }
+        : promptOrOpts;
     const controller = new AbortController();
     const db = this.app.get('db') as DbLike;
     const config =
-      opts.agentConfigId != null
+      opts.agentConfigId != null && opts.userId != null
         ? ((await loadOwnedAgentConfigDecrypted(opts.agentConfigId, opts.userId, db as never).catch(
             () => null
           )) as Record<string, unknown> | null)
@@ -598,7 +614,7 @@ export class GenericAgentService {
       return await Promise.race([
         driver.completeText({
           app: this.app,
-          userId: opts.userId,
+          userId: opts.userId ?? 0,
           agentConfigId: opts.agentConfigId,
           cwd: opts.cwd || os.homedir(),
           prompt: opts.prompt,

@@ -224,6 +224,12 @@ describe('GenericAgentService', () => {
     expect(out).toBe('Short title');
     expect(fakeDriver.close).toHaveBeenCalled();
 
+    const outTwoArgs = await service.completeText('Summarize', { userId: 10, model: 'haiku' });
+    expect(outTwoArgs).toBe('Short title');
+    expect(fakeDriver.completeText).toHaveBeenLastCalledWith(
+      expect.objectContaining({ userId: 10, prompt: 'Summarize', model: 'haiku' })
+    );
+
     delete fakeDriver.completeText;
     const empty = await service.completeText({ userId: 10, prompt: 'Summarize' });
     expect(empty).toBe('');
