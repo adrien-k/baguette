@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { MODAL_OVERLAY_CLASS, MODAL_PANEL_CLASS, TEXT_FAINT, TEXT_PRIMARY } from '../utils/ui.js';
 
@@ -12,7 +13,7 @@ export default function Modal({
   maxWidth = 'max-w-sm',
   padding = 'p-6',
 }) {
-  return (
+  const overlay = (
     <div className={`${MODAL_OVERLAY_CLASS} ${overlayClassName}`}>
       <div className="flex min-h-full items-center justify-center p-4">
         <div className={`${MODAL_PANEL_CLASS} ${maxWidth} ${padding} ${panelClassName}`}>
@@ -21,6 +22,8 @@ export default function Modal({
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(overlay, document.body) : overlay;
 }
 
 export function ModalHeader({ title, icon: Icon, onClose, disabled = false }) {
