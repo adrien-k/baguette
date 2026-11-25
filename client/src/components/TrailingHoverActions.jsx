@@ -16,7 +16,11 @@ function revealClass(groupName, forceVisible) {
  * session shell is `bg-control-hover`. `extraHoverWash` adds the agent-row
  * `bg-control/50` hover used when that row is not the open agent.
  */
-function TrailingHoverBackdrop({ sessionHighlighted, extraHoverWash }) {
+export function TrailingHoverBackdrop({
+  sessionHighlighted,
+  extraHoverWash,
+  showOnMobile = false,
+}) {
   let base = (
     <>
       <span className="absolute inset-0 bg-nav" />
@@ -26,10 +30,11 @@ function TrailingHoverBackdrop({ sessionHighlighted, extraHoverWash }) {
   if (sessionHighlighted) {
     base = <span className="absolute inset-0 bg-control-hover" />;
   }
+  const visibilityClass = showOnMobile ? 'block' : 'hidden md:block';
   return (
     <span
       aria-hidden
-      className="pointer-events-none absolute inset-0 -z-10 hidden md:block [mask-image:linear-gradient(to_right,transparent,black_0.75rem)] [-webkit-mask-image:linear-gradient(to_right,transparent,black_0.75rem)]"
+      className={`pointer-events-none absolute inset-0 -z-10 ${visibilityClass} [mask-image:linear-gradient(to_right,transparent,black_0.75rem)] [-webkit-mask-image:linear-gradient(to_right,transparent,black_0.75rem)]`}
     >
       {base}
       {extraHoverWash ? <span className="absolute inset-0 bg-control/50" /> : null}

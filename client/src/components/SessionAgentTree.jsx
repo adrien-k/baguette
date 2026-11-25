@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Bot,
   ChevronDown,
@@ -30,7 +30,7 @@ import {
   isSecondaryBuilder,
   isSubagentBuilder,
 } from '../utils/sessionAgents.js';
-import TrailingHoverActions from './TrailingHoverActions.jsx';
+import { TrailingHoverBackdrop } from './TrailingHoverActions.jsx';
 import { messageModelDisplayName } from '../utils/messageModelLabel.js';
 import { formatUsd } from '../utils/usageSeries.js';
 import { useAgentConfigContext } from '../context/AgentConfigContext.jsx';
@@ -115,25 +115,56 @@ function AgentTreeModelLabel({ agentConfigId, model }) {
   );
 }
 
+const EDIT_BUTTON_RESERVE_PX = 20;
+
+const EDIT_HOVER_REVEAL =
+  'md:opacity-0 md:pointer-events-none md:transition-opacity md:group-hover/row:pointer-events-auto md:group-hover/row:opacity-100 md:focus-within:pointer-events-auto md:focus-within:opacity-100';
+
 /**
- * Small rename affordance trailing the title. Only extra builders are renameable —
- * the primary builder, reviewer, and MCP subagents keep a fixed title.
+ * Small rename affordance trailing the agent label (or overlaid on its right
+ * edge when the label takes the whole available width). Only extra builders are
+ * renameable — the primary builder, reviewer, and MCP subagents keep a fixed title.
  */
-function AgentTreeEdit({ agent, canManage, renaming, onRequestRename }) {
+function AgentTreeEdit({
+  agent,
+  canManage,
+  renaming,
+  onRequestRename,
+  overlay = false,
+  sessionHighlighted = false,
+  isCurrent = false,
+}) {
   if (!canManage || !isSecondaryBuilder(agent) || renaming) return null;
+  const positionClass = overlay
+    ? 'absolute right-0 top-1/2 z-[1] -translate-y-1/2 py-0.5 pl-3 pr-0.5'
+    : 'relative z-[1] shrink-0';
+
   return (
-    <button
-      type="button"
-      title="Rename agent"
-      aria-label={`Rename ${agentDisplayTitle(agent)}`}
-      onClick={(e) => {
-        e.stopPropagation();
-        onRequestRename(agent);
-      }}
-      className="pointer-events-auto relative z-[1] shrink-0 rounded p-0.5 text-faint hover:text-fg"
+    <span
+      data-testid="agent-tree-edit"
+      data-overlay={overlay ? 'true' : 'false'}
+      className={`pointer-events-auto inline-flex items-center ${positionClass} ${EDIT_HOVER_REVEAL}`}
     >
-      <Pencil className="w-3 h-3" aria-hidden />
-    </button>
+      {overlay ? (
+        <TrailingHoverBackdrop
+          sessionHighlighted={sessionHighlighted}
+          extraHoverWash={!isCurrent}
+          showOnMobile
+        />
+      ) : null}
+      <button
+        type="button"
+        title="Rename agent"
+        aria-label={`Rename ${agentDisplayTitle(agent)}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          onRequestRename(agent);
+        }}
+        className="relative z-[1] shrink-0 rounded p-0.5 text-faint hover:text-fg"
+      >
+        <Pencil className="w-3 h-3" aria-hidden />
+      </button>
+    </span>
   );
 }
 
@@ -185,46 +216,12 @@ function BuilderSubagentsToggle({ node, expanded, onToggle }) {
   );
 }
 
-/**
- * Trailing slot: model stays visible on desktop. On row hover, edit sits on the
- * right edge of that label (only the button covers text). Mobile hides the model
- * when edit is available and keeps edit in flow.
- */
-function AgentTreeTrailingSlot({
-  agent,
-  canManage,
-  renaming,
-  onRequestRename,
-  sessionHighlighted,
-  isCurrent,
-}) {
-  const modelLabelNode = (
-    <AgentTreeModelLabel agentConfigId={agent.agent_config_id} model={agent.model} />
-  );
-  const showEdit = canManage && !renaming && isSecondaryBuilder(agent);
-
-  const modelLabel = modelLabelNode ? (
-    <span className="flex min-w-0 items-center justify-end">{modelLabelNode}</span>
-  ) : null;
-
+/** Trailing slot: model label, collapsing before the agent name truncates. */
+function AgentTreeTrailingSlot({ agent }) {
   return (
-    <TrailingHoverActions
-      className="ml-auto min-w-0 max-w-[7rem] shrink-[9999]"
-      sessionHighlighted={sessionHighlighted}
-      extraHoverWash={!isCurrent}
-      groupName="row"
-      hideLabelOnMobile={showEdit}
-      label={modelLabel}
-    >
-      {showEdit ? (
-        <AgentTreeEdit
-          agent={agent}
-          canManage={canManage}
-          renaming={renaming}
-          onRequestRename={onRequestRename}
-        />
-      ) : null}
-    </TrailingHoverActions>
+    <span className="ml-auto flex min-w-0 max-w-[7rem] shrink-[9999] items-center justify-end empty:hidden">
+      <AgentTreeModelLabel agentConfigId={agent.agent_config_id} model={agent.model} />
+    </span>
   );
 }
 
@@ -272,9 +269,18 @@ function selectedAgentRowBorderClass(isCurrent, sessionHighlighted) {
   return 'border-control-hover bg-control/35';
 }
 
-function AgentTreeNameLabel({ agent, agentRef, title, isCurrent, onSelectAgent }) {
+function AgentTreeNameLabel({
+  agent,
+  agentRef,
+  title,
+  isCurrent,
+  onSelectAgent,
+  labelRef,
+  titleRef,
+}) {
   return (
     <span
+      ref={labelRef}
       className={`min-w-0 truncate rounded px-1 text-[11px] leading-4 inline-flex items-center gap-1 ${agentNameToneClass(
         agent
       )} ${isCurrent ? 'text-fg font-medium' : 'text-secondary'}`}
@@ -283,8 +289,92 @@ function AgentTreeNameLabel({ agent, agentRef, title, isCurrent, onSelectAgent }
       {agentRef != null ? (
         <span className="shrink-0 font-mono text-[10px] text-faint tabular-nums">#{agentRef}</span>
       ) : null}
-      <span className="truncate">{title}</span>
+      <span ref={titleRef} className="truncate">
+        {title}
+      </span>
     </span>
+  );
+}
+
+/**
+ * Renders the agent name label with an inline edit button on its right when
+ * there is room, or overlaid on its right edge when the label fills the
+ * available width.
+ */
+function AgentNameWithEdit({
+  agent,
+  agentRef,
+  title,
+  isCurrent,
+  onSelectAgent,
+  canManage,
+  renaming,
+  onRequestRename,
+  sessionHighlighted,
+}) {
+  const showEdit = canManage && !renaming && isSecondaryBuilder(agent);
+  const containerRef = useRef(null);
+  const labelRef = useRef(null);
+  const titleRef = useRef(null);
+  const [overlayEdit, setOverlayEdit] = useState(false);
+
+  useLayoutEffect(() => {
+    if (!showEdit) {
+      setOverlayEdit(false);
+      return undefined;
+    }
+    const container = containerRef.current;
+    const label = labelRef.current;
+    const titleEl = titleRef.current;
+    const parent = container?.parentElement;
+    if (!container || !label || !titleEl || !parent) return undefined;
+
+    const update = () => {
+      const children = Array.from(parent.children);
+      let otherWidth = 0;
+      for (const child of children) {
+        if (child !== container) otherWidth += child.offsetWidth;
+      }
+      const gapPx = parseFloat(getComputedStyle(parent).columnGap) || 6;
+      const totalGap = Math.max(0, children.length - 1) * gapPx;
+      const available = parent.clientWidth - otherWidth - totalGap;
+      if (available <= 0) return;
+
+      const overflow = Math.max(0, titleEl.scrollWidth - titleEl.clientWidth);
+      const labelNaturalWidth = label.clientWidth + overflow;
+      setOverlayEdit(labelNaturalWidth + EDIT_BUTTON_RESERVE_PX > available);
+    };
+
+    update();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(update);
+    ro.observe(parent);
+    return () => ro.disconnect();
+  }, [showEdit, title, agentRef, agent.status]);
+
+  return (
+    <div ref={containerRef} className="relative flex min-w-0 items-center gap-1">
+      <AgentTreeNameLabel
+        agent={agent}
+        agentRef={agentRef}
+        title={title}
+        isCurrent={isCurrent}
+        onSelectAgent={onSelectAgent}
+        labelRef={labelRef}
+        titleRef={titleRef}
+      />
+      {showEdit ? (
+        <AgentTreeEdit
+          agent={agent}
+          canManage={canManage}
+          renaming={renaming}
+          onRequestRename={onRequestRename}
+          overlay={overlayEdit}
+          sessionHighlighted={sessionHighlighted}
+          isCurrent={isCurrent}
+        />
+      ) : null}
+    </div>
   );
 }
 
@@ -369,12 +459,16 @@ function AgentTreeNode({ node, ...rest }) {
               className="pointer-events-auto h-4 flex-1 min-w-0 rounded border border-line bg-control px-1.5 py-0 text-xs text-heading"
             />
           ) : (
-            <AgentTreeNameLabel
+            <AgentNameWithEdit
               agent={agent}
               agentRef={agentRef}
               title={title}
               isCurrent={isCurrent}
               onSelectAgent={onSelectAgent}
+              canManage={canManage}
+              renaming={renaming}
+              onRequestRename={onRequestRename}
+              sessionHighlighted={sessionHighlighted}
             />
           )}
           {!renaming ? <AgentTreeStatus status={agent.status} /> : null}
@@ -387,14 +481,7 @@ function AgentTreeNode({ node, ...rest }) {
           />
         ) : null}
         {!renaming ? (
-          <AgentTreeTrailingSlot
-            agent={agent}
-            canManage={canManage}
-            renaming={renaming}
-            onRequestRename={onRequestRename}
-            sessionHighlighted={sessionHighlighted}
-            isCurrent={isCurrent}
-          />
+          <AgentTreeTrailingSlot agent={agent} />
         ) : (
           <span className="ml-auto shrink-0" aria-hidden />
         )}

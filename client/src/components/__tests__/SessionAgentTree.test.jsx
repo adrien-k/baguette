@@ -132,4 +132,76 @@ describe('SessionAgentTree', () => {
     const toggle = screen.getByTestId('builder-subagents-toggle');
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
   });
+
+  it('renders the edit button right next to the agent label when there is room, and clicking it starts rename', () => {
+    const onSelectAgent = vi.fn();
+    render(
+      <SessionAgentTree
+        agents={sampleAgents}
+        currentAgentId={1}
+        canManage
+        onSelectAgent={onSelectAgent}
+      />
+    );
+
+    const editWrapper = screen.getByTestId('agent-tree-edit');
+    expect(editWrapper.getAttribute('data-overlay')).toBe('false');
+    expect(editWrapper.previousElementSibling?.textContent).toContain('Feature builder');
+
+    const renameBtn = screen.getByRole('button', { name: 'Rename Feature builder' });
+    fireEvent.click(renameBtn);
+    expect(onSelectAgent).not.toHaveBeenCalled();
+    expect(screen.getByDisplayValue('Feature builder')).toBeTruthy();
+  });
+
+  it('overlays the edit button over the agent label when the label takes the whole available width', () => {
+    const protoClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth');
+    const protoScrollWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollWidth');
+    const protoOffsetWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth');
+
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+      configurable: true,
+      get() {
+        if (this.classList?.contains('flex-1')) return 140;
+        if (this.tagName === 'SPAN' && this.classList?.contains('truncate')) return 120;
+        return 120;
+      },
+    });
+    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
+      configurable: true,
+      get() {
+        if (this.tagName === 'SPAN' && this.classList?.contains('truncate')) return 220;
+        return 120;
+      },
+    });
+    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
+      configurable: true,
+      get() {
+        return 14;
+      },
+    });
+
+    try {
+      render(
+        <SessionAgentTree
+          agents={sampleAgents}
+          currentAgentId={1}
+          canManage
+          onSelectAgent={vi.fn()}
+        />
+      );
+
+      const editWrapper = screen.getByTestId('agent-tree-edit');
+      expect(editWrapper.getAttribute('data-overlay')).toBe('true');
+      expect(editWrapper.className).toContain('absolute');
+      expect(editWrapper.className).toContain('right-0');
+    } finally {
+      if (protoClientWidth)
+        Object.defineProperty(HTMLElement.prototype, 'clientWidth', protoClientWidth);
+      if (protoScrollWidth)
+        Object.defineProperty(HTMLElement.prototype, 'scrollWidth', protoScrollWidth);
+      if (protoOffsetWidth)
+        Object.defineProperty(HTMLElement.prototype, 'offsetWidth', protoOffsetWidth);
+    }
+  });
 });
