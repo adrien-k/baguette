@@ -45,11 +45,7 @@ import {
   withDescriptionLink,
   resolveRestoreWorktreeBranches,
 } from '../github.js';
-import {
-  removeSlackFileDirs,
-  slackGlobalSessionFilesDir,
-  slackSessionFilesDir,
-} from '../slack-files.js';
+import { removeSlackFileDirs, slackFilesDir, slackSessionFilesDir } from '../slack-files.js';
 import { trimSessionMessagesForArchive } from '../session-archive.js';
 import { persistGitPushApprovalOutcome } from '../git-push-approval-persistence.js';
 import * as sessionPushWorktree from '../session-push-worktree.js';
@@ -777,7 +773,13 @@ export class SessionsService extends KnexService {
     try {
       const dirs = [slackSessionFilesDir(session.id)];
       if (session.slack_app_id) {
-        dirs.push(slackGlobalSessionFilesDir(session.slack_app_id, session.user_id));
+        const threads = await this.app
+          .get('db')('slack_session_threads')
+          .where({ session_id: session.id })
+          .select('channel_id', 'thread_ts');
+        for (const { channel_id, thread_ts } of threads) {
+          dirs.push(slackFilesDir(session.slack_app_id, session.user_id, channel_id, thread_ts));
+        }
       }
       await removeSlackFileDirs(dirs);
     } catch (err) {

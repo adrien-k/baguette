@@ -30,7 +30,7 @@ import {
   resolveSessionFromData,
 } from '../feathers/sessions.service.js';
 import { patchAgentInternal, registerAgentsService } from '../feathers/agents.service.js';
-import { slackGlobalSessionFilesDir, slackFilesDir, slackSessionFilesDir } from '../slack-files.js';
+import { slackFilesDir, slackSessionFilesDir } from '../slack-files.js';
 import { insertSlackApp } from './slack-test-helpers.js';
 import * as sessionGitStatus from '../session-git-status.js';
 import * as sessionPushWorktree from '../session-push-worktree.js';
@@ -1037,12 +1037,21 @@ describe('Sessions service - custom methods', () => {
       it("deletes a global session's saved attachments too", async () => {
         const slackAppId = await insertSlackApp(db);
         await db('sessions').where({ id: sessId }).update({ slack_app_id: slackAppId });
+        await db('slack_session_threads').insert({
+          session_id: sessId,
+          channel_id: 'C1',
+          thread_ts: '111.222',
+        });
         const dir = slackFilesDir(slackAppId, userId, 'C1', '111.222');
+        const otherThreadDir = slackFilesDir(slackAppId, userId, 'C1', '333.444');
         await makeFile(dir);
+        await makeFile(otherThreadDir);
 
         await app.service('sessions').archive(sessId, params({ id: userId }));
 
-        expect(await exists(slackGlobalSessionFilesDir(slackAppId, userId))).toBe(false);
+        expect(await exists(dir)).toBe(false);
+        // Another thread's session of the same owner keeps its files.
+        expect(await exists(otherThreadDir)).toBe(true);
       });
 
       it('still archives when the files cannot be deleted', async () => {

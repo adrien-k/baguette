@@ -284,32 +284,70 @@ describe('the first message creates the global session', () => {
 });
 
 describe('one global session for every thread', () => {
-  it('passes a tag in another thread to the same global session and answers there', async () => {
+  it('gives a tag in another thread its own global session, owned by the tagger', async () => {
     const w = await world();
-    const sessionId = await w.globalSessionInThread({ threadTs: '5.5' });
+    const first = await w.globalSessionInThread({ threadTs: '5.5' });
 
     await w.bot.handleEventCallback(
       w.slackApp,
       tag({ ts: '8.8', text: '<@UBOT> what is running?' })
     );
 
+    expect(w.toolCalls).toHaveLength(1);
+    expect(w.toolCalls[0].context.userId).toBe(w.ownerId);
+    expect(w.messages).toHaveLength(0); // the prompt travels with the creation
+    const sessions = await db('sessions').whereNotNull('slack_app_id');
+    expect(sessions).toHaveLength(2);
+    const second = sessions.find((session) => session.id !== first);
+    expect(
+      await db('slack_session_threads').where({ session_id: second.id }).select('thread_ts')
+    ).toEqual([{ thread_ts: '8.8' }]);
+    expect(await db('slack_session_threads').where({ session_id: first })).toHaveLength(1);
+    expect(w.bot.replyTarget(second.id)).toEqual({ channel: 'C1', threadTs: '8.8' });
+  });
+
+  it('passes a tag in the same thread to that thread’s global session and answers there', async () => {
+    const w = await world();
+    const sessionId = await w.globalSessionInThread({ threadTs: '5.5' });
+
+    await w.bot.handleEventCallback(
+      w.slackApp,
+      tag({ ts: '8.8', thread_ts: '5.5', text: '<@UBOT> what is running?' })
+    );
+
     expect(w.toolCalls).toHaveLength(0);
     expect(w.messages).toHaveLength(1);
     expect(w.messages[0].data.session_id).toBe(sessionId);
     expect(w.messageText()).toContain('what is running?');
-    expect(w.messageText()).toContain('channel C1, thread_ts 8.8');
+    expect(w.messageText()).toContain('channel C1, thread_ts 5.5');
     expect(w.messages[0].params.user.id).toBe(w.ownerId);
-    expect(w.bot.replyTarget(sessionId)).toEqual({ channel: 'C1', threadTs: '8.8' });
-    expect(await db('slack_session_threads').where({ session_id: sessionId })).toHaveLength(2);
+    expect(w.bot.replyTarget(sessionId)).toEqual({ channel: 'C1', threadTs: '5.5' });
 
     await w.finishTurn(sessionId, 'Two sessions are running.');
-    expect(markdownPosts()[0]).toMatchObject({ threadTs: '8.8' });
+    expect(markdownPosts()[0]).toMatchObject({ threadTs: '5.5' });
+  });
+
+  it('keeps a thread with the user who started it when someone else tags in it', async () => {
+    const w = await world();
+    const sessionId = await w.globalSessionInThread({ threadTs: '5.5' });
+    const otherId = await insertUser(db);
+    await linkSlackUser(db, w.appId, 'USTRANGER', otherId);
+
+    await w.bot.handleEventCallback(
+      w.slackApp,
+      tag({ user: 'USTRANGER', ts: '6.1', thread_ts: '5.5' })
+    );
+
+    expect(w.toolCalls).toHaveLength(0);
+    expect(w.messages).toHaveLength(0);
+    expect(await db('sessions').whereNotNull('slack_app_id')).toHaveLength(1);
+    expect((await db('sessions').where({ id: sessionId }).first()).user_id).toBe(w.ownerId);
   });
 
   it('labels the message as coming from Slack for the chat', async () => {
     const w = await world();
     await w.globalSessionInThread();
-    await w.bot.handleEventCallback(w.slackApp, tag({ ts: '8.8' }));
+    await w.bot.handleEventCallback(w.slackApp, tag({ ts: '8.8', thread_ts: '5.5' }));
     expect(w.messageJson()).toMatchObject({
       source: 'slack',
       slack: { user_id: 'UOWNER', user_name: 'Jan', untagged: false, allowed: false },

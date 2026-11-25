@@ -44,67 +44,95 @@ function stubCreateSession({ error = null } = {}) {
 
 beforeEach(() => sessionTool.create.mockReset());
 
-describe('findForUser', () => {
-  it('finds the live global session of a user in an app, and nothing else', async () => {
+const THREAD = { channelId: 'C1', threadTs: '9.9' };
+
+describe('findForThread', () => {
+  it('finds the live global session serving a thread in an app, and nothing else', async () => {
     const { userId, appId } = await setup();
-    expect(await globalSessions().findForUser(appId, userId)).toBeNull();
+    expect(await globalSessions().findForThread(appId, 'C1', '9.9')).toBeNull();
 
     const sessionId = await insertGlobalSession(db, userId, appId);
-    expect((await globalSessions().findForUser(appId, userId)).id).toBe(sessionId);
-    expect(await globalSessions().findForUser(appId + 1, userId)).toBeNull();
-    expect(await globalSessions().findForUser(appId, userId + 1)).toBeNull();
+    await insertThread(db, sessionId);
+    expect((await globalSessions().findForThread(appId, 'C1', '9.9')).id).toBe(sessionId);
+    expect(await globalSessions().findForThread(appId + 1, 'C1', '9.9')).toBeNull();
+    expect(await globalSessions().findForThread(appId, 'C1', '1.1')).toBeNull();
+    expect(await globalSessions().findForThread(appId, 'C2', '9.9')).toBeNull();
   });
 
   it('ignores an archived global session', async () => {
     const { userId, appId } = await setup();
     const sessionId = await insertGlobalSession(db, userId, appId);
+    await insertThread(db, sessionId);
     await db('sessions').where({ id: sessionId }).update({ archived_at: new Date().toISOString() });
-    expect(await globalSessions().findForUser(appId, userId)).toBeNull();
+    expect(await globalSessions().findForThread(appId, 'C1', '9.9')).toBeNull();
   });
 });
 
 describe('ensure', () => {
-  it('creates the global session through CreateSession as a global session typed with the app', async () => {
-    const { user, slackApp, appId } = await setup();
+  it('creates the thread’s global session through CreateSession, owned by the user and typed with the app', async () => {
+    const { user, userId, slackApp, appId } = await setup();
     const calls = stubCreateSession();
     const meta = { source: 'slack' };
 
     const { session, created } = await globalSessions().ensure({
       slackApp,
       user,
+      ...THREAD,
       prompt: 'first message',
       messageMeta: meta,
     });
 
     expect(created).toBe(true);
     expect(session.slack_app_id).toBe(appId);
+    expect(session.user_id).toBe(userId);
     expect(calls).toHaveLength(1);
     expect(calls[0].args).toEqual({ is_global: true, initial_prompt: 'first message' });
     expect(calls[0].context.resolveBuilderModel).toBeTypeOf('function');
-    expect(calls[0].context).toMatchObject({
-      slackAppId: appId,
-      initialMessageMeta: meta,
-      initialLabel: 'Slack global session',
-    });
+    expect(calls[0].context).toMatchObject({ slackAppId: appId, initialMessageMeta: meta });
+    // It serves its thread from the start.
+    expect((await globalSessions().findForThread(appId, 'C1', '9.9')).id).toBe(session.id);
   });
 
-  it('returns the existing global session without creating another', async () => {
+  it('returns the thread’s existing global session without creating another', async () => {
     const { user, slackApp, userId, appId } = await setup();
     const existing = await insertGlobalSession(db, userId, appId);
+    await insertThread(db, existing);
     const calls = stubCreateSession();
-    const { session, created } = await globalSessions().ensure({ slackApp, user, prompt: 'x' });
+    const { session, created } = await globalSessions().ensure({
+      slackApp,
+      user,
+      ...THREAD,
+      prompt: 'x',
+    });
     expect(created).toBe(false);
     expect(session.id).toBe(existing);
     expect(calls).toHaveLength(0);
   });
 
-  it('creates only one global session when two first messages race', async () => {
+  it('gives another thread of the same user its own global session', async () => {
+    const { user, slackApp, userId, appId } = await setup();
+    const first = await insertGlobalSession(db, userId, appId);
+    await insertThread(db, first);
+    const calls = stubCreateSession();
+    const { session, created } = await globalSessions().ensure({
+      slackApp,
+      user,
+      channelId: 'C1',
+      threadTs: '1.1',
+      prompt: 'x',
+    });
+    expect(created).toBe(true);
+    expect(session.id).not.toBe(first);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('creates only one global session when two first messages of a thread race', async () => {
     const { user, slackApp } = await setup();
     const calls = stubCreateSession();
     const service = globalSessions();
     const [a, b] = await Promise.all([
-      service.ensure({ slackApp, user, prompt: 'one' }),
-      service.ensure({ slackApp, user, prompt: 'two' }),
+      service.ensure({ slackApp, user, ...THREAD, prompt: 'one' }),
+      service.ensure({ slackApp, user, ...THREAD, prompt: 'two' }),
     ]);
     expect(calls).toHaveLength(1);
     expect(a.session.id).toBe(b.session.id);
@@ -113,12 +141,14 @@ describe('ensure', () => {
   it('fails with the tool’s message (for example no default model in Settings)', async () => {
     const { user, slackApp } = await setup();
     stubCreateSession({ error: 'No default builder model. Set one in Settings → Agent.' });
-    await expect(globalSessions().ensure({ slackApp, user, prompt: 'x' })).rejects.toThrow(
-      'Settings → Agent'
-    );
+    await expect(
+      globalSessions().ensure({ slackApp, user, ...THREAD, prompt: 'x' })
+    ).rejects.toThrow('Settings → Agent');
     // …and a later message can try again.
     stubCreateSession();
-    expect((await globalSessions().ensure({ slackApp, user, prompt: 'x' })).created).toBe(true);
+    expect(
+      (await globalSessions().ensure({ slackApp, user, ...THREAD, prompt: 'x' })).created
+    ).toBe(true);
   });
 });
 

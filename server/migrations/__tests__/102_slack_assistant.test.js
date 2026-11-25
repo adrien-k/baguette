@@ -50,19 +50,6 @@ describe('102: Slack global session', () => {
     expect(await columns('slack_apps')).toContain('allowed_repo_ids');
   });
 
-  it('allows one live global session per user and app', async () => {
-    const { userId, appId } = await seed();
-    await insertSession(userId, { slack_app_id: appId });
-    await expect(insertSession(userId, { slack_app_id: appId })).rejects.toThrow(/UNIQUE/);
-  });
-
-  it('allows a new global session once the old one is archived', async () => {
-    const { userId, appId } = await seed();
-    const [first] = await insertSession(userId, { slack_app_id: appId });
-    await db('sessions').where({ id: first }).update({ archived_at: new Date().toISOString() });
-    await expect(insertSession(userId, { slack_app_id: appId })).resolves.toBeDefined();
-  });
-
   it('does not limit ordinary sessions', async () => {
     const { userId } = await seed();
     await insertSession(userId);
@@ -81,6 +68,7 @@ describe('102: Slack global session', () => {
   });
 
   it('rolls back and re-applies cleanly', async () => {
+    await db.migrate.down({ name: '103_slack_global_session_per_thread.js' });
     await db.migrate.down({ name: '102_slack_assistant.js' });
     expect(await tables()).toContain('slack_threads');
     expect(await tables()).not.toContain('slack_session_threads');

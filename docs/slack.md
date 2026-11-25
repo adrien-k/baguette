@@ -1,6 +1,6 @@
 # Slack integration
 
-Baguette has a Slack global session you can talk to from any thread (it starts and follows sessions for you), and agents can post to Slack on your behalf.
+Baguette starts a Slack global session for every Slack thread you tag it in (it starts and follows sessions for you), and agents can post to Slack on your behalf.
 The integration is configured under **Admin → Slack**; agents post through a
 `SlackPostMessage` tool on the built-in `baguette` MCP server.
 
@@ -9,15 +9,22 @@ a session's tool list once at least one app has a bot token.
 
 ## Talking to Baguette from Slack
 
-Every Baguette user who links their Slack account gets a **Slack global session**: one long-lived
-[global session](sessions-and-agents.md) they talk to from any thread. Tag the bot
+Every Slack thread you tag the bot in gets its own **Slack global session**: a
+[global session](sessions-and-agents.md) owned by you (a Baguette user who linked their Slack
+account), serving only that thread. Tag the bot
 (`@baguette fix the flaky login test`) and it answers right away. It never does the work itself —
 it starts a session for the task (`CreateSession`), tells you so, and stays free for your next
 message. When that session finishes or needs an answer, the Slack global session is woken up and
-reports back in the thread you asked from: what happened, the pull request link, who it needs
-something from. The first tag creates it (it is titled "Slack global session" and listed under
-**Global**); after that every thread, in any channel, goes to the same one.
+reports back in the thread: what happened, the pull request link, who it needs
+something from. The first tag in a thread creates it (it is named after the request and listed under
+**Global**); after that the thread keeps talking to the same one. A thread has at most one, owned by
+whoever tagged first; someone else tagging in it is ignored unless the owner allowed them.
 
+- **Archiving a thread.** The thread's owner can tell it "archive this". It lists what would go,
+  asks for a yes, then archives every session it started (and theirs) and finally itself
+  (`ArchiveSlackThread`). It also asks first before anything else destructive (stopping a child
+  mid-work, deleting, force-pushing) and before starting a session on a model that costs more than
+  its own. Only the owner's yes counts. These are rules in its prompt, not server checks.
 - **Who it listens to.** Only the Slack global session's owner — a logged-in Baguette user who linked their
   Slack account — and the people the owner allowed (session → **Details → Slack → Also listens
   to**, edited by the owner only). Everyone else is ignored: no reply, nothing reaches the

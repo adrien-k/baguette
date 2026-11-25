@@ -37,11 +37,11 @@ export class SlackFileError extends Error {}
 export const slackSessionFilesDir = (sessionId) =>
   path.join(SLACK_FILES_DIR, `session-${sessionId}`);
 
-/** Where a global session's inbound attachments are saved: one folder per owner and Slack app. */
-export const slackGlobalSessionFilesDir = (slackAppId, userId) =>
+/** Where a global session owner's inbound attachments are saved: one folder per owner and Slack app. */
+const slackGlobalSessionFilesDir = (slackAppId, userId) =>
   path.join(SLACK_FILES_DIR, `slack-global-session-${slackAppId}-${userId}`);
 
-/** Where the attachments of one Slack thread are saved for a global session. */
+/** Where the attachments of one Slack thread are saved (each thread has its own global session). */
 export const slackFilesDir = (slackAppId, userId, channel, threadTs) =>
   path.join(slackGlobalSessionFilesDir(slackAppId, userId), `${channel}-${threadTs}`);
 

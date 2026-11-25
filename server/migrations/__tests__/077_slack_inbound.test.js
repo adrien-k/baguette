@@ -55,6 +55,7 @@ describe('077: inbound Slack', () => {
 
   it('applies cleanly to a database that already has its schema but no record of it', async () => {
     // Databases migrated before the file was renumbered have the schema without the record.
+    await db.migrate.down({ name: '103_slack_global_session_per_thread.js' });
     await db.migrate.down({ name: '102_slack_assistant.js' });
     await db('knex_migrations').where({ name: '077_slack_inbound.js' }).delete();
 

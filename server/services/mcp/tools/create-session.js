@@ -249,6 +249,7 @@ export function createCreateSessionTool(ctx) {
       if (plugins?.length) payload.plugins = plugins;
       if (is_shared) payload.is_shared = true;
       if (ctx.slackAppId) payload.slack_app_id = ctx.slackAppId;
+      if (callerSession?.id != null) payload.parent_session_id = callerSession.id;
 
       try {
         const session = await app.service('sessions').create(payload, {

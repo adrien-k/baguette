@@ -25,6 +25,7 @@ import { createKillTaskTool } from '../tools/kill-task.js';
 import { createReadTaskOutputTool } from '../tools/read-task-output.js';
 import { createConfigRepoPromptTool } from '../tools/config-repo-prompt.js';
 import { createUploadImageTool } from '../tools/upload-image.js';
+import { createArchiveSlackThreadTool } from '../tools/archive-slack-thread.js';
 import { createSlackPostMessageTool } from '../tools/slack-post-message.js';
 import { createSlackReadThreadTool } from '../tools/slack-read-thread.js';
 import { createSlackEditMessageTool } from '../tools/slack-edit-message.js';
@@ -114,6 +115,7 @@ export function buildBuilderAgentTools(session, app, { slackApps = [], agent = n
       createSlackReadThreadTool(ctx),
       createSlackReadChannelTool(ctx),
       createSlackDownloadFileTool(ctx),
+      createArchiveSlackThreadTool(ctx),
       createSessionCostTool(ctx),
       createSystemStatsTool()
     );

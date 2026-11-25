@@ -146,6 +146,7 @@ describe('tool registration', () => {
     'SlackReadThread',
     'SlackReadChannel',
     'SlackDownloadFile',
+    'ArchiveSlackThread',
     'SessionCost',
     'SystemStats',
   ];

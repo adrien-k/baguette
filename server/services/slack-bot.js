@@ -2,10 +2,10 @@
  * Inbound Slack bot: hands what people say in Slack to their Slack global session and posts its
  * answers back to the thread.
  *
- * A Slack global session is a global session (one per Baguette user and Slack app) that stays free
- * to answer because it hands real work to other sessions. The bot only listens to its owner — a
- * Baguette user who linked their Slack account — and to the people the owner allowed. Everyone
- * else is ignored.
+ * A Slack global session is a global session (one per Slack thread, owned by the Baguette user whose
+ * message started it) that stays free to answer because it hands real work to other sessions. The bot
+ * only listens to its owner — a Baguette user who linked their Slack account — and to the people the
+ * owner allowed. Everyone else is ignored.
  */
 import { isApprovedUser } from '../../shared/user-status.js';
 import { slackMessageMeta } from '../../shared/slack-user-message.js';
@@ -94,9 +94,10 @@ export function createSlackBot(app) {
   // ── Who a message is for ────────────────────────────────────────────────────────────────
 
   /**
-   * The global sessions a message goes to. The sender's own global session when they are a linked Baguette
-   * user and either tagged the bot or the global session already serves the thread; plus the
-   * global sessions serving the thread whose owner allowed the sender. Nobody else gets a route.
+   * The global sessions a message goes to. The global session serving the thread when the sender owns
+   * it or its owner allowed them. A thread nobody serves yet gets a new global session, owned by the
+   * sender, when they are a linked Baguette user and tagged the bot (`session: null`). Nobody else
+   * gets a route.
    */
   async function routesFor({ slackApp, event, threadTs, addressed }) {
     const link = await findLink(slackApp, event.user);
@@ -106,7 +107,9 @@ export function createSlackBot(app) {
 
     if (sender) {
       const own = serving.find((session) => session.user_id === sender.id) ?? null;
-      if (own || addressed) routes.push({ owner: sender, session: own, role: 'owner' });
+      if (own || (addressed && !serving.length)) {
+        routes.push({ owner: sender, session: own, role: 'owner' });
+      }
     }
     for (const session of serving) {
       if (session.user_id === sender?.id) continue;
@@ -255,7 +258,6 @@ export function createSlackBot(app) {
         role,
         followUp,
       });
-      await globalSessions().joinThread(session.id, event.channel, threadTs);
       // Re-read the mode last: the turn may have started or ended while the context was built.
       const mode = await deliveryMode(session.id);
       const message_json = buildUserTurnMessageJson(`${DELIVERY_NOTES[mode]}${body}`, meta);
@@ -290,7 +292,7 @@ export function createSlackBot(app) {
     }
   }
 
-  /** A user's first message: creates their global session, with the message as its first prompt. */
+  /** A thread's first message: creates its global session (owned by the sender), with the message as its first prompt. */
   async function startGlobalSession({ slackApp, event, threadTs, text, untagged, owner }) {
     const reply = (message) => say(slackApp, event.channel, threadTs, message);
     if (!text.trim() && !(await filesOfEvent(slackApp, event, threadTs)).length) {
@@ -315,10 +317,22 @@ export function createSlackBot(app) {
       const { session, created } = await globalSessions().ensure({
         slackApp,
         user: owner,
+        channelId: event.channel,
+        threadTs,
         prompt: body,
         messageMeta: meta,
       });
-      await globalSessions().joinThread(session.id, event.channel, threadTs);
+      if (!created && session.user_id !== owner.id) {
+        // Someone else's message started this thread's session while this one was being prepared.
+        await updateOrSay(
+          slackApp,
+          event.channel,
+          threadTs,
+          placeholderTs,
+          'This thread already has a Slack global session of someone else.'
+        );
+        return;
+      }
       if (placeholderTs) {
         await deleteMessage(slackApp.bot_token, {
           channel: event.channel,
@@ -366,9 +380,7 @@ export function createSlackBot(app) {
     }
     for (const route of routes) {
       const message = { slackApp, event, threadTs, text, untagged: !addressed, ...route };
-      const existing =
-        route.session ?? (await globalSessions().findForUser(slackApp.id, route.owner.id));
-      if (existing) await sendToGlobalSession({ ...message, session: existing });
+      if (route.session) await sendToGlobalSession(message);
       else await startGlobalSession(message);
     }
   }

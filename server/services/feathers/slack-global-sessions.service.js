@@ -4,12 +4,10 @@ import { createCreateSessionTool } from '../mcp/tools/create-session.js';
 import { createGlobalSessionModelResolver } from '../slack-global-session-model.js';
 import { parseRepoScope } from '../slack-repo-scope.js';
 
-const ASSISTANT_LABEL = 'Slack global session';
-
 /**
- * Slack global sessions: the global session each Baguette user talks to from Slack (rows of `sessions`
- * with `slack_app_id` set), the threads a global session serves and the people it listens to besides
- * its owner. Internal only — the Slack bot is the one caller, so no method is exposed.
+ * Slack global sessions: one global session per Slack thread (rows of `sessions` with `slack_app_id`
+ * set), owned by the Baguette user whose message started it, the thread it serves and the people it
+ * listens to besides its owner. Internal only — the Slack bot is the one caller, so no method is exposed.
  */
 class SlackGlobalSessionsService extends KnexService {
   constructor(options, app) {
@@ -23,46 +21,45 @@ class SlackGlobalSessionsService extends KnexService {
     return this.options.Model('sessions');
   }
 
-  /** The live (not archived) global session of a user in a Slack app, or null. */
-  async findForUser(slackAppId, userId) {
-    const session = await this.sessions
-      .where({ slack_app_id: slackAppId, user_id: userId })
-      .whereNull('archived_at')
-      .first();
+  /** The live (not archived) global session serving a thread, or null. */
+  async findForThread(slackAppId, channelId, threadTs) {
+    const [session] = await this.forThread(slackAppId, channelId, threadTs);
     return session ?? null;
   }
 
   /**
-   * The user's global session, created on first use. `prompt` is the first message when it has to be
-   * created; `created` tells the caller that message is already delivered.
+   * The global session of a thread, created on first use and owned by `user` (whose message started
+   * the thread's session). `prompt` is the first message when it has to be created; `created` tells
+   * the caller that message is already delivered.
    * Fails with a message fit to show in Slack (e.g. no default builder model in Settings).
    */
-  async ensure({ slackApp, user, prompt, messageMeta }) {
-    const existing = await this.findForUser(slackApp.id, user.id);
+  async ensure({ slackApp, user, channelId, threadTs, prompt, messageMeta }) {
+    const existing = await this.findForThread(slackApp.id, channelId, threadTs);
     if (existing) return { session: existing, created: false };
 
-    const key = `${slackApp.id}:${user.id}`;
+    const key = `${slackApp.id}:${channelId}:${threadTs}`;
     if (!this.starting.has(key)) {
-      const start = this.start({ slackApp, user, prompt, messageMeta });
+      const start = this.start({ slackApp, user, channelId, threadTs, prompt, messageMeta });
       this.starting.set(key, start);
       start.finally(() => this.starting.delete(key)).catch(() => {});
     }
     return this.starting.get(key);
   }
 
-  /** Creates the global session through the same tool agents use, so model defaults apply. */
-  async start({ slackApp, user, prompt, messageMeta }) {
+  /** Creates the thread's global session through the same tool agents use, so model defaults apply. */
+  async start({ slackApp, user, channelId, threadTs, prompt, messageMeta }) {
     const tool = createCreateSessionTool({
       ...createAccountContext(user, this.app),
       slackAppId: slackApp.id,
       resolveBuilderModel: createGlobalSessionModelResolver(this.app),
       initialMessageMeta: messageMeta,
-      initialLabel: ASSISTANT_LABEL,
     });
     const result = await tool.handler({ is_global: true, initial_prompt: prompt });
     const created = JSON.parse(result.content[0].text);
     if (!created.ok) throw new Error(created.error);
     const session = await this.sessions.where({ id: created.sessionId }).first();
+    // Bound to its thread before anything else can look for it.
+    await this.joinThread(session.id, channelId, threadTs);
     return { session, created: true };
   }
 

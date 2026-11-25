@@ -135,7 +135,7 @@ For details on the data directory layout, git worktree strategy, and web server 
 
 ## Slack
 
-Tag the Baguette app in a Slack channel and your Slack global session (one long-lived global session per user) answers right away. It never blocks on the work: it starts a session for the task, stays free for your next message, and reports progress, the PR link and the branch back in the thread when that session finishes. It reacts when tagged or addressed by name ("baguette …"), and in a thread it serves it follows the conversation without a tag. You have to be logged in to Baguette and have linked your Slack account; the global session only listens to you and the people you allow (in the session's Details tab) and ignores everyone else.
+Tag the Baguette app in a Slack channel and a Slack global session (one global session per Slack thread, owned by the person who tagged it) answers right away. It never blocks on the work: it starts a session for the task, stays free for your next message, and reports progress, the PR link and the branch back in the thread when that session finishes. It reacts when tagged or addressed by name ("baguette …"), and in a thread it serves it follows the conversation without a tag. You have to be logged in to Baguette and have linked your Slack account; the global session only listens to you and the people you allow (in the session's Details tab) and ignores everyone else.
 
 Baguette connects to Slack over [Socket Mode](https://api.slack.com/apis/socket-mode): it opens an outbound connection, so **no public URL, tunnel or open port is needed**. It works locally and behind a firewall.
 

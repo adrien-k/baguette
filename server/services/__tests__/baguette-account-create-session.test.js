@@ -426,6 +426,16 @@ describe('CreateSession for Slack global sessions', () => {
     expect(sessionParams).not.toHaveProperty('initialMessageMeta');
   });
 
+  it('records the calling session as the new session’s parent, and nothing for outside callers', async () => {
+    await configureDefaultModel();
+    await tool({}, { id: 7, is_global: 0 }).handler(repoArgs);
+    expect(createSpy.mock.calls[0][0]).toMatchObject({ parent_session_id: 7 });
+
+    createSpy.mockClear();
+    await tool().handler(repoArgs);
+    expect(createSpy.mock.calls[0][0]).not.toHaveProperty('parent_session_id');
+  });
+
   it('lets the caller choose the model when the user has no default', async () => {
     const resolveBuilderModel = vi
       .fn()
