@@ -1,6 +1,15 @@
 <% require "dotenv"; Dotenv.load(".kamal/.env") if File.exist?(".kamal/.env") %>
 <% remote_registry = ENV["DOCKER_REGISTRY_USERNAME"].to_s.strip != "" %>
 <% docker_image = ENV.fetch("DOCKER_IMAGE", "adrien-k/baguette") %>
+<% domain = ENV.fetch("DOMAIN") %>
+<% oauth2_proxy = ENV["OAUTH2_PROXY_PROVIDER"].to_s.strip != "" %>
+<% if oauth2_proxy
+     oauth2_optional_clear = %w[
+       OAUTH2_PROXY_OIDC_ISSUER_URL
+       OAUTH2_PROXY_COOKIE_DOMAINS
+       OAUTH2_PROXY_SKIP_AUTH_REGEX
+     ].filter_map { |k| [k, ENV[k].strip] if ENV[k].to_s.strip != "" }.to_h
+   end %>
 
 # Name of your application. Used to uniquely configure containers.
 service: baguette
@@ -16,12 +25,15 @@ volumes:
 # (the apex A record from your DNS setup must resolve there for SSH).
 <%
   deploy_server = ENV['DEPLOY_SERVER'].to_s.strip
-  deploy_server = ENV.fetch('DOMAIN') if deploy_server.empty?
+  deploy_server = domain if deploy_server.empty?
 %>
 servers:
   web:
     hosts:
       - <%= deploy_server %>
+<% if oauth2_proxy %>
+    proxy: false
+<% end %>
     options:
       cap-add: SYS_PTRACE
 
@@ -35,6 +47,7 @@ retain_containers: 2
 # (docker socket, baguette_default setup) can exceed that on slower disks.
 deploy_timeout: 120
 
+<% unless oauth2_proxy %>
 # Enable SSL auto certification via Let's Encrypt (and allow for multiple apps on one server).
 # If using something like Cloudflare, it is recommended to set encryption mode
 # in Cloudflare's SSL/TLS setting to "Full" to enable end-to-end encryption.
@@ -50,8 +63,9 @@ proxy:
   # The apex is routed to Baguette so the app can 301 it to the www canonical host
   # (kamal-proxy canonical_host would also redirect session preview subdomains).
   hosts:
-    - "*.<%= ENV.fetch('DOMAIN') %>"
-    - <%= ENV.fetch('DOMAIN') %>
+    - "*.<%= domain %>"
+    - <%= domain %>
+<% end %>
 
 
 <% if remote_registry %>
@@ -93,7 +107,7 @@ builder:
 # Remember to run `kamal env push` after making changes!
 env:
   clear:
-    PUBLIC_HOST: https://www.<%= ENV.fetch('DOMAIN') %>
+    PUBLIC_HOST: https://www.<%= domain %>
   secret:
     # Legacy, kept for backward compatibility — existing deployments that set
     # these keep working. New installs do not need them: the first-user wizard
@@ -103,6 +117,43 @@ env:
     - AUTH_GITHUB_CLIENT_SECRET
     - AUTH_GITHUB_APP_SLUG
     - ENCRYPTION_KEY
+
+<% if oauth2_proxy %>
+# Optional edge OIDC — set OAUTH2_PROXY_PROVIDER (e.g. google) to enable. See docs/deployment/kamal.md.
+accessories:
+  oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.12.0
+    roles:
+      - web
+    proxy:
+      app_port: 4180
+      response_timeout: 3600
+      ssl:
+        certificate_pem: CERTIFICATE_PEM
+        private_key_pem: PRIVATE_KEY_PEM
+      hosts:
+        - "*.<%= domain %>"
+        - <%= domain %>
+      healthcheck:
+        path: /ping
+    env:
+      clear:
+        OAUTH2_PROXY_PROVIDER: <%= ENV.fetch("OAUTH2_PROXY_PROVIDER").strip %>
+        OAUTH2_PROXY_HTTP_ADDRESS: "0.0.0.0:4180"
+        OAUTH2_PROXY_EMAIL_DOMAINS: <%= ENV.fetch("OAUTH2_PROXY_EMAIL_DOMAINS") %>
+        OAUTH2_PROXY_UPSTREAMS: "http://baguette-web:3000"
+        OAUTH2_PROXY_REDIRECT_URL: "https://www.<%= domain %>/oauth2/callback"
+        OAUTH2_PROXY_COOKIE_SECURE: "true"
+        OAUTH2_PROXY_COOKIE_HTTPONLY: "true"
+        OAUTH2_PROXY_REVERSE_PROXY: "true"
+<% oauth2_optional_clear.each do |key, value| %>
+        <%= key %>: <%= value.inspect %>
+<% end %>
+      secret:
+        - OAUTH2_PROXY_CLIENT_ID
+        - OAUTH2_PROXY_CLIENT_SECRET
+        - OAUTH2_PROXY_COOKIE_SECRET
+<% end %>
 
 aliases:
   shell: app exec --interactive --reuse "bash"

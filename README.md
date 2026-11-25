@@ -145,6 +145,8 @@ If GitHub cannot reach your instance (VPN, tunnel, private network), configure *
 
 For the trust model and secrets handling, see **[docs/security.md](docs/security.md)**.
 
+Kamal installs can optionally require **OIDC/SSO at the edge** with [oauth2-proxy](https://oauth2-proxy.github.io/oauth2-proxy/) (`OAUTH2_PROXY_PROVIDER` — see [Kamal deployment](docs/deployment/kamal.md#optional--oidc-with-oauth2-proxy-kamal-only)). That is network-level access control; Baguette's own sign-in and permissions still apply inside the app.
+
 ## Status
 
 Baguette is an early-stage project. Most of the codebase is AI-written and human-reviewed — it works, but expect rough edges. Contributions are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
