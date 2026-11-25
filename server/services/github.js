@@ -386,7 +386,7 @@ export async function ensureMainClone(repo, tokenOrAuth) {
 export async function initLocalRepo(strippedName) {
   const repoPath = mainRepoPathForStripped(strippedName);
   await fs.promises.mkdir(repoPath, { recursive: true });
-  await execFileAsync('git', ['init', repoPath], { stdio: 'pipe' });
+  await execFileAsync('git', ['init', '-b', 'main', repoPath], { stdio: 'pipe' });
   await execFileAsync('git', ['-C', repoPath, 'commit', '--allow-empty', '-m', 'Initial commit'], {
     stdio: 'pipe',
     env: {
