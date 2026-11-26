@@ -1,16 +1,15 @@
 import { Loader2, Play } from 'lucide-react';
-import { formatAgentSdkDisplayName } from '@baguette/shared/agent-sdk-display.js';
 import { isSessionOwner } from '@baguette/shared/session-sharing.js';
-import AgentConfigLogo from '../../components/AgentConfigLogo.jsx';
+import CollapsibleMarkdown from '../../components/chat/CollapsibleMarkdown.tsx';
 import CardRepoBadge from '../../components/CardRepoBadge.jsx';
 import LoopLastError from '../../components/LoopLastError.jsx';
 import SessionCard from '../../components/SessionCard.jsx';
-import Tooltip from '../../components/Tooltip.jsx';
+import SessionModelSelect from '../../components/SessionModelSelect.jsx';
 import { useCurrentUser } from '../../context/CurrentUserContext.jsx';
-import { useAgentConfigContext } from '../../context/AgentConfigContext.jsx';
+import { useAgentConfigs } from '../../hooks/useAgentConfigs.js';
 import { useAgentConfigModels } from '../../hooks/useAgentConfigModels.js';
+import { useCursorModelPrefs } from '../../hooks/useAgentPreferences.js';
 import { SECONDARY_BUTTON_CLASS } from '../../utils/buttonStyles.js';
-import { messageModelLabel, messageModelParamsText } from '../../utils/messageModelLabel.js';
 import {
   describeSchedule,
   formatLoopRunSubtitle,
@@ -19,56 +18,32 @@ import {
 import { TEXT_FAINT, TEXT_SECONDARY } from '../../utils/ui.js';
 
 function LoopOverviewModelRow({ loop }) {
-  const { getConfig } = useAgentConfigContext();
+  const { configOptions, loading: configsLoading } = useAgentConfigs();
+  const { cursorModelPrefs } = useCursorModelPrefs();
   const configId = loop.agent_config_id;
-  const { models } = useAgentConfigModels(configId, {
-    enabled: configId != null && configId !== '',
+  const hasConfigId = configId != null && configId !== '';
+  const { models, stale: modelsStale } = useAgentConfigModels(configId, {
+    enabled: hasConfigId,
   });
-  const config = getConfig(configId);
-  const sdk = config?.sdk ?? loop.agent_sdk;
-  const providerLabel = config?.label ?? (sdk ? formatAgentSdkDisplayName(sdk) : null);
 
-  if (!providerLabel) {
+  const agentConfigKey = hasConfigId ? String(configId) : loop.agent_sdk || '';
+
+  if (!agentConfigKey) {
     return <span className={TEXT_SECONDARY}>—</span>;
   }
 
-  const fullModelLabel = messageModelLabel({
-    model: loop.model,
-    modelParams: loop.model_params,
-    models,
-  });
-  const paramsText = messageModelParamsText(loop.model_params, models, loop.model);
-  const hasTooltip = Boolean(fullModelLabel) || Boolean(paramsText);
-
-  const inline = (
-    <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5 min-w-0">
-      {config ? (
-        <AgentConfigLogo
-          sdk={config.sdk}
-          logo={config.logo}
-          className="w-3.5 h-3.5 shrink-0"
-          size={14}
-        />
-      ) : null}
-      <span className={TEXT_SECONDARY}>{providerLabel}</span>
-    </span>
-  );
-
-  if (!hasTooltip) return inline;
-
   return (
-    <Tooltip
-      content={
-        <div className="space-y-0.5">
-          {fullModelLabel ? <div>{fullModelLabel}</div> : null}
-          {paramsText ? <div className="text-faint whitespace-pre-wrap">{paramsText}</div> : null}
-        </div>
-      }
-      wrap
-      placement="top"
-    >
-      {inline}
-    </Tooltip>
+    <SessionModelSelect
+      agentConfigKey={agentConfigKey}
+      model={loop.model || null}
+      params={loop.model_params}
+      models={models}
+      cursorModelPrefs={cursorModelPrefs}
+      agentConfigOptions={configOptions}
+      configsLoading={configsLoading}
+      modelsLoading={modelsStale && !models.length}
+      className="min-w-0"
+    />
   );
 }
 
@@ -87,6 +62,7 @@ export default function LoopOverviewPanel({
   const title = loopDisplayTitle(loop);
   const schedule = describeSchedule(loop);
   const runMeta = formatLoopRunSubtitle(loop);
+  const promptMarkdown = loop.prompt?.trim() ?? '';
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6 sm:py-8">
@@ -138,10 +114,23 @@ export default function LoopOverviewPanel({
 
         <div>
           <p className={`mb-1 text-xs font-medium ${TEXT_FAINT}`}>Prompt</p>
-          <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md border border-line bg-page p-3 text-sm text-secondary">
-            {loop.prompt?.trim() || 'No prompt'}
-          </pre>
-          <p className={`mb-1 mt-3 text-xs font-medium ${TEXT_FAINT}`}>Provider</p>
+          <div
+            className={`rounded-md border border-line bg-page p-3 text-sm min-w-0 ${TEXT_SECONDARY}`}
+          >
+            {promptMarkdown ? (
+              <CollapsibleMarkdown
+                key={loop.id != null ? `loop-prompt-${loop.id}` : 'loop-prompt'}
+                previewLines={12}
+                simpleToggle
+                hardBreaks
+              >
+                {promptMarkdown}
+              </CollapsibleMarkdown>
+            ) : (
+              <p className="text-faint">No prompt</p>
+            )}
+          </div>
+          <p className={`mb-1 mt-3 text-xs font-medium ${TEXT_FAINT}`}>Agent</p>
           <div className="min-w-0">
             <LoopOverviewModelRow loop={loop} />
           </div>

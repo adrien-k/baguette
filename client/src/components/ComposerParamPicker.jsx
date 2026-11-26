@@ -1,9 +1,22 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Settings, ChevronRight } from 'lucide-react';
 import AnchoredMenu from './AnchoredMenu.jsx';
+import Tooltip from './Tooltip.jsx';
 import { DROPDOWN_PANEL_CLASS } from '../utils/dropdownPanel.js';
 import { binaryParamToggleOn, binaryParamToggledValue } from '../utils/models.js';
 import { ParamRowLabel, ParamToggleSwitch } from './ComposerParamControls.jsx';
+
+function ParamPickerTooltipBody({ items }) {
+  return (
+    <div className="space-y-0.5 text-left">
+      {items.map((item) => (
+        <div key={item.id}>
+          <span className="text-faint">{item.label}:</span> {item.valueLabel}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 /**
  * @typedef {{
@@ -186,6 +199,8 @@ export default function ComposerParamPicker({
     submenuPinnedRef.current = submenuPinned;
   }, [submenuPinned]);
 
+  const tooltipContent = items.length ? <ParamPickerTooltipBody items={items} /> : null;
+
   if (!items.length) return null;
 
   const closeSubmenu = () => {
@@ -225,25 +240,34 @@ export default function ComposerParamPicker({
       }}
       placement={placement}
       className={`min-w-[11rem] max-w-[min(100vw-2rem,16rem)] ${DROPDOWN_PANEL_CLASS} py-1 overflow-visible`}
-      reference={({ ref, referenceProps }) => (
-        <button
-          type="button"
-          ref={ref}
-          {...referenceProps}
-          disabled={disabled}
-          onClick={(e) => {
-            referenceProps.onClick?.(e);
-            if (!disabled) setOpen((v) => !v);
-          }}
-          aria-expanded={open}
-          aria-haspopup="menu"
-          aria-label={ariaLabel}
-          title={ariaLabel}
-          className="p-1.5 rounded-md text-faint hover:text-secondary hover:bg-control/80 leading-none disabled:opacity-50 disabled:pointer-events-none"
-        >
-          <Settings className="w-3.5 h-3.5" strokeWidth={2} />
-        </button>
-      )}
+      reference={({ ref, referenceProps }) => {
+        const trigger = (
+          <button
+            type="button"
+            ref={ref}
+            {...referenceProps}
+            aria-disabled={disabled || undefined}
+            onClick={(e) => {
+              referenceProps.onClick?.(e);
+              if (disabled) return;
+              setOpen((v) => !v);
+            }}
+            aria-expanded={open && !disabled}
+            aria-haspopup="menu"
+            aria-label={ariaLabel}
+            className={`p-1.5 rounded-md text-faint leading-none hover:text-secondary hover:bg-control/80 ${
+              disabled ? 'cursor-default opacity-50' : ''
+            }`}
+          >
+            <Settings className="w-3.5 h-3.5" strokeWidth={2} />
+          </button>
+        );
+        return (
+          <Tooltip content={tooltipContent} wrap placement="top" className="inline-flex">
+            {trigger}
+          </Tooltip>
+        );
+      }}
     >
       <div role="menu" className="overflow-visible">
         {items.map((item) => {
