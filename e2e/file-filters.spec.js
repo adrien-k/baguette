@@ -63,11 +63,11 @@ test.describe('file panel regex filters', () => {
     await expect(excludeInput).toBeVisible();
     await expect(page.getByRole('button', { name: 'Clear filters' })).toHaveCount(0);
 
-    // Include regex narrows the panel list and shows the match count.
+    // Include regex highlights matches in the panel; non-matches stay visible but greyed.
     await includeInput.fill('\\.md$');
     await expect(panel.getByText('Showing 1 of 5 files')).toBeVisible();
     await expect(panel.getByText('overview.md', { exact: true })).toBeVisible();
-    await expect(panel.getByText('app.jsx', { exact: true })).toBeHidden();
+    await expect(panel.getByText('app.jsx', { exact: true })).toBeVisible();
     await expect(panel.getByRole('button', { name: 'Clear filters' })).toBeVisible();
 
     await saveE2eScreenshot(page, 'file-filters-panel.png');
@@ -81,9 +81,10 @@ test.describe('file panel regex filters', () => {
 
     await saveE2eScreenshot(page, 'file-filters-diff.png');
 
-    // No-match include hides everything in both views at once.
+    // No-match include greys every panel row; the diff view still hides non-matches.
     await includeInput.fill('no-such-path');
-    await expect(page.getByText('No files match the current filters.')).toHaveCount(2);
+    await expect(panel.getByText('Showing 0 of 5 files')).toBeVisible();
+    await expect(page.getByText('No files match the current filters.')).toHaveCount(1);
     await expect(page.getByRole('button', { name: 'Clear filters' })).toHaveCount(2);
 
     await saveE2eScreenshot(page, 'file-filters-no-match.png');
@@ -101,7 +102,7 @@ test.describe('file panel regex filters', () => {
     await expect(panel.getByText('Showing 2 of 5 files')).toBeVisible();
     await expect(panel.getByText('notes.txt', { exact: true })).toBeVisible();
     await expect(panel.getByText('overview.md', { exact: true })).toBeVisible();
-    await expect(panel.getByText('app.jsx', { exact: true })).toBeHidden();
+    await expect(panel.getByText('app.jsx', { exact: true })).toBeVisible();
     await expect(page.getByText('Showing 2 of 5 changed files')).toBeVisible();
     await expect(page.getByText('.baguette-mock/notes.txt')).toBeVisible();
     await expect(page.getByText('src/app.jsx')).toBeHidden();

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { compileFileFilters, fileMatchesFilters, filterDiffFiles } from '../fileFilters.js';
+import {
+  buildFilesPanelList,
+  compileFileFilters,
+  countFilesMatchingFilters,
+  fileMatchesFilters,
+  filterDiffFiles,
+} from '../fileFilters.js';
 
 describe('compileFileFilters', compilesSuite);
 
@@ -95,3 +101,36 @@ function filterSuite() {
     ).toHaveLength(1);
   });
 }
+
+describe('buildFilesPanelList', () => {
+  const files = [
+    { oldPath: 'client/src/app.jsx', newPath: 'client/src/app.jsx' },
+    { oldPath: 'server/app.js', newPath: 'server/app.js' },
+  ];
+
+  it('returns the input when filters are inactive', () => {
+    expect(buildFilesPanelList(files, compileFileFilters('', ''))).toBe(files);
+  });
+
+  it('puts filter exclusions after matches and marks them', () => {
+    const list = buildFilesPanelList(files, compileFileFilters('\\.jsx$', ''));
+    expect(list.map((f) => f.newPath)).toEqual(['client/src/app.jsx', 'server/app.js']);
+    expect(list[0].filterExcluded).toBeUndefined();
+    expect(list[1].filterExcluded).toBe(true);
+  });
+});
+
+describe('countFilesMatchingFilters', () => {
+  const files = [
+    { oldPath: 'client/src/app.jsx', newPath: 'client/src/app.jsx' },
+    { oldPath: 'server/app.js', newPath: 'server/app.js' },
+  ];
+
+  it('returns all rows when filters are inactive', () => {
+    expect(countFilesMatchingFilters(files, compileFileFilters('', ''))).toBe(2);
+  });
+
+  it('counts only rows that pass active filters', () => {
+    expect(countFilesMatchingFilters(files, compileFileFilters('\\.jsx$', ''))).toBe(1);
+  });
+});

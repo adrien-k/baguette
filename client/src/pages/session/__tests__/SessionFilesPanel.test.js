@@ -69,16 +69,16 @@ describe('SessionFilesPanel', () => {
     const html = renderPanel({ fileFilters: makeFilters('\\.jsx$') });
     expect(html).toContain('>app.jsx</span>');
     expect(html).toContain('>app.test.jsx</span>');
-    expect(html).not.toContain('>app.js</span>');
-    expect(html).not.toContain('>server</span>');
+    expect(html).toContain('>app.js</span>');
     expect(html).toContain('Showing 2 of 3 files');
     expect(html).toContain('Clear filters');
+    expect(html).toContain('opacity-50');
   });
 
   it('applies the exclude regex on top of the include regex', () => {
     const html = renderPanel({ fileFilters: makeFilters('\\.jsx$', '\\.test\\.') });
     expect(html).toContain('>app.jsx</span>');
-    expect(html).not.toContain('>app.test.jsx</span>');
+    expect(html).toContain('>app.test.jsx</span>');
     expect(html).toContain('Showing 1 of 3 files');
   });
 
@@ -92,9 +92,11 @@ describe('SessionFilesPanel', () => {
     expect(html).toContain('Clear filters');
   });
 
-  it('explains when filters hide every file', () => {
+  it('lists filter exclusions greyed when nothing matches', () => {
     const html = renderPanel({ fileFilters: makeFilters('does-not-match-anything') });
-    expect(html).toContain('No files match the current filters.');
-    expect(html).not.toContain('No files changed');
+    expect(html).toContain('Showing 0 of 3 files');
+    expect(html).toContain('>app.jsx</span>');
+    expect(html).toContain('opacity-50');
+    expect(html).not.toContain('No files match the current filters.');
   });
 });

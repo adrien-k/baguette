@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronRight, RefreshCw, X } from 'lucide-react';
 import { splitRepoPath, diffFileDisplayPath } from '../../utils/paths.js';
-import { filterDiffFiles } from '../../utils/fileFilters.js';
+import { buildFilesPanelList, countFilesMatchingFilters } from '../../utils/fileFilters.js';
 
 const SELECTED_FILE_BG = 'bg-brand/10';
 
@@ -41,8 +41,13 @@ function RegexFilterField({ id, label, value, onChange, error, placeholder }) {
   );
 }
 
-/** Scrollable filtered file list, or the matching empty state. */
-function FilesList({ waitingForFiles, files, filtersActive, selectedFilePath, onSelectFile }) {
+function filterExcludedTextClass(selected) {
+  if (selected) return 'text-secondary';
+  return 'text-faint';
+}
+
+/** Scrollable file list, or empty when there are no changed files. */
+function FilesList({ waitingForFiles, files, selectedFilePath, onSelectFile }) {
   if (waitingForFiles) {
     return (
       <div className="flex flex-1 items-center justify-center px-3 py-8">
@@ -51,11 +56,7 @@ function FilesList({ waitingForFiles, files, filtersActive, selectedFilePath, on
     );
   }
   if (files.length === 0) {
-    return (
-      <p className="text-xs text-faint px-3 py-4">
-        {filtersActive ? 'No files match the current filters.' : 'No files changed'}
-      </p>
-    );
+    return <p className="text-xs text-faint px-3 py-4">No files changed</p>;
   }
   return (
     <div className="flex-1 overflow-auto min-h-0">
@@ -63,6 +64,10 @@ function FilesList({ waitingForFiles, files, filtersActive, selectedFilePath, on
         const displayPath = diffFileDisplayPath(file);
         const { basename, dirname } = splitRepoPath(displayPath);
         const selected = Boolean(selectedFilePath && selectedFilePath === displayPath);
+        const filterExcluded = Boolean(file.filterExcluded);
+        const nameClass = filterExcluded ? filterExcludedTextClass(selected) : 'text-secondary';
+        const dirnameClass = filterExcluded && !selected ? 'text-faint/70' : 'text-faint';
+        const statsClass = filterExcluded && !selected ? 'opacity-50' : '';
         return (
           <button
             key={displayPath}
@@ -72,14 +77,14 @@ function FilesList({ waitingForFiles, files, filtersActive, selectedFilePath, on
             aria-current={selected ? 'true' : undefined}
           >
             <div className="min-w-0 flex-1">
-              <span className="font-mono text-xs text-secondary truncate block">{basename}</span>
+              <span className={`font-mono text-xs truncate block ${nameClass}`}>{basename}</span>
               {dirname ? (
-                <span className="font-mono text-[10px] text-faint truncate block mt-0.5">
+                <span className={`font-mono text-[10px] truncate block mt-0.5 ${dirnameClass}`}>
                   {dirname}
                 </span>
               ) : null}
             </div>
-            <div className="flex shrink-0 items-center gap-1 pt-0.5">
+            <div className={`flex shrink-0 items-center gap-1 pt-0.5 ${statsClass}`}>
               <span className="text-xs text-success">+{file.addedCount}</span>
               <span className="text-xs text-danger">-{file.removedCount}</span>
             </div>
@@ -114,8 +119,9 @@ export default function SessionFilesPanel({
   const filtersDirty = Boolean(
     fileFilters && (fileFilters.includePattern || fileFilters.excludePattern)
   );
-  const filteredFiles = waitingForFiles ? [] : filterDiffFiles(diffFiles, compiled);
+  const panelFiles = waitingForFiles ? [] : buildFilesPanelList(diffFiles, compiled);
   const totalCount = waitingForFiles ? 0 : diffFiles.length;
+  const matchingCount = waitingForFiles ? 0 : countFilesMatchingFilters(diffFiles, compiled);
   const canClear = filtersDirty && typeof fileFilters?.clear === 'function';
 
   return (
@@ -185,7 +191,7 @@ export default function SessionFilesPanel({
           />
           {filtersActive && (
             <p className="text-[10px] text-faint">
-              Showing {filteredFiles.length} of {totalCount} files
+              Showing {matchingCount} of {totalCount} files
             </p>
           )}
         </div>
@@ -193,8 +199,7 @@ export default function SessionFilesPanel({
 
       <FilesList
         waitingForFiles={waitingForFiles}
-        files={filteredFiles}
-        filtersActive={filtersActive}
+        files={panelFiles}
         selectedFilePath={selectedFilePath}
         onSelectFile={onSelectFile}
       />

@@ -49,3 +49,26 @@ export function filterDiffFiles(files, filters) {
   if (!filters?.active) return files;
   return files.filter((file) => fileMatchesFilters(diffFileDisplayPath(file), filters));
 }
+
+/**
+ * Files panel list when filters are active: matching rows first, then filter
+ * exclusions at the bottom (`filterExcluded: true`). When filters are off,
+ * returns `files` unchanged.
+ */
+export function buildFilesPanelList(files, filters) {
+  if (!filters?.active) return files;
+  const matching = [];
+  const excluded = [];
+  for (const file of files) {
+    const path = diffFileDisplayPath(file);
+    if (fileMatchesFilters(path, filters)) matching.push(file);
+    else excluded.push(file);
+  }
+  return [...matching, ...excluded.map((file) => ({ ...file, filterExcluded: true }))];
+}
+
+/** Count of rows that pass the active include/exclude filters. */
+export function countFilesMatchingFilters(files, filters) {
+  if (!filters?.active) return files.length;
+  return files.filter((file) => fileMatchesFilters(diffFileDisplayPath(file), filters)).length;
+}
