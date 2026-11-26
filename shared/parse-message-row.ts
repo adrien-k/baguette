@@ -211,6 +211,10 @@ export function parseMessageRow(row: SessionMessageRow): ChatMessageView {
       tool_use_id: payload.tool_use_id as string | undefined,
       summary: payload.summary as string | undefined,
       description: payload.description as string | undefined,
+      auto_push_failed: payload.auto_push_failed === true ? true : undefined,
+      auto_push_error:
+        typeof payload.auto_push_error === 'string' ? payload.auto_push_error : undefined,
+      auto_push_conflict: payload.auto_push_conflict === true ? true : undefined,
     };
   }
 

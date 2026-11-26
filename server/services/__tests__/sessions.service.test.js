@@ -2962,6 +2962,54 @@ describe('Sessions service - find, get, create', () => {
       pushSpy.mockRestore();
     });
 
+    it('posts an auto_push_failed status message when post-turn auto-push fails', async () => {
+      await db('repos')
+        .where({ id: repoId })
+        .update({ origin: 'https://github.com/test/repo.git' });
+
+      const created = await app
+        .service('sessions')
+        .create(sessionData({ repo_id: repoId }), params({ id: userId1 }));
+
+      await db('agents')
+        .where({ session_id: created.id, is_primary: 1 })
+        .update({ status: 'completed' });
+      const primary = await db('agents').where({ session_id: created.id, is_primary: 1 }).first();
+
+      await db('sessions').where({ id: created.id }).update({
+        session_path: '/tmp/wt-auto-push-fail',
+        auto_push: 1,
+        status: 'completed',
+      });
+
+      const gitStatusSpy = vi.spyOn(sessionGitStatus, 'computeSessionGitStatus').mockResolvedValue({
+        commitsToPush: 1,
+        commitsSinceReview: 0,
+      });
+      const conflictErr = new Error('Push failed due to a conflict');
+      conflictErr.data = { conflict: true };
+      const pushSpy = vi.spyOn(app.service('sessions'), 'push').mockRejectedValueOnce(conflictErr);
+
+      await app.service('sessions').onTurnComplete(created.id, primary.id);
+
+      const rows = await db('session_messages')
+        .where({ session_id: created.id, type: 'system', subtype: 'status' })
+        .orderBy('id', 'desc');
+      const statusRow = rows.find((r) => {
+        const parsed = JSON.parse(r.message_json || '{}');
+        return parsed.auto_push_failed === true;
+      });
+      expect(statusRow).toBeDefined();
+      expect(statusRow.agent_id).toBe(primary.id);
+      const parsed = JSON.parse(statusRow.message_json);
+      expect(parsed.auto_push_failed).toBe(true);
+      expect(parsed.auto_push_error).toBe('Push failed due to a conflict');
+      expect(parsed.auto_push_conflict).toBe(true);
+
+      pushSpy.mockRestore();
+      gitStatusSpy.mockRestore();
+    });
+
     it('syncs PR metadata without git push when there are no new commits', async () => {
       await db('repos')
         .where({ id: repoId })

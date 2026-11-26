@@ -616,10 +616,10 @@ export class SessionsService extends KnexService {
     await this.app.service('sessions').patch(sessionId, { status: 'stopped' }, userParams);
   }
 
-  async _postStatusMessage(sessionId, userParams, status, extra = {}) {
+  async _postStatusMessage(sessionId, userParams, status, extra = {}, agentOverride = null) {
     const session = await this.app.get('db')('sessions').where({ id: sessionId }).first();
     if (!session) return null;
-    const builder = await getPrimaryBuilderAgent(this.app.get('db'), sessionId);
+    const builder = agentOverride || (await getPrimaryBuilderAgent(this.app.get('db'), sessionId));
     if (!builder) return null;
     return this.app.service('messages').create(
       {
@@ -2155,6 +2155,25 @@ export class SessionsService extends KnexService {
           { sessionId, err: err?.message },
           'sessions: auto-push after turn failed unexpectedly'
         );
+        const errorMsg = err?.message || 'Push failed';
+        try {
+          await this._postStatusMessage(
+            sessionId,
+            { user: { id: fresh.user_id } },
+            `Auto-push failed: ${errorMsg}`,
+            {
+              auto_push_failed: true,
+              auto_push_error: errorMsg,
+              ...(err?.data?.conflict ? { auto_push_conflict: true } : {}),
+            },
+            agent
+          );
+        } catch (postErr) {
+          logger.warn(
+            { sessionId, err: postErr?.message },
+            'sessions: failed to post auto-push failure status message'
+          );
+        }
       }
     }
 

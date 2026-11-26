@@ -229,6 +229,9 @@ export type SystemMessagePayload = {
   tool_use_id?: string;
   summary?: string;
   description?: string;
+  auto_push_failed?: boolean;
+  auto_push_error?: string;
+  auto_push_conflict?: boolean;
 };
 
 /** Terminal verdict for one agent turn. Exactly one per turn. */

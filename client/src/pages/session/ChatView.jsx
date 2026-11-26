@@ -828,6 +828,7 @@ export default function ChatView({
                     onSelectAgent={onSelectAgent}
                     tasks={tasks}
                     onSelectTask={onSelectTask}
+                    readonly={readonly}
                   />
                 )
               )}

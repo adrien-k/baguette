@@ -24,6 +24,7 @@ import MessageTimestamp from './chat/MessageTimestamp.tsx';
 import MessageTurnModelBadge from './chat/MessageTurnModelBadge.jsx';
 import TurnErrorMessage from './chat/TurnErrorMessage.tsx';
 import UsageLimitNotice, { isUsageLimitStatus } from './chat/UsageLimitNotice.tsx';
+import AutoPushFailedNotice from './chat/AutoPushFailedNotice.tsx';
 import { useCurrentUser } from '../context/CurrentUserContext.jsx';
 import UserAvatar from './UserAvatar.jsx';
 
@@ -77,6 +78,7 @@ export type ChatMessageProps = {
     command?: string;
   }>;
   onSelectTask?: (taskId: number) => void;
+  readonly?: boolean;
 };
 
 function UserMessageModelBadge({
@@ -192,7 +194,17 @@ function TypedUserMessage({ message }: { message: TypedMessageView & { type: 'us
   );
 }
 
-function SystemMessage({ message }: { message: TypedMessageView & { type: 'system' } }) {
+function SystemMessage({
+  message,
+  sessionId,
+  userReplied,
+  readonly,
+}: {
+  message: TypedMessageView & { type: 'system' };
+  sessionId?: number | null;
+  userReplied?: boolean;
+  readonly?: boolean;
+}) {
   if (message.subtype === 'prompt') return null;
 
   if (message.subtype === 'thinking_tokens') {
@@ -225,6 +237,19 @@ function SystemMessage({ message }: { message: TypedMessageView & { type: 'syste
 
   if (message.subtype === 'init') {
     return <div className="text-xs text-faint text-center py-1">Session started</div>;
+  }
+
+  if (message.subtype === 'status' && message.auto_push_failed) {
+    return (
+      <AutoPushFailedNotice
+        error={message.auto_push_error ?? message.status}
+        conflict={message.auto_push_conflict}
+        sessionId={sessionId}
+        agentId={message.agent_id}
+        userReplied={userReplied}
+        readonly={readonly}
+      />
+    );
   }
 
   if (message.subtype === 'status' && message.status && message.usage_limit_resume_at) {
@@ -264,6 +289,7 @@ function TypedMessage(
     onSelectAgent,
     tasks,
     onSelectTask,
+    readonly,
   } = props;
   switch (message.type) {
     case 'plan':
@@ -346,7 +372,14 @@ function TypedMessage(
     }
 
     case 'system':
-      return <SystemMessage message={message} />;
+      return (
+        <SystemMessage
+          message={message}
+          sessionId={sessionId}
+          userReplied={userReplied}
+          readonly={readonly}
+        />
+      );
 
     default:
       return null;
