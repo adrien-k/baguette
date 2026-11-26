@@ -27,6 +27,7 @@ import {
   gitCommitsToPush,
   gitPush,
   gitPull,
+  gitMergeSessionIntoBase,
   mergePR,
   markPRReady,
   markPRDraft,
@@ -1274,8 +1275,47 @@ export class SessionsService extends KnexService {
 
   async merge(data, params) {
     const session = params.resolvedSession;
-    if (!session?.pr_number) throw new BadRequest('No PR to merge');
     const user = await this.app.service('users').get(session.user_id, {});
+    const db = this.app.get('db');
+    const repo = session?.repo_id ? await db('repos').where({ id: session.repo_id }).first() : null;
+    if (await sessionRepoIsLocal(this.app, session)) {
+      if (!session?.session_path) throw new BadRequest('Session has no worktree');
+      if (!session.base_branch) throw new BadRequest('No base branch configured');
+      const sourceBranch = session.local_branch || session.remote_branch;
+      if (!sourceBranch) throw new BadRequest('No session branch to merge');
+      const mainRepoPath = resolveRepoPath(repo);
+      if (!mainRepoPath) throw new BadRequest('Repository path not found');
+      const cwd = resolveDataDirRelativePath(session.session_path);
+      try {
+        await gitMergeSessionIntoBase({
+          worktreePath: cwd,
+          mainRepoPath,
+          baseBranch: session.base_branch,
+          sourceBranch,
+        });
+      } catch (err) {
+        if (err?.conflict) throw new BadRequest(err.message);
+        throw err;
+      }
+      await this.app
+        .service('sessions')
+        .patch(
+          session.id,
+          { pr_status: 'merged' },
+          { provider: undefined, user: { id: session.user_id } }
+        );
+      if (data?.archive) {
+        void this.archive(session.id, params).catch((archiveErr) => {
+          logger.warn(
+            { sessionId: session.id, err: archiveErr?.message },
+            'Archive after merge failed'
+          );
+        });
+      }
+      return { ok: true, merged: true, archived: !!data?.archive, local: true };
+    }
+
+    if (!session?.pr_number) throw new BadRequest('No PR to merge');
     const token = getGithubToken(user);
     if (!token) throw new BadRequest('No GitHub token configured');
     if (session.pr_status === 'draft') {

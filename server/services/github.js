@@ -832,6 +832,124 @@ export async function remoteHasNewCommits(worktreePath, remoteBranch, token, _re
   }
 }
 
+function isGitBranchCheckedOutElsewhere(stderr) {
+  const text = typeof stderr === 'string' ? stderr : (stderr?.toString?.() ?? '');
+  return /already checked out/i.test(text) || /is already used by worktree/i.test(text);
+}
+
+async function findGitWorktreePathForBranch(mainRepoPath, branchName) {
+  const { stdout } = await execFileAsync(
+    'git',
+    ['-C', mainRepoPath, 'worktree', 'list', '--porcelain'],
+    { maxBuffer: 64 * 1024, stdio: 'pipe' }
+  );
+  let currentPath = null;
+  for (const line of stdout.split('\n')) {
+    if (line.startsWith('worktree ')) {
+      currentPath = line.slice('worktree '.length).trim();
+    } else if (line.startsWith('branch refs/heads/') && currentPath) {
+      const ref = line.slice('branch '.length).trim();
+      if (ref === `refs/heads/${branchName}`) {
+        return currentPath;
+      }
+    }
+  }
+  return null;
+}
+
+async function assertGitWorktreeClean(worktreePath) {
+  const { stdout } = await execFileAsync('git', ['-C', worktreePath, 'status', '--porcelain'], {
+    maxBuffer: 64 * 1024,
+    stdio: 'pipe',
+  });
+  if (stdout.trim()) {
+    throw new Error(
+      `Cannot merge: ${worktreePath} has uncommitted changes. Commit or stash them and try again.`
+    );
+  }
+}
+
+/**
+ * Merge the session branch into `baseBranch` in the main repo clone. Uses `sourceBranch`
+ * (typically the session `local_branch`) at the current worktree HEAD.
+ */
+export async function gitMergeSessionIntoBase({
+  worktreePath,
+  mainRepoPath,
+  baseBranch,
+  sourceBranch,
+}) {
+  if (!worktreePath || !mainRepoPath || !baseBranch || !sourceBranch) {
+    throw new Error('gitMergeSessionIntoBase: missing required arguments');
+  }
+
+  const { stdout: headSha } = await execFileAsync(
+    'git',
+    ['-C', worktreePath, 'rev-parse', 'HEAD'],
+    {
+      maxBuffer: 256,
+      stdio: 'pipe',
+    }
+  );
+  const sha = headSha.trim();
+  if (!sha) throw new Error('Could not resolve worktree HEAD');
+
+  const mergeRef = sourceBranch === baseBranch ? sha : sourceBranch;
+  if (sourceBranch !== baseBranch) {
+    await execFileAsync(
+      'git',
+      ['-C', mainRepoPath, 'update-ref', `refs/heads/${sourceBranch}`, sha],
+      { stdio: 'pipe' }
+    );
+  }
+
+  const runMerge = async (cwd) => {
+    await execFileAsync('git', ['-C', cwd, 'merge', '--no-edit', mergeRef], {
+      stdio: 'pipe',
+      maxBuffer: 1024 * 512,
+    });
+  };
+
+  let mergeCwd = mainRepoPath;
+  try {
+    try {
+      await execFileAsync('git', ['-C', mainRepoPath, 'checkout', baseBranch], {
+        stdio: 'pipe',
+      });
+      await runMerge(mainRepoPath);
+    } catch (checkoutErr) {
+      const stderr = checkoutErr.stderr?.toString?.() ?? '';
+      if (!isGitBranchCheckedOutElsewhere(stderr)) {
+        throw checkoutErr;
+      }
+      const existingPath = await findGitWorktreePathForBranch(mainRepoPath, baseBranch);
+      if (!existingPath) {
+        throw new Error(
+          `${baseBranch} is checked out in another worktree but its path could not be resolved`
+        );
+      }
+      await assertGitWorktreeClean(existingPath);
+      mergeCwd = existingPath;
+      await runMerge(existingPath);
+    }
+  } catch (mergeErr) {
+    const stderr = mergeErr.stderr?.toString?.() ?? mergeErr.message ?? '';
+    await execFileAsync('git', ['-C', mergeCwd, 'merge', '--abort'], { stdio: 'pipe' }).catch(
+      () => {}
+    );
+    if (/CONFLICT/i.test(stderr)) {
+      const err = new Error(
+        `Merge conflicts while merging into ${baseBranch}. Resolve conflicts in the repository and try again.\n\n${stderr.trim()}`
+      );
+      err.conflict = true;
+      throw err;
+    }
+    throw mergeErr;
+  }
+
+  return { ok: true, baseBranch, sourceBranch, headSha: sha };
+}
+
 // ─── Session-level git & PR helpers (used by session-socket) ──────────────────
 
 export async function gitPull(worktreePath, remoteBranch, token) {
@@ -950,14 +1068,15 @@ export async function gitCommitsNotOnAnyRemote(worktreePath, localRef = 'HEAD') 
  * Returns the number of local commits not yet on the session remote branch.
  * When `remoteBranch` is set, counts `origin/<remoteBranch>..<localRef>` so a unique
  * local worktree branch is not treated as fully unpushed. `localRef` defaults to HEAD.
- * Falls back to `<localRef> --not --remotes` if that origin ref is missing (new branch
- * never pushed). When `missingOriginRefMeansUnpushed` is true, a missing
- * `origin/<remoteBranch>` returns 1 instead of that fallback (for alternate-target
- * pushes where the local ref may already be on the session remote).
+ * Falls back to `refs/heads/<remoteBranch>..<localRef>`, then commits since merge-base
+ * with `baseBranch` when set, then `<localRef> --not --remotes` if the origin ref is
+ * missing. When `missingOriginRefMeansUnpushed` is true, a missing `origin/<remoteBranch>`
+ * returns 1 instead of that fallback (for alternate-target pushes where the local ref may
+ * already be on the session remote).
  * @returns {Promise<number>}
  */
 export async function gitCommitsToPush(worktreePath, remoteBranch = null, options = {}) {
-  const { missingOriginRefMeansUnpushed = false, localRef = 'HEAD' } = options;
+  const { missingOriginRefMeansUnpushed = false, localRef = 'HEAD', baseBranch = null } = options;
   const local = localRef || 'HEAD';
   try {
     if (remoteBranch) {
@@ -971,7 +1090,25 @@ export async function gitCommitsToPush(worktreePath, remoteBranch = null, option
         if (missingOriginRefMeansUnpushed) {
           return 1;
         }
-        /* origin/<remoteBranch> missing — count commits not on any remote */
+        try {
+          await execFileAsync(
+            'git',
+            ['-C', worktreePath, 'rev-parse', '--verify', `refs/heads/${remoteBranch}`],
+            { maxBuffer: 256 }
+          );
+          const { stdout } = await execFileAsync(
+            'git',
+            ['-C', worktreePath, 'rev-list', '--count', `refs/heads/${remoteBranch}..${local}`],
+            { maxBuffer: 256 }
+          );
+          const aheadOfLocal = parseInt(stdout.trim(), 10) || 0;
+          if (aheadOfLocal > 0) return aheadOfLocal;
+        } catch {
+          /* no local branch ref */
+        }
+        if (baseBranch) {
+          return gitRevListCountSinceBase(worktreePath, baseBranch, local);
+        }
         return gitCommitsNotOnAnyRemote(worktreePath, local);
       }
       const { stdout } = await execFileAsync(
@@ -1005,22 +1142,31 @@ async function mergeBaseWithBaseBranch(worktreePath, baseBranch) {
 }
 
 /**
- * Commits on the session branch since merge-base with base branch.
+ * Commits on `localRef` since merge-base with base branch.
  * @returns {Promise<number>}
  */
-export async function gitCommitCountSinceBase(worktreePath, baseBranch) {
+export async function gitRevListCountSinceBase(worktreePath, baseBranch, localRef = 'HEAD') {
   try {
     const base = await mergeBaseWithBaseBranch(worktreePath, baseBranch);
     if (!base) return 0;
+    const local = localRef || 'HEAD';
     const { stdout } = await execFileAsync(
       'git',
-      ['-C', worktreePath, 'rev-list', '--count', `${base}..HEAD`],
+      ['-C', worktreePath, 'rev-list', '--count', `${base}..${local}`],
       { maxBuffer: 256 }
     );
     return parseInt(stdout.trim(), 10) || 0;
   } catch {
     return 0;
   }
+}
+
+/**
+ * Commits on the session branch since merge-base with base branch.
+ * @returns {Promise<number>}
+ */
+export async function gitCommitCountSinceBase(worktreePath, baseBranch) {
+  return gitRevListCountSinceBase(worktreePath, baseBranch, 'HEAD');
 }
 
 const GIT_LOG_FIELD_SEP = '\x1e';

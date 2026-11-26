@@ -76,6 +76,24 @@ describe('gitCommitsToPush / gitCommitsNotOnAnyRemote', () => {
     ).toBe(1);
   });
 
+  it('does not count base-branch history when working on the base without a remote', async () => {
+    const barePath = path.join(TEST_DIR, 'local-base-only.git');
+    const localWork = path.join(TEST_DIR, 'local-base-work');
+    await execAsync('git', ['init', '--bare', barePath], { stdio: 'pipe' });
+    await execAsync('git', ['clone', barePath, localWork], { stdio: 'pipe' });
+    await git(localWork, 'config', 'user.email', 'test@test.com');
+    await git(localWork, 'config', 'user.name', 'Test');
+    await git(localWork, 'checkout', '-b', 'main');
+    await fs.promises.writeFile(path.join(localWork, 'README.md'), '# local\n');
+    await git(localWork, 'add', '.');
+    await git(localWork, 'commit', '-m', 'initial');
+    await git(localWork, 'remote', 'remove', 'origin');
+    await git(localWork, 'checkout', '-b', 'main-session1234');
+
+    expect(await gitCommitsNotOnAnyRemote(localWork)).toBe(1);
+    expect(await gitCommitsToPush(localWork, 'main', { baseBranch: 'main' })).toBe(0);
+  });
+
   it('counts commits on localRef when HEAD is already on the remote', async () => {
     await git(workPath, 'checkout', '-b', 'side-source');
     await fs.promises.writeFile(path.join(workPath, 'side.txt'), 'side\n');

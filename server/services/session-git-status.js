@@ -50,7 +50,7 @@ export async function computeSessionGitStatus(session) {
   const cwd = resolveDataDirRelativePath(session.session_path);
   const remoteBranch = session.remote_branch || session.local_branch;
   const [commitsToPush, commitsNotOnAnyRemote, commitsSinceReview] = await Promise.all([
-    gitCommitsToPush(cwd, remoteBranch),
+    gitCommitsToPush(cwd, remoteBranch, { baseBranch: session.base_branch }),
     gitCommitsNotOnAnyRemote(cwd),
     gitCommitCountSinceBase(cwd, session.base_branch),
   ]);

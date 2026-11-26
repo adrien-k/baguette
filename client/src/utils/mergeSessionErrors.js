@@ -4,8 +4,9 @@ export function isMergeSucceededArchiveFailed(err) {
   return msg.includes('PR merged successfully') && /archiv/i.test(msg);
 }
 
-export function mergeFailureToastLabel(err) {
-  return isMergeSucceededArchiveFailed(err)
-    ? 'PR merged, but archiving failed'
-    : 'Failed to merge PR';
+export function mergeFailureToastLabel(err, { localMerge = false } = {}) {
+  if (isMergeSucceededArchiveFailed(err)) {
+    return localMerge ? 'Merged, but archiving failed' : 'PR merged, but archiving failed';
+  }
+  return localMerge ? 'Failed to merge' : 'Failed to merge PR';
 }

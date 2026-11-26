@@ -7,6 +7,8 @@ import { TEXT_ACCENT, TEXT_DANGER, TEXT_FAINT, TEXT_MUTED, TEXT_SECONDARY } from
 
 export default function MergeConfirmModal({
   prNumber,
+  baseBranch,
+  localMerge = false,
   commitsToPush = 0,
   onConfirm,
   onCancel,
@@ -15,15 +17,17 @@ export default function MergeConfirmModal({
   onFixConflicts,
 }) {
   const [archiveSession, setArchiveSession] = useState(true);
-  const hasUnpushed = commitsToPush > 0;
+  const hasUnpushed = !localMerge && commitsToPush > 0;
 
   const handleConfirm = () => {
     onConfirm({ archive: archiveSession });
   };
 
+  const title = localMerge ? 'Merge into base branch' : 'Merge Pull Request';
+
   return (
     <Modal>
-      <ModalHeader title="Merge Pull Request" onClose={onCancel} disabled={loading} />
+      <ModalHeader title={title} onClose={onCancel} disabled={loading} />
       {error ? (
         <div className="mb-4">
           <div className={`flex items-start gap-2 ${TEXT_DANGER} text-sm mb-3`}>
@@ -42,17 +46,33 @@ export default function MergeConfirmModal({
         </div>
       ) : (
         <>
-          <UnpushedCommitsWarning
-            commitsToPush={commitsToPush}
-            consequence="The pull request will not include those commits until you push. Merging now may leave work off the branch that gets merged."
-            hint="Push from the session header or ask the agent to push before merging if these changes should be part of the PR."
-          />
+          {!localMerge && (
+            <UnpushedCommitsWarning
+              commitsToPush={commitsToPush}
+              consequence="The pull request will not include those commits until you push. Merging now may leave work off the branch that gets merged."
+              hint="Push from the session header or ask the agent to push before merging if these changes should be part of the PR."
+            />
+          )}
           <p className={`${TEXT_MUTED} text-sm mb-1`}>
-            Merge PR <span className={`${TEXT_ACCENT} font-medium`}>#{prNumber}</span> into the base
-            branch?
+            {localMerge ? (
+              <>
+                Merge this session&apos;s branch into{' '}
+                <span className={`${TEXT_ACCENT} font-medium`}>
+                  {baseBranch || 'the base branch'}
+                </span>
+                ?
+              </>
+            ) : (
+              <>
+                Merge PR <span className={`${TEXT_ACCENT} font-medium`}>#{prNumber}</span> into the
+                base branch?
+              </>
+            )}
           </p>
           <p className={`${TEXT_FAINT} text-xs mb-4`}>
-            This will squash and merge the changes. This action cannot be undone.
+            {localMerge
+              ? 'This merges your session commits into the base branch in the local repository.'
+              : 'This will squash and merge the changes. This action cannot be undone.'}
           </p>
           <label className="flex items-start gap-2.5 mb-0 cursor-pointer group">
             <input

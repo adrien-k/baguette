@@ -49,6 +49,7 @@ import {
   getOpenPRByNumber,
   getPRStatus,
   mergePR,
+  gitMergeSessionIntoBase,
   markPRDraft,
   markPRReady,
   closePR,
@@ -157,6 +158,7 @@ vi.mock('../github.js', async (importOriginal) => {
     getOpenPR: vi.fn().mockResolvedValue(null),
     getPRStatus: vi.fn().mockResolvedValue('open'),
     mergePR: vi.fn().mockResolvedValue(undefined),
+    gitMergeSessionIntoBase: vi.fn().mockResolvedValue({ ok: true }),
     markPRReady: vi.fn().mockResolvedValue(undefined),
     markPRDraft: vi.fn().mockResolvedValue(undefined),
     closePR: vi.fn().mockResolvedValue(undefined),
@@ -634,10 +636,15 @@ describe('Sessions service - custom methods', () => {
 
   describe('merge', () => {
     beforeEach(async () => {
+      const session = await db('sessions').where({ id: sessId }).first();
+      await db('repos')
+        .where({ id: session.repo_id })
+        .update({ origin: 'https://github.com/test/repo.git', access_mode: 'github' });
       await db('sessions')
         .where({ id: sessId })
         .update({ pr_number: 42, pr_status: 'open', repo_full_name: 'test/repo' });
       mergePR.mockResolvedValue(undefined);
+      gitMergeSessionIntoBase.mockClear();
     });
 
     it('merges PR, updates pr_status, and archives when archive is true', async () => {
@@ -664,6 +671,29 @@ describe('Sessions service - custom methods', () => {
       const result = await sessionsSvc.merge({ id: sessId, archive: true }, params({ id: userId }));
       expect(result).toEqual({ ok: true, merged: true, archived: true });
 
+      const row = await db('sessions').where({ id: sessId }).first();
+      expect(row.pr_status).toBe('merged');
+    });
+
+    it('merges a local repository via gitMergeSessionIntoBase', async () => {
+      const session = await db('sessions').where({ id: sessId }).first();
+      await db('repos')
+        .where({ id: session.repo_id })
+        .update({ origin: null, access_mode: 'local' });
+      await db('sessions').where({ id: sessId }).update({
+        pr_number: null,
+        pr_status: null,
+        session_path: 'repos/test/sessions/x/worktree',
+        local_branch: 'feat-local',
+        remote_branch: 'feat',
+        base_branch: 'main',
+      });
+
+      const result = await app.service('sessions').merge({ id: sessId }, params({ id: userId }));
+
+      expect(gitMergeSessionIntoBase).toHaveBeenCalled();
+      expect(mergePR).not.toHaveBeenCalled();
+      expect(result).toEqual({ ok: true, merged: true, archived: false, local: true });
       const row = await db('sessions').where({ id: sessId }).first();
       expect(row.pr_status).toBe('merged');
     });

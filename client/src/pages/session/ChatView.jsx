@@ -22,6 +22,7 @@ import {
 import { toastFeathersError, toastError } from '../../utils/toastError.jsx';
 import { subscribeSseReconnect } from '../../utils/sseReconnect.js';
 import { mergeFailureToastLabel } from '../../utils/mergeSessionErrors.js';
+import { isLocalRepo } from '../../utils/repoDisplayName.js';
 import ChatMessage from '../../components/ChatMessage.tsx';
 import ChatWorkSummary from '../../components/chat/ChatWorkSummary.tsx';
 import { groupChatDisplayMessages } from '@baguette/shared/chat-display-groups.js';
@@ -143,6 +144,10 @@ export default function ChatView({
 }) {
   const { currentUser } = useCurrentUser();
   const isOwner = isSessionOwner(session, currentUser);
+  const localMergeRepo = Boolean(session?.repo_full_name && isLocalRepo(session.repo_full_name));
+  const canMergeSession =
+    session?.pr_status !== 'merged' &&
+    (localMergeRepo ? !!session?.base_branch : !!session?.pr_number);
   const persistentState = usePersistentState(
     session?.id ? `session-chat-${session.id}` : undefined
   );
@@ -499,10 +504,14 @@ export default function ChatView({
     try {
       await sessionsService.merge({ id: session.id, archive });
       setShowMergeModal(false);
-      toast.success(archive ? 'PR merged; archiving session' : 'PR merged successfully');
+      if (localMergeRepo) {
+        toast.success(archive ? 'Merged into base; archiving session' : 'Merged into base branch');
+      } else {
+        toast.success(archive ? 'PR merged; archiving session' : 'PR merged successfully');
+      }
     } catch (err) {
-      toastFeathersError(mergeFailureToastLabel(err), err);
-      setMergeError(err.message || mergeFailureToastLabel(err));
+      toastFeathersError(mergeFailureToastLabel(err, { localMerge: localMergeRepo }), err);
+      setMergeError(err.message || mergeFailureToastLabel(err, { localMerge: localMergeRepo }));
     } finally {
       setMerging(false);
     }
@@ -884,11 +893,15 @@ export default function ChatView({
                 !isRunning &&
                 session?.pr_status !== 'merged' && (
                   <div className="flex gap-2 flex-wrap py-2">
-                    {isOwner && (
+                    {isOwner && canMergeSession && (
                       <ChatQuickActionButton
                         icon={GitMerge}
                         label="Merge"
-                        tooltip="Merge the pull request into the base branch."
+                        tooltip={
+                          localMergeRepo
+                            ? 'Merge this session into the base branch.'
+                            : 'Merge the pull request into the base branch.'
+                        }
                         onClick={openMergeFlow}
                         disabled={checkingUnpushedForMerge}
                         className={CHAT_ACTION_BUTTON_CLASS}
@@ -1159,6 +1172,8 @@ export default function ChatView({
       {showMergeModal && (
         <MergeConfirmModal
           prNumber={session?.pr_number}
+          baseBranch={session?.base_branch}
+          localMerge={localMergeRepo}
           commitsToPush={mergeUnpushedCount}
           onConfirm={handleMerge}
           onCancel={() => {
@@ -1167,13 +1182,23 @@ export default function ChatView({
           }}
           loading={merging}
           error={mergeError}
-          onFixConflicts={() => {
-            setShowMergeModal(false);
-            setMergeError(null);
-            handleQuickSend(
-              'Please run GitPull to sync with the latest changes from the remote branch. Merge the base branch. If there are any merge conflicts, resolve them.'
-            );
-          }}
+          onFixConflicts={
+            localMergeRepo
+              ? () => {
+                  setShowMergeModal(false);
+                  setMergeError(null);
+                  handleQuickSend(
+                    'Merge the session branch into the base branch locally. If there are merge conflicts, resolve them in the worktree.'
+                  );
+                }
+              : () => {
+                  setShowMergeModal(false);
+                  setMergeError(null);
+                  handleQuickSend(
+                    'Please run GitPull to sync with the latest changes from the remote branch. Merge the base branch. If there are any merge conflicts, resolve them.'
+                  );
+                }
+          }
         />
       )}
     </>

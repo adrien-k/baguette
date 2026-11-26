@@ -36,6 +36,7 @@ const DIFF_CONTENT_MAX_WIDTH_CLASS = 'w-full max-w-5xl mx-auto';
 import { DIFF_FILE_BODY_CLASS, DIFF_LINE_WRAP_CLASS } from '../../utils/diffLineWrap.js';
 import { useCurrentUser } from '../../context/CurrentUserContext.jsx';
 import { isSessionOwner } from '@baguette/shared/session-sharing.js';
+import { isLocalRepo } from '../../utils/repoDisplayName.js';
 
 /** File-by-file selector options: filtered files, keeping an explicit selection visible. */
 function buildFileSelectorOptions(changedFiles, selectedFile) {
@@ -606,8 +607,10 @@ export default function DiffView({
 
   const prStatus = session?.pr_status ?? null;
   const isMerged = prStatus === 'merged';
-  const canMerge =
-    !!session?.pr_number && (prStatus === 'open' || prStatus === 'draft' || prStatus === null);
+  const localMergeRepo = Boolean(session?.repo_full_name && isLocalRepo(session.repo_full_name));
+  const canMerge = localMergeRepo
+    ? !!session?.base_branch && !isMerged
+    : !!session?.pr_number && (prStatus === 'open' || prStatus === 'draft' || prStatus === null);
 
   const isSingleCommit = selectedCommit && selectedCommit !== 'all';
   const selectedCommitMeta = isSingleCommit
@@ -631,10 +634,14 @@ export default function DiffView({
     try {
       await sessionsService.merge({ id: session.id, archive });
       setShowMergeModal(false);
-      toast.success(archive ? 'PR merged; archiving session' : 'PR merged successfully');
+      if (localMergeRepo) {
+        toast.success(archive ? 'Merged into base; archiving session' : 'Merged into base branch');
+      } else {
+        toast.success(archive ? 'PR merged; archiving session' : 'PR merged successfully');
+      }
     } catch (err) {
-      toastFeathersError(mergeFailureToastLabel(err), err);
-      setMergeError(err.message || mergeFailureToastLabel(err));
+      toastFeathersError(mergeFailureToastLabel(err, { localMerge: localMergeRepo }), err);
+      setMergeError(err.message || mergeFailureToastLabel(err, { localMerge: localMergeRepo }));
     } finally {
       setMerging(false);
     }
@@ -642,6 +649,8 @@ export default function DiffView({
 
   const hasDiff = diff && diff.trim().length > 0;
   const hasPr = !!session?.pr_number;
+  const showMergeButton = !isMerged && canMerge && !readonly && canManageSession;
+  const showMergeBar = hasPr || showMergeButton;
   const files = hasDiff ? parseDiff(diff) : [];
   const compiledFileFilters = fileFilters?.compiled ?? null;
   const filtersActive = Boolean(compiledFileFilters?.active);
@@ -916,19 +925,25 @@ export default function DiffView({
         </div>
       </div>
 
-      {hasPr && (
+      {showMergeBar && (
         <div className="shrink-0 border-t border-line px-4 py-3">
           <div className={`${DIFF_CONTENT_MAX_WIDTH_CLASS} flex items-center justify-end gap-2`}>
-            <PrStatusBadge status={prStatus} prNumber={session.pr_number} prUrl={session.pr_url} />
-            {canManageSession && !readonly && <PrDraftToggleButton session={session} />}
-            {!isMerged && canMerge && !readonly && canManageSession && (
+            {hasPr && (
+              <PrStatusBadge
+                status={prStatus}
+                prNumber={session.pr_number}
+                prUrl={session.pr_url}
+              />
+            )}
+            {canManageSession && !readonly && hasPr && <PrDraftToggleButton session={session} />}
+            {showMergeButton && (
               <button
                 onClick={openMergeFlow}
                 disabled={checkingUnpushedForMerge}
                 className={SECONDARY_BUTTON_CLASS}
               >
                 <GitMerge className="w-3.5 h-3.5" />
-                Merge PR
+                {localMergeRepo ? 'Merge' : 'Merge PR'}
               </button>
             )}
           </div>
@@ -938,6 +953,8 @@ export default function DiffView({
       {showMergeModal && (
         <MergeConfirmModal
           prNumber={session.pr_number}
+          baseBranch={session.base_branch}
+          localMerge={localMergeRepo}
           commitsToPush={mergeUnpushedCount}
           onConfirm={handleMerge}
           onCancel={() => {
