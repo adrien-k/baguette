@@ -108,7 +108,6 @@ export function isSubagentBuilder(agent) {
 
 /**
  * Extra builder started from the composer (not the session primary, not an MCP subagent).
- * These are the only agents whose title can be renamed in the session list.
  */
 export function isSecondaryBuilder(agent) {
   return agent?.agent_type === 'builder' && !isPrimaryAgent(agent);
@@ -117,6 +116,11 @@ export function isSecondaryBuilder(agent) {
 /** Primary or secondary builder — shares the session worktree (not subagent/reviewer). */
 function isComposerBuilderAgent(agent) {
   return agent?.agent_type === 'builder';
+}
+
+/** Primary and secondary builders can be renamed from the session agent tree. */
+export function isRenamableBuilder(agent) {
+  return isComposerBuilderAgent(agent);
 }
 
 /** Git sync / merge / push footer on builder chats only (primary and secondary). */

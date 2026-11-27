@@ -148,9 +148,9 @@ export async function requireMessageIdentity(context) {
   return context;
 }
 
-/** Validate agent_sdk, model, and agent_id on queued-messages.create. */
+/** Validate agent_sdk, model, and agent_id on queued-messages.create / schedule. */
 export async function requireQueuedMessageIdentity(context) {
-  if (context.method !== 'create') return context;
+  if (context.method !== 'create' && context.method !== 'schedule') return context;
   const data = context.data;
   if (!data?.session_id) throw new BadRequest('session_id is required');
   const db = context.app.get('db');

@@ -93,6 +93,33 @@ describe('queued-messages schedule', () => {
     expect(row.message_json).toBe(messageJson);
   });
 
+  it('schedule() keeps a secondary builder agent_id', async () => {
+    const [secondaryId] = await db('agents').insert({
+      session_id: sessionId,
+      ref: 2,
+      name: 'Secondary',
+      agent_type: 'builder',
+      is_primary: 0,
+      status: 'stopped',
+      agent_sdk: 'claude',
+      model: 'sonnet',
+      current_turn_id: 0,
+    });
+    const sendAt = new Date(Date.now() + 60_000).toISOString();
+    const row = await app.service('queued-messages').schedule(
+      {
+        session_id: sessionId,
+        message_json: messageJson,
+        send_at: sendAt,
+        agent_id: secondaryId,
+        agent_sdk: 'claude',
+        model: 'sonnet',
+      },
+      params({ id: userId })
+    );
+    expect(row.agent_id).toBe(secondaryId);
+  });
+
   it('stores model snapshot on schedule()', async () => {
     const sendAt = new Date(Date.now() + 60_000).toISOString();
     const row = await app.service('queued-messages').schedule(

@@ -594,7 +594,13 @@ export default function ChatView({
         session_id: session.id,
         message_json: messageJson,
         send_at: sendAtIso,
-        ...composerTurnFields(),
+        ...builderMessageCreateFields(session, {
+          model: isOwner ? composerModel : (agentSource?.model ?? composerModel),
+          model_params: isOwner
+            ? composerModelParams
+            : (agentSource?.model_params ?? composerModelParams),
+          agent: activeAgent,
+        }),
       });
       setInput('');
       persistentState.clear();

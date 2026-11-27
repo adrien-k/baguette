@@ -164,6 +164,69 @@ class AgentsService extends KnexService {
     return { ok: true, agent_id: agent.id };
   }
 
+  /** Promote a secondary builder to primary (demotes the current primary). */
+  async setPrimary(data, params) {
+    const agentId = Number(data?.agent_id);
+    if (!Number.isFinite(agentId)) throw new BadRequest('agent_id is required');
+    const userId = params.user?.id;
+    if (!userId) throw new BadRequest('Not authenticated');
+
+    const agent = await this.get(agentId, { user: params.user });
+    if (agent.agent_type !== 'builder') {
+      throw new BadRequest('Only builders can be made primary');
+    }
+    if (Number(agent.is_primary) === 1) {
+      return { ok: true, agent_id: agent.id, previous_primary_id: agent.id };
+    }
+
+    const busy = (row) =>
+      row &&
+      (row.status === 'running' || row.status === 'approval' || row.status === 'provisioning');
+    if (busy(agent)) {
+      throw new BadRequest('Stop this builder before making it primary');
+    }
+
+    const db = this.app.get('db');
+    const sessionId = agent.session_id;
+    const currentPrimary = await db('agents')
+      .where({ session_id: sessionId, is_primary: 1 })
+      .first();
+    if (busy(currentPrimary)) {
+      throw new BadRequest('Stop the current primary builder before switching');
+    }
+
+    const now = new Date().toISOString();
+    await db.transaction(async (trx) => {
+      if (currentPrimary) {
+        await trx('agents')
+          .where({ id: currentPrimary.id })
+          .update({ is_primary: 0, updated_at: now });
+      }
+      await trx('agents').where({ id: agentId }).update({ is_primary: 1, updated_at: now });
+    });
+
+    if (currentPrimary) {
+      await patchAgentInternal(
+        this.app,
+        currentPrimary.id,
+        { is_primary: 0, updated_at: now },
+        userId
+      );
+    }
+    const promoted = await patchAgentInternal(
+      this.app,
+      agentId,
+      { is_primary: 1, updated_at: now },
+      userId
+    );
+
+    return {
+      ok: true,
+      agent_id: promoted.id,
+      previous_primary_id: currentPrimary?.id ?? null,
+    };
+  }
+
   async _stopActiveChildAgents(agent, params) {
     const db = this.app.get('db');
     const children = await listActiveChildAgents(db, agent.id);
@@ -815,14 +878,14 @@ async function stopReviewerBeforeRemove(app, row, user) {
   await getReviewAgentTurn(app).stopReviewerAgent(session, row);
 }
 
-/** External name changes are limited to extra builders (not primary, reviewer, or MCP subagent). */
+/** External name changes are limited to builders (not reviewer or MCP subagent). */
 async function restrictNamePatch(context) {
   if (!context.params?.provider) return context;
   if (context.data?.name === undefined) return context;
   const agent = await getAgentById(context.app.get('db'), context.id);
   if (!agent) throw new NotFound('Agent not found');
-  if (agent.agent_type !== 'builder' || Number(agent.is_primary) === 1) {
-    throw new BadRequest('Only secondary builders can be renamed');
+  if (agent.agent_type !== 'builder') {
+    throw new BadRequest('Only builders can be renamed');
   }
   return context;
 }
@@ -900,6 +963,7 @@ const agentsHooks = {
     ],
     remove: [requireOwnSessionForWrite, beforeRemove],
     stop: [requireUser],
+    setPrimary: [requireOwnSessionForWrite, only(['agent_id'])],
   },
   after: {
     create: [afterReviewerCreate],
@@ -927,6 +991,7 @@ export function registerAgentsService(app, path = 'agents') {
       'listAgents',
       'startReview',
       'continueReview',
+      'setPrimary',
     ],
   });
   app.service(path).hooks(agentsHooks);

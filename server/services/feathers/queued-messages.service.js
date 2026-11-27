@@ -189,6 +189,7 @@ const queuedMessagesHooks = {
         'agent_sdk',
         'agent_config_id',
       ]),
+      requireQueuedMessageIdentity,
       validateSessionOwnership,
     ],
     find: [scopeByAccessibleSession],

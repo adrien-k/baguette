@@ -187,7 +187,13 @@ describe('agents create - secondary builder naming', () => {
     ).rejects.toThrow('name is required for a subagent');
   });
 
-  it('renames a secondary builder and rejects renaming a subagent', async () => {
+  it('renames primary and secondary builders and rejects renaming a subagent', async () => {
+    const primary = await db('agents').where({ session_id: sessionId, is_primary: 1 }).first();
+    const primaryRenamed = await app
+      .service('agents')
+      .patch(primary.id, { name: 'Lead builder' }, params());
+    expect(primaryRenamed.name).toBe('Lead builder');
+
     const builder = await createBuilder({ agent_type: 'builder', name: 'Extra' });
     const renamed = await app.service('agents').patch(builder.id, { name: 'Scout' }, params());
     expect(renamed.name).toBe('Scout');
@@ -203,7 +209,7 @@ describe('agents create - secondary builder naming', () => {
     );
     await expect(
       app.service('agents').patch(subagent.id, { name: 'Renamed worker' }, params())
-    ).rejects.toThrow('Only secondary builders can be renamed');
+    ).rejects.toThrow('Only builders can be renamed');
   });
 });
 

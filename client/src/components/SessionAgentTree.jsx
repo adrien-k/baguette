@@ -14,7 +14,9 @@ import AgentTypeIcon from './AgentTypeIcon.jsx';
 import Tooltip from './Tooltip.jsx';
 import { SessionStatusIcon } from './SessionCard.jsx';
 import { agentsService } from '../feathers.js';
+import toast from 'react-hot-toast';
 import { toastError } from '../utils/toastError.jsx';
+import SetPrimaryConfirmModal from './SetPrimaryConfirmModal.jsx';
 import {
   buildSessionAgentTree,
   nodeHasDescendantAgent,
@@ -27,6 +29,7 @@ import {
   isAgentTurnActive,
   isPrimaryAgent,
   isReviewerAgent,
+  isRenamableBuilder,
   isSecondaryBuilder,
   isSubagentBuilder,
 } from '../utils/sessionAgents.js';
@@ -116,14 +119,58 @@ function AgentTreeModelLabel({ agentConfigId, model }) {
 }
 
 const EDIT_BUTTON_RESERVE_PX = 20;
+const SET_PRIMARY_BUTTON_RESERVE_PX = 20;
 
 const EDIT_HOVER_REVEAL =
   'md:opacity-0 md:pointer-events-none md:transition-opacity md:group-hover/row:pointer-events-auto md:group-hover/row:opacity-100 md:focus-within:pointer-events-auto md:focus-within:opacity-100';
 
+/** Crown hover action on secondary builders to promote them to primary. */
+function AgentTreeSetPrimary({
+  agent,
+  canManage,
+  renaming,
+  onRequestSetPrimary,
+  overlay = false,
+  sessionHighlighted = false,
+  isCurrent = false,
+}) {
+  if (!canManage || !isSecondaryBuilder(agent) || renaming) return null;
+  const positionClass = overlay
+    ? 'absolute right-5 top-1/2 z-[1] -translate-y-1/2 py-0.5 pl-2 pr-0.5'
+    : 'relative z-[1] shrink-0';
+
+  return (
+    <span
+      data-testid="agent-tree-set-primary"
+      className={`pointer-events-auto inline-flex items-center ${positionClass} ${EDIT_HOVER_REVEAL}`}
+    >
+      {overlay ? (
+        <TrailingHoverBackdrop
+          sessionHighlighted={sessionHighlighted}
+          extraHoverWash={!isCurrent}
+          showOnMobile
+        />
+      ) : null}
+      <button
+        type="button"
+        title="Make primary builder"
+        aria-label={`Make ${agentDisplayTitle(agent)} the primary builder`}
+        onClick={(e) => {
+          e.stopPropagation();
+          onRequestSetPrimary(agent);
+        }}
+        className="relative z-[1] shrink-0 rounded p-0.5 text-faint hover:text-brand"
+      >
+        <Crown className="w-3 h-3" aria-hidden />
+      </button>
+    </span>
+  );
+}
+
 /**
  * Small rename affordance trailing the agent label (or overlaid on its right
- * edge when the label takes the whole available width). Only extra builders are
- * renameable — the primary builder, reviewer, and MCP subagents keep a fixed title.
+ * edge when the label takes the whole available width). Reviewer and MCP subagent
+ * rows keep a fixed title.
  */
 function AgentTreeEdit({
   agent,
@@ -134,7 +181,7 @@ function AgentTreeEdit({
   sessionHighlighted = false,
   isCurrent = false,
 }) {
-  if (!canManage || !isSecondaryBuilder(agent) || renaming) return null;
+  if (!canManage || !isRenamableBuilder(agent) || renaming) return null;
   const positionClass = overlay
     ? 'absolute right-0 top-1/2 z-[1] -translate-y-1/2 py-0.5 pl-3 pr-0.5'
     : 'relative z-[1] shrink-0';
@@ -310,16 +357,18 @@ function AgentNameWithEdit({
   canManage,
   renaming,
   onRequestRename,
+  onRequestSetPrimary,
   sessionHighlighted,
 }) {
-  const showEdit = canManage && !renaming && isSecondaryBuilder(agent);
+  const showSetPrimary = canManage && !renaming && isSecondaryBuilder(agent);
+  const showEdit = canManage && !renaming && isRenamableBuilder(agent);
   const containerRef = useRef(null);
   const labelRef = useRef(null);
   const titleRef = useRef(null);
   const [overlayEdit, setOverlayEdit] = useState(false);
 
   useLayoutEffect(() => {
-    if (!showEdit) {
+    if (!showEdit && !showSetPrimary) {
       setOverlayEdit(false);
       return undefined;
     }
@@ -342,7 +391,10 @@ function AgentNameWithEdit({
 
       const overflow = Math.max(0, titleEl.scrollWidth - titleEl.clientWidth);
       const labelNaturalWidth = label.clientWidth + overflow;
-      setOverlayEdit(labelNaturalWidth + EDIT_BUTTON_RESERVE_PX > available);
+      const actionReserve =
+        (showEdit ? EDIT_BUTTON_RESERVE_PX : 0) +
+        (showSetPrimary ? SET_PRIMARY_BUTTON_RESERVE_PX : 0);
+      setOverlayEdit(labelNaturalWidth + actionReserve > available);
     };
 
     update();
@@ -350,7 +402,7 @@ function AgentNameWithEdit({
     const ro = new ResizeObserver(update);
     ro.observe(parent);
     return () => ro.disconnect();
-  }, [showEdit, title, agentRef, agent.status]);
+  }, [showEdit, showSetPrimary, title, agentRef, agent.status]);
 
   return (
     <div ref={containerRef} className="relative flex min-w-0 items-center gap-1">
@@ -363,6 +415,17 @@ function AgentNameWithEdit({
         labelRef={labelRef}
         titleRef={titleRef}
       />
+      {showSetPrimary ? (
+        <AgentTreeSetPrimary
+          agent={agent}
+          canManage={canManage}
+          renaming={renaming}
+          onRequestSetPrimary={onRequestSetPrimary}
+          overlay={overlayEdit}
+          sessionHighlighted={sessionHighlighted}
+          isCurrent={isCurrent}
+        />
+      ) : null}
       {showEdit ? (
         <AgentTreeEdit
           agent={agent}
@@ -396,6 +459,7 @@ function AgentTreeNode({ node, ...rest }) {
     onCommitRename,
     onCancelRename,
     onRequestRename,
+    onRequestSetPrimary,
     sessionHighlighted,
     expandedByParentId,
     onToggleParentExpanded,
@@ -468,6 +532,7 @@ function AgentTreeNode({ node, ...rest }) {
               canManage={canManage}
               renaming={renaming}
               onRequestRename={onRequestRename}
+              onRequestSetPrimary={onRequestSetPrimary}
               sessionHighlighted={sessionHighlighted}
             />
           )}
@@ -522,6 +587,8 @@ export default function SessionAgentTree({
   const [renamingAgentId, setRenamingAgentId] = useState(null);
   const [renameValue, setRenameValue] = useState('');
   const [renameSaving, setRenameSaving] = useState(false);
+  const [pendingPrimaryAgent, setPendingPrimaryAgent] = useState(null);
+  const [setPrimarySaving, setSetPrimarySaving] = useState(false);
   const [expandedByParentId, setExpandedByParentId] = useState({});
 
   const prevCurrentAgentIdRef = useRef(currentAgentId);
@@ -562,7 +629,7 @@ export default function SessionAgentTree({
   };
 
   const startRename = (agent) => {
-    if (!isSecondaryBuilder(agent)) return;
+    if (!isRenamableBuilder(agent)) return;
     setRenamingAgentId(agent.id);
     setRenameValue(agent.name?.trim() || agentDisplayTitle(agent));
   };
@@ -571,6 +638,25 @@ export default function SessionAgentTree({
     if (renameSaving) return;
     setRenamingAgentId(null);
     setRenameValue('');
+  };
+
+  const requestSetPrimary = (agent) => {
+    if (!isSecondaryBuilder(agent)) return;
+    setPendingPrimaryAgent(agent);
+  };
+
+  const confirmSetPrimary = async () => {
+    if (!pendingPrimaryAgent?.id || setPrimarySaving) return;
+    setSetPrimarySaving(true);
+    try {
+      await agentsService.setPrimary({ agent_id: pendingPrimaryAgent.id });
+      setPendingPrimaryAgent(null);
+      toast.success('Primary builder updated');
+    } catch (err) {
+      toastError('Failed to switch primary builder', err);
+    } finally {
+      setSetPrimarySaving(false);
+    }
   };
 
   const commitRename = async (agent) => {
@@ -604,6 +690,7 @@ export default function SessionAgentTree({
     onCommitRename: commitRename,
     onCancelRename: cancelRename,
     onRequestRename: startRename,
+    onRequestSetPrimary: requestSetPrimary,
     sessionHighlighted,
     expandedByParentId,
     onToggleParentExpanded: toggleParentExpanded,
@@ -613,6 +700,16 @@ export default function SessionAgentTree({
 
   return (
     <div className="mt-1.5 flex items-start gap-2">
+      {pendingPrimaryAgent ? (
+        <SetPrimaryConfirmModal
+          agent={pendingPrimaryAgent}
+          onConfirm={confirmSetPrimary}
+          onCancel={() => {
+            if (!setPrimarySaving) setPendingPrimaryAgent(null);
+          }}
+          loading={setPrimarySaving}
+        />
+      ) : null}
       <span className="w-3 shrink-0" aria-hidden />
       {showOwnerGutter && <span className="h-4 w-4 shrink-0" aria-hidden />}
       <div className="min-w-0 flex-1 max-h-72 overflow-y-auto" data-testid="session-agent-tree">

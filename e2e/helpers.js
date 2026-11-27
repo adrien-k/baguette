@@ -345,6 +345,24 @@ export async function openAddBuilderModalFromAgentTree(page) {
   await expect(page.getByRole('heading', { name: 'Add builder' })).toBeVisible();
 }
 
+/** Add a secondary builder from the agent tree with no initial turn (stays idle). */
+export async function addIdleSecondaryBuilder(page, name) {
+  const label = name.trim();
+  await openAddBuilderModalFromAgentTree(page);
+  const form = page.locator('form', {
+    has: page.getByPlaceholder(ADD_BUILDER_MODAL_PLACEHOLDER),
+  });
+  await form.getByPlaceholder('Builder name').fill(label);
+  await form.getByRole('button', { name: 'Add builder', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Add builder' })).toHaveCount(0, {
+    timeout: 30_000,
+  });
+  const row = sessionAgentTreeRow(page, label);
+  await expect(row).toBeVisible({ timeout: 30_000 });
+  await selectAgentInTree(page, label);
+  return label;
+}
+
 export async function confirmStartSubagentModal(page) {
   const form = page.locator('form', {
     has: page.getByPlaceholder(ADD_BUILDER_MODAL_PLACEHOLDER),
@@ -452,6 +470,34 @@ export async function listSessionAgentsForPage(page) {
   expect(res.ok()).toBe(true);
   const body = await res.json();
   return body.data ?? body;
+}
+
+/** Queued and scheduled rows for the open session (owner API). */
+export async function listQueuedMessagesForPage(page) {
+  const sessionId = parseSessionIdFromUrl(page.url());
+  expect(sessionId).toBeTruthy();
+  const res = await page.request.get('/api/queued-messages', {
+    params: { session_id: sessionId, $limit: 50 },
+  });
+  expect(res.ok()).toBe(true);
+  const body = await res.json();
+  return body.data ?? body;
+}
+
+/** Open the composer Schedule menu and pick a preset label (e.g. "Send in 30 minutes"). */
+export async function scheduleComposerPreset(page, menuLabel) {
+  const scheduleBtn = page.getByTitle('Schedule', { exact: true });
+  await expect(scheduleBtn).toBeEnabled({ timeout: 30_000 });
+  await scheduleBtn.click();
+  await page.getByRole('menuitem', { name: menuLabel, exact: true }).click();
+}
+
+/** Type draft text in the session chat composer and wait until Schedule is enabled. */
+export async function fillComposerForSchedule(page, text) {
+  const composer = await sessionChatComposer(page);
+  await composer.fill(text);
+  await expect(composer).toHaveValue(text);
+  await expect(page.getByTitle('Schedule', { exact: true })).toBeEnabled({ timeout: 15_000 });
 }
 
 /** Wait until at least one agent is running and at least one is not. */

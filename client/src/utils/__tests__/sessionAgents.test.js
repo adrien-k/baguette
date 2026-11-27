@@ -12,6 +12,7 @@ import {
   isAgentTurnActive,
   isAnyAgentAwaitingUser,
   isPrimaryAgent,
+  isRenamableBuilder,
   isReviewerAgent,
   isSecondaryBuilder,
   isSubagentBuilder,
@@ -228,6 +229,15 @@ describe('isSubagentBuilder', () => {
     expect(isSubagentBuilder({ agent_type: 'builder', is_primary: 0 })).toBe(false);
     expect(isSubagentBuilder({ agent_type: 'subagent', is_primary: 0 })).toBe(true);
     expect(isSubagentBuilder({ agent_type: 'reviewer', is_primary: 0 })).toBe(false);
+  });
+});
+
+describe('isRenamableBuilder', () => {
+  it('is true for primary and secondary builders only', () => {
+    expect(isRenamableBuilder({ agent_type: 'builder', is_primary: 1 })).toBe(true);
+    expect(isRenamableBuilder({ agent_type: 'builder', is_primary: 0 })).toBe(true);
+    expect(isRenamableBuilder({ agent_type: 'subagent', is_primary: 0 })).toBe(false);
+    expect(isRenamableBuilder({ agent_type: 'reviewer', is_primary: 0 })).toBe(false);
   });
 });
 

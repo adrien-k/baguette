@@ -1,9 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 
 vi.mock('../../feathers.js', () => ({
-  agentsService: { patch: vi.fn() },
+  agentsService: { patch: vi.fn(), setPrimary: vi.fn() },
+}));
+vi.mock('react-hot-toast', () => ({
+  default: { success: vi.fn() },
 }));
 vi.mock('../SessionCard.jsx', () => ({
   SessionStatusIcon: () => null,
@@ -144,11 +147,15 @@ describe('SessionAgentTree', () => {
       />
     );
 
-    const editWrapper = screen.getByTestId('agent-tree-edit');
+    const featureRow = screen
+      .getAllByTestId('agent-tree-row')
+      .find((r) => r.getAttribute('data-agent-name') === 'Feature builder');
+    expect(featureRow).toBeTruthy();
+    const editWrapper = within(featureRow).getByTestId('agent-tree-edit');
     expect(editWrapper.getAttribute('data-overlay')).toBe('false');
-    expect(editWrapper.previousElementSibling?.textContent).toContain('Feature builder');
+    expect(within(featureRow).getByTestId('agent-tree-set-primary')).toBeTruthy();
 
-    const renameBtn = screen.getByRole('button', { name: 'Rename Feature builder' });
+    const renameBtn = within(featureRow).getByRole('button', { name: 'Rename Feature builder' });
     fireEvent.click(renameBtn);
     expect(onSelectAgent).not.toHaveBeenCalled();
     expect(screen.getByDisplayValue('Feature builder')).toBeTruthy();
@@ -191,7 +198,10 @@ describe('SessionAgentTree', () => {
         />
       );
 
-      const editWrapper = screen.getByTestId('agent-tree-edit');
+      const featureRow = screen
+        .getAllByTestId('agent-tree-row')
+        .find((r) => r.getAttribute('data-agent-name') === 'Feature builder');
+      const editWrapper = within(featureRow).getByTestId('agent-tree-edit');
       expect(editWrapper.getAttribute('data-overlay')).toBe('true');
       expect(editWrapper.className).toContain('absolute');
       expect(editWrapper.className).toContain('right-0');
@@ -203,5 +213,30 @@ describe('SessionAgentTree', () => {
       if (protoOffsetWidth)
         Object.defineProperty(HTMLElement.prototype, 'offsetWidth', protoOffsetWidth);
     }
+  });
+
+  it('shows rename on the primary builder when the user can manage', () => {
+    render(
+      <SessionAgentTree
+        agents={sampleAgents}
+        currentAgentId={1}
+        canManage
+        onSelectAgent={vi.fn()}
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Rename Builder' })).toBeTruthy();
+  });
+
+  it('shows make-primary on secondary builders when the user can manage', () => {
+    render(
+      <SessionAgentTree
+        agents={sampleAgents}
+        currentAgentId={2}
+        canManage
+        onSelectAgent={vi.fn()}
+      />
+    );
+    expect(screen.getByTestId('agent-tree-set-primary')).toBeTruthy();
+    expect(screen.queryAllByTestId('agent-tree-set-primary')).toHaveLength(1);
   });
 });
