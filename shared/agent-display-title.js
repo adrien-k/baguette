@@ -25,6 +25,21 @@ export function agentDisplayTitle(agent) {
 /** U+2060 WORD JOINER — invisible; prevents GitHub from autolinking `#N` in markdown. */
 export const GITHUB_REF_WORD_JOINER = '\u2060';
 
+const GITHUB_HASH_REF_RE = /#(?!\u2060)(\d+)/g;
+const GITHUB_ESCAPED_HASH_REF_RE = new RegExp(`#${GITHUB_REF_WORD_JOINER}(\\d+)`, 'g');
+
+/** Insert a word joiner after `#` before digits so GitHub does not autolink issue refs. */
+export function escapeGithubHashRefs(text) {
+  if (text == null || text === '') return text ?? '';
+  return String(text).replace(GITHUB_HASH_REF_RE, `#${GITHUB_REF_WORD_JOINER}$1`);
+}
+
+/** Strip word joiners GitHub footers and descriptions use for escaped `#N` refs. */
+export function unescapeGithubHashRefs(text) {
+  if (text == null || text === '') return text ?? '';
+  return String(text).replace(GITHUB_ESCAPED_HASH_REF_RE, '#$1');
+}
+
 function agentRefPrefix(agent, { github = false } = {}) {
   if (agent?.ref == null) return '';
   const ref = github ? `${GITHUB_REF_WORD_JOINER}${agent.ref}` : agent.ref;

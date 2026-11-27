@@ -15,6 +15,7 @@ import {
 import { githubFetch } from './github-api.js';
 import { gitHubOriginFromFullName } from '../../shared/repo-origin.js';
 import { hasSessionImagePlaceholders } from '../../shared/session-images.js';
+import { escapeGithubHashRefs, unescapeGithubHashRefs } from '../../shared/agent-display-title.js';
 
 export { configureWorktreeGitIdentity } from './git-identity.js';
 
@@ -2558,11 +2559,13 @@ function stripBaguetteFooter(text) {
 
 export function splitPrBody(body) {
   const idx = (body ?? '').indexOf(BAGUETTE_DESCRIPTION_MARKER);
-  if (idx < 0) return { userPrefix: '', baguetteContent: body ?? '' };
+  if (idx < 0) {
+    return { userPrefix: '', baguetteContent: unescapeGithubHashRefs(body ?? '') };
+  }
   const userPrefix = body.slice(0, idx).trimEnd();
   const afterMarker = body.slice(idx + BAGUETTE_DESCRIPTION_MARKER.length).trimStart();
   const withoutDivider = afterMarker.replace(/^---\n+/, '');
-  const baguetteContent = stripBaguetteFooter(withoutDivider);
+  const baguetteContent = unescapeGithubHashRefs(stripBaguetteFooter(withoutDivider));
   return { userPrefix, baguetteContent };
 }
 
@@ -2580,7 +2583,8 @@ export function buildSessionFooter(session, { previewUrl = null, usageLines = []
 }
 
 export function buildPrBody(userPrefix, baguetteContent, footer = '') {
-  const baguetteSection = `${BAGUETTE_DESCRIPTION_MARKER}\n---\n\n${baguetteContent}${footer}`;
+  const escapedBaguette = escapeGithubHashRefs(`${baguetteContent}${footer}`);
+  const baguetteSection = `${BAGUETTE_DESCRIPTION_MARKER}\n---\n\n${escapedBaguette}`;
   return userPrefix ? `${userPrefix}\n\n${baguetteSection}` : baguetteSection;
 }
 

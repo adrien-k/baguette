@@ -10,6 +10,7 @@ import {
   withDescriptionLink,
 } from '../github.js';
 import { PUBLIC_HOST } from '../../config.js';
+import { GITHUB_REF_WORD_JOINER } from '../../../shared/agent-display-title.js';
 
 describe('splitPrBody', () => {
   it('strips baguette footer from baguette content', () => {
@@ -153,6 +154,16 @@ describe('withDescriptionLink', () => {
 });
 
 describe('buildPrBody', () => {
+  it('escapes #N issue refs only in the baguette section', () => {
+    const body = buildPrBody('User edit for #12', 'Fixes review issue #3');
+    expect(body).toContain('User edit for #12');
+    expect(body).not.toContain(`User edit for #${GITHUB_REF_WORD_JOINER}12`);
+    expect(body).toContain(`Fixes review issue #${GITHUB_REF_WORD_JOINER}3`);
+    const { userPrefix, baguetteContent } = splitPrBody(body);
+    expect(userPrefix).toBe('User edit for #12');
+    expect(baguetteContent).toBe('Fixes review issue #3');
+  });
+
   it('embeds footer after baguette content', () => {
     const body = buildPrBody(
       'User notes',
